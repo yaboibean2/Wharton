@@ -43,3 +43,21 @@ backtests/
 # OS
 .DS_Store
 Thumbs.db
+
+# Backup Files
+*.backup
+*.bak
+*.bak2
+SYSTEM_FLOW_DIAGRAMS.md.backup
+
+# VS Code Counter
+.VSCodeCounter/
+
+# Test Files
+test_*.py
+*_test.py
+
+# Temporary Documentation (keep only main docs)
+*_FIX.md
+*_DEBUGGING.md
+*_BUGFIXES.md
