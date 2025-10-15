@@ -1,0 +1,153 @@
+# =============================================================================
+# MODEL CONFIGURATION - Agent Weights & Parameters
+# =============================================================================
+# Adjust these weights to change how much each agent influences final scores.
+# Weights are normalized automatically (don't need to sum to 1.0)
+# =============================================================================
+
+agent_weights:
+  value: 1.2  # Value analysis (reduced for growth focus)
+  growth_momentum: 1.8  # Growth is critical for MTWB goals
+  macro_regime: 1.0  # Important for 10-year horizon
+  risk: 1.4  # Risk management crucial for foundation
+  sentiment: 0.8  # ESG/community sentiment important
+  
+# MTWB Foundation Specific Adjustments
+foundation_focus:
+  growth_priority: true  # $500K -> $1.5M requires growth focus
+  esg_importance: high   # Mission alignment critical
+  drawdown_consideration: true  # Must plan for annual distributions
+  community_impact_weight: 0.3  # 30% weight to mission alignment
+
+# Value Agent Configuration
+value_agent:
+  enabled: true
+  metrics:
+    pe_ratio_weight: 0.3  # P/E vs sector peers
+    ev_ebit_weight: 0.25  # EV/EBIT multiple
+    fcf_yield_weight: 0.25  # Free cash flow yield
+    shareholder_yield_weight: 0.2  # Dividends + buybacks
+  thresholds:
+    cheap_pe_percentile: 30  # Below 30th percentile = cheap
+    expensive_pe_percentile: 70
+
+# Growth/Momentum Agent Configuration (Enhanced for MTWB)
+growth_momentum_agent:
+  enabled: true
+  metrics:
+    eps_growth_1y_weight: 0.3   # Near-term earnings critical
+    eps_growth_3y_weight: 0.25  # Long-term consistency important
+    sales_growth_weight: 0.2    # Top-line growth sustainability
+    price_momentum_3m_weight: 0.1  # Reduced momentum timing
+    price_momentum_6m_weight: 0.1
+    price_momentum_12m_weight: 0.05
+  thresholds:
+    strong_growth_pct: 12  # Realistic growth expectations
+    weak_growth_pct: 5
+  foundation_specific:
+    sustainable_growth_focus: true  # Prefer consistent over volatile growth
+    quality_growth_bias: 0.2  # Weight toward quality growth metrics
+
+# Macro/Regime Agent Configuration
+macro_regime_agent:
+  enabled: true
+  indicators:
+    - yield_curve_slope  # 10Y - 2Y Treasury spread
+    - inflation_trend  # CPI year-over-year
+    - pmi  # ISM Manufacturing PMI
+    - unemployment_rate
+    - credit_spreads  # BAA - AAA spread
+  sector_tilts:
+    # How much to over/underweight sectors based on regime
+    recession:
+      overweight: ["Consumer Staples", "Healthcare", "Utilities"]
+      underweight: ["Consumer Discretionary", "Industrials", "Financials"]
+    expansion:
+      overweight: ["Technology", "Financials", "Industrials"]
+      underweight: ["Utilities", "Real Estate"]
+    high_inflation:
+      overweight: ["Energy", "Materials", "Real Estate"]
+      underweight: ["Technology", "Consumer Discretionary"]
+
+# Risk/Correlation Agent Configuration
+risk_agent:
+  enabled: true
+  lookback_days: 252  # 1 year rolling window
+  correlation_threshold: 0.7  # Flag if pairwise correlation > 0.7
+  max_sector_correlation: 0.8
+  volatility_cap_multiplier: 1.5  # Scale position by inverse volatility
+  max_drawdown_threshold_pct: -20  # Warning if stock down >20%
+
+# Sentiment/News Agent Configuration
+sentiment_agent:
+  enabled: true  # Set to false to disable
+  sources:
+    - earnings_calls
+    - news_headlines
+    - analyst_revisions
+  sentiment_threshold: 0.3  # Absolute sentiment score threshold
+  events_to_monitor:
+    - earnings_surprise
+    - guidance_change
+    - litigation
+    - management_change
+
+# Position Sizing & Blending
+position_sizing:
+  method: "score_weighted"  # score_weighted, equal_weight, risk_parity
+  use_inverse_volatility: true  # Scale by inverse volatility
+  apply_momentum_tilt: false  # Further tilt toward recent winners
+
+# ESG/Mission Alignment Agent Configuration (MTWB Specific)
+esg_mission_agent:
+  enabled: true
+  mission_alignment_weight: 0.3  # 30% of sentiment agent score
+  scoring_criteria:
+    community_impact: 0.3      # Community development potential
+    esg_factors: 0.25          # Environmental, social, governance
+    philadelphia_connection: 0.2  # Local economic relevance
+    foundation_values: 0.15    # Safety, inclusivity, stewardship
+    stakeholder_relations: 0.1  # Community/employee relations
+    
+  exclusion_rules:
+    hard_exclusions:  # Automatic rejection
+      - tobacco
+      - weapons_defense  
+      - private_prisons
+      - predatory_lending
+    soft_exclusions:  # Heavy penalty but not automatic rejection
+      - poor_labor_practices
+      - environmental_violations
+      - community_harm_history
+      
+  preferred_industries:  # Bonus scoring
+    - technology_infrastructure
+    - healthcare_community
+    - sustainable_development
+    - education_access
+    - community_services
+    
+# Learning/QA Agent Configuration  
+learning_agent:
+  enabled: true
+  evaluation_windows: [28, 84, 252]  # Focus on longer-term for foundation
+  min_observations: 15  # More observations for foundation stability
+  max_weight_adjustment: 0.05  # Conservative adjustments for foundation
+  metrics:
+    - sharpe_ratio
+    - information_ratio  
+    - hit_rate
+    - max_drawdown
+    - mission_alignment_score  # New metric for MTWB
+
+# Backtest Configuration
+backtest:
+  start_date: "2023-09-29"  # 1 year ago from realistic date
+  end_date: "2024-09-29"
+  initial_capital: 100000
+  rebalance_frequency: "biweekly"
+  walk_forward:
+    enabled: true
+    train_window_days: 180  # 6 months training
+    test_window_days: 30  # 1 month testing
+    embargo_days: 2  # 2-day gap to avoid leakage

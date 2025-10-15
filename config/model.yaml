@@ -1,0 +1,145 @@
+agent_weights:
+  value: 1.2
+  growth_momentum: 1.25
+  macro_regime: 1.15
+  risk: 1.1
+  sentiment: 1.25
+foundation_focus:
+  growth_priority: true
+  esg_importance: high
+  drawdown_consideration: true
+  community_impact_weight: 0.3
+value_agent:
+  enabled: true
+  metrics:
+    pe_ratio_weight: 0.3
+    ev_ebit_weight: 0.25
+    fcf_yield_weight: 0.25
+    shareholder_yield_weight: 0.2
+  thresholds:
+    cheap_pe_percentile: 30
+    expensive_pe_percentile: 70
+growth_momentum_agent:
+  enabled: true
+  metrics:
+    eps_growth_1y_weight: 0.3
+    eps_growth_3y_weight: 0.25
+    sales_growth_weight: 0.2
+    price_momentum_3m_weight: 0.1
+    price_momentum_6m_weight: 0.1
+    price_momentum_12m_weight: 0.05
+  thresholds:
+    strong_growth_pct: 12
+    weak_growth_pct: 5
+  foundation_specific:
+    sustainable_growth_focus: true
+    quality_growth_bias: 0.2
+macro_regime_agent:
+  enabled: true
+  indicators:
+  - yield_curve_slope
+  - inflation_trend
+  - pmi
+  - unemployment_rate
+  - credit_spreads
+  sector_tilts:
+    recession:
+      overweight:
+      - Consumer Staples
+      - Healthcare
+      - Utilities
+      underweight:
+      - Consumer Discretionary
+      - Industrials
+      - Financials
+    expansion:
+      overweight:
+      - Technology
+      - Financials
+      - Industrials
+      underweight:
+      - Utilities
+      - Real Estate
+    high_inflation:
+      overweight:
+      - Energy
+      - Materials
+      - Real Estate
+      underweight:
+      - Technology
+      - Consumer Discretionary
+risk_agent:
+  enabled: true
+  lookback_days: 252
+  correlation_threshold: 0.7
+  max_sector_correlation: 0.8
+  volatility_cap_multiplier: 1.5
+  max_drawdown_threshold_pct: -20
+sentiment_agent:
+  enabled: true
+  sources:
+  - earnings_calls
+  - news_headlines
+  - analyst_revisions
+  sentiment_threshold: 0.3
+  events_to_monitor:
+  - earnings_surprise
+  - guidance_change
+  - litigation
+  - management_change
+position_sizing:
+  method: score_weighted
+  use_inverse_volatility: true
+  apply_momentum_tilt: false
+esg_mission_agent:
+  enabled: true
+  mission_alignment_weight: 0.3
+  scoring_criteria:
+    community_impact: 0.3
+    esg_factors: 0.25
+    philadelphia_connection: 0.2
+    foundation_values: 0.15
+    stakeholder_relations: 0.1
+  exclusion_rules:
+    hard_exclusions:
+    - tobacco
+    - weapons_defense
+    - private_prisons
+    - predatory_lending
+    soft_exclusions:
+    - poor_labor_practices
+    - environmental_violations
+    - community_harm_history
+  preferred_industries:
+  - technology_infrastructure
+  - healthcare_community
+  - sustainable_development
+  - education_access
+  - community_services
+learning_agent:
+  enabled: true
+  evaluation_windows:
+  - 28
+  - 84
+  - 252
+  min_observations: 15
+  max_weight_adjustment: 0.05
+  metrics:
+  - sharpe_ratio
+  - information_ratio
+  - hit_rate
+  - max_drawdown
+  - mission_alignment_score
+backtest:
+  start_date: '2023-09-29'
+  end_date: '2024-09-29'
+  initial_capital: 100000
+  rebalance_frequency: biweekly
+  walk_forward:
+    enabled: true
+    train_window_days: 180
+    test_window_days: 30
+    embargo_days: 2
+thresholds:
+  upside_minimum: 0.12
+  conviction_threshold: 65

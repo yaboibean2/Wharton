@@ -1,0 +1,45 @@
+# Environment variables
+.env
+
+# Google Sheets credentials (NEVER COMMIT!)
+google_credentials.json
+*credentials*.json
+*.json
+!config/*.json
+!package.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Data cache
+data/cache/
+*.pkl
+*.parquet
+
+# Logs
+logs/
+*.log
+
+# Archive (old documentation)
+archive/
+
+# Outputs
+outputs/
+results/
+backtests/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

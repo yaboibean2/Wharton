@@ -1,0 +1,39 @@
+# =============================================================================
+# INVESTMENT UNIVERSE - Stock Selection
+# =============================================================================
+# Define the universe of stocks to consider.
+# Leave as "SP100" for default, or list specific tickers.
+# =============================================================================
+
+universe_type: "SP100"  # SP100, SP500, CUSTOM
+
+# For CUSTOM universe, list tickers here:
+custom_tickers: []
+  # - AAPL
+  # - MSFT
+  # - GOOGL
+  # etc.
+
+# Sector mappings (GICS standard)
+sectors:
+  Technology:
+    - "Information Technology"
+    - "Communication Services"
+  Financials:
+    - "Financials"
+  Healthcare:
+    - "Health Care"
+  Consumer Discretionary:
+    - "Consumer Discretionary"
+  Consumer Staples:
+    - "Consumer Staples"
+  Industrials:
+    - "Industrials"
+  Energy:
+    - "Energy"
+  Materials:
+    - "Materials"
+  Real Estate:
+    - "Real Estate"
+  Utilities:
+    - "Utilities"
