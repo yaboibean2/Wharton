@@ -1,478 +1,372 @@
 # System Architecture & Flow Diagrams
 
-## 📊 Complete System Pipeline Visualizations
+## 📊 AI Investment System - Complete Pipeline Visualization
 
-This document provides detailed Mermaid.js diagrams showing exactly what happens in each mode of the investment analysis system.
+This document provides clear, intuitive diagrams showing exactly how the system works in each mode.
 
 ---
 
-## 🎯 Mode 1: Pre-Determined Stock Analysis
+## 🎯 Mode 1: Single Stock Analysis
 
-### High-Level Flow
+**Purpose**: Analyze one stock and get an AI-powered investment recommendation  
+**Time**: ~15 seconds  
+**Output**: BUY/HOLD/SELL recommendation with detailed reasoning
 
 ```mermaid
 graph TB
-    Start([User Enters Stock Ticker]) --> Validate{Valid?}
-    Validate -->|No| Error[Display Error]
-    Validate -->|Yes| Init[Initialize System]
+    Start([Enter Stock Ticker]) --> Fetch[Gather Data from Multiple Sources]
     
-    Init --> LoadConfig[Load Configuration]
-    LoadConfig --> FetchData[Fetch Stock Data]
+    Fetch --> Data1[Price History]
+    Fetch --> Data2[Company Fundamentals]
+    Fetch --> Data3[Recent News]
+    Fetch --> Data4[Analyst Ratings]
     
-    FetchData --> PriceData[Price History]
-    FetchData --> Fundamentals[Fundamentals]
-    FetchData --> News[News & Sentiment]
-    FetchData --> Analyst[Analyst Coverage]
+    Data1 --> Analysis[5 AI Agents Analyze Stock]
+    Data2 --> Analysis
+    Data3 --> Analysis
+    Data4 --> Analysis
     
-    PriceData --> CalcTech[Calculate Technical Indicators]
-    Fundamentals --> CalcFund[Calculate Fundamental Metrics]
+    Analysis --> Agent1[Value Agent<br/>Valuation metrics]
+    Analysis --> Agent2[Growth Agent<br/>Growth trajectory]
+    Analysis --> Agent3[Sentiment Agent<br/>Market sentiment]
+    Analysis --> Agent4[Macro Agent<br/>Market conditions]
+    Analysis --> Agent5[Risk Agent<br/>Risk assessment]
     
-    CalcTech --> Agents[Multi-Agent Analysis]
-    CalcFund --> Agents
-    News --> Agents
-    Analyst --> Agents
+    Agent1 --> Combine[Combine Scores<br/>Apply Agent Weights]
+    Agent2 --> Combine
+    Agent3 --> Combine
+    Agent4 --> Combine
+    Agent5 --> Combine
     
-    Agents --> ValueAgent[Value Agent]
-    Agents --> GrowthAgent[Growth Agent]
-    Agents --> SentimentAgent[Sentiment Agent]
-    Agents --> MacroAgent[Macro Agent]
-    Agents --> RiskAgent[Risk Agent]
+    Combine --> IPS[Check Against<br/>Investment Policy]
+    IPS --> Recommend[Generate Recommendation]
     
-    ValueAgent --> Orchestrator[Portfolio Orchestrator]
-    GrowthAgent --> Orchestrator
-    SentimentAgent --> Orchestrator
-    MacroAgent --> Orchestrator
-    RiskAgent --> Orchestrator
+    Recommend --> Output[Display Results<br/>Save to Tracking]
     
-    Orchestrator --> Composite[Calculate Composite Score]
-    Composite --> IPS[Check IPS Alignment]
-    IPS --> Final[Final Recommendation]
-    
-    Final --> Report[Generate Report]
-    Report --> Save[Save to QA System]
-    Save --> Display[Display in UI]
-    
-    style Start fill:#e1f5e1
-    style Display fill:#e1f5e1
-    style Orchestrator fill:#d1ecf1
-    style Agents fill:#d1ecf1
+    style Start fill:#4CAF50,color:#fff
+    style Analysis fill:#2196F3,color:#fff
+    style Combine fill:#FF9800,color:#fff
+    style Output fill:#4CAF50,color:#fff
 ```
 
-### Detailed Component Breakdown
-
-**Data Fetching (5-10 seconds)**
-- Price History: YFinance OHLCV data (5 years)
-- Fundamentals: Company info, sector, market cap, financial metrics
-- News: Perplexity AI (7-14 days) or NewsAPI fallback
-- Analyst Coverage: Recommendations, target prices, ratings
-
-**Agent Analysis (5-8 seconds)**
-- **Value Agent**: P/E, P/B, P/S ratios, PEG, DCF estimates
-- **Growth Agent**: Revenue/earnings growth, price momentum, volume trends
-- **Sentiment Agent**: News polarity, analyst consensus, price targets
-- **Macro Agent**: Sector performance, market cycle, economic indicators
-- **Risk Agent**: Volatility (Beta, Std Dev), drawdown, Sharpe/Sortino ratios
-
-**Scoring & Output (2-3 seconds)**
-- Weighted composite score from all agents
-- IPS alignment check (time horizon, risk tolerance, tax efficiency)
-- Final recommendation: STRONG BUY / BUY / HOLD / SELL / STRONG SELL
+### Key Features
+- **Data Sources**: YFinance (prices), Perplexity AI (news), Analyst consensus
+- **5 AI Agents**: Each specializes in different aspects (value, growth, sentiment, macro, risk)
+- **Smart Weighting**: Agent weights from `config/model.yaml` (automatically adjusted by learning system)
+- **IPS Compliance**: Checks alignment with time horizon, risk tolerance, tax considerations
 
 ---
 
 ## 🎲 Mode 2: Portfolio Generation
 
-### High-Level Flow
+**Purpose**: Build a diversified portfolio of 5-50 stocks optimized for your goals  
+**Time**: ~2-4 minutes  
+**Output**: Complete portfolio with weights, metrics, and individual stock analyses
 
 ```mermaid
 graph TB
-    Start([User Clicks Generate]) --> Params[Get Parameters]
-    Params --> Validate{Valid?}
-    Validate -->|No| Error[Display Error]
-    Validate -->|Yes| Universe[Load Stock Universe]
+    Start([Set Portfolio Parameters<br/>Size, Risk, Sector Focus]) --> Universe[Load Stock Universe<br/>from config]
     
-    Universe --> Filter[Apply Filters]
-    Filter --> Parallel[Parallel Data Fetch]
+    Universe --> Filter[Filter Candidates<br/>Liquidity, Data Quality]
     
-    Parallel --> BulkPrice[Bulk Prices]
-    Parallel --> BulkFund[Bulk Fundamentals]
-    Parallel --> BulkTech[Bulk Technical]
+    Filter --> Fetch[Parallel Data Fetch<br/>All Stocks at Once]
     
-    BulkPrice --> Screen[Pre-Screening]
-    BulkFund --> Screen
-    BulkTech --> Screen
+    Fetch --> Screen[Quick Screen<br/>Price, Volume, Quality]
     
-    Screen --> BatchAgents[Batch Agent Analysis]
+    Screen --> Analyze[Run All 5 Agents<br/>On All Stocks]
     
-    BatchAgents --> ValueBatch[Value Batch]
-    BatchAgents --> GrowthBatch[Growth Batch]
-    BatchAgents --> SentBatch[Sentiment Batch]
-    BatchAgents --> MacroBatch[Macro Batch]
-    BatchAgents --> RiskBatch[Risk Batch]
+    Analyze --> Score[Calculate Composite Scores<br/>Rank All Stocks]
     
-    ValueBatch --> Aggregate[Aggregate Scores]
-    GrowthBatch --> Aggregate
-    SentBatch --> Aggregate
-    MacroBatch --> Aggregate
-    RiskBatch --> Aggregate
+    Score --> Build[Portfolio Construction]
     
-    Aggregate --> Composite[Calculate Composites]
-    Composite --> IPSFilter[Apply IPS Filters]
-    IPSFilter --> Rank[Rank Stocks]
+    Build --> Rule1[Apply IPS Rules<br/>Risk Tolerance Match]
+    Build --> Rule2[Apply Diversification<br/>Max 30% per Sector]
+    Build --> Rule3[Avoid Correlation<br/>Low overlap stocks]
     
-    Rank --> Diversify[Apply Diversification]
-    Diversify --> Select[Select Top N]
-    Select --> Weighting[Calculate Weights]
+    Rule1 --> Select[Select Top N Stocks]
+    Rule2 --> Select
+    Rule3 --> Select
     
-    Weighting --> QualityCheck{Quality OK?}
-    QualityCheck -->|No| Adjust[Adjust Portfolio]
-    QualityCheck -->|Yes| Final[Final Portfolio]
-    Adjust --> Select
+    Select --> Weight[Calculate Position Sizes<br/>Equal or Score-Based]
     
-    Final --> Metrics[Calculate Portfolio Metrics]
-    Metrics --> SavePort[Save Portfolio]
-    SavePort --> QATrack[Add to QA Tracking]
-    QATrack --> Display[Display in UI]
+    Weight --> Quality{Quality Check<br/>Meets All Rules?}
+    Quality -->|No| Build
+    Quality -->|Yes| Final[Final Portfolio Ready]
     
-    style Start fill:#e1f5e1
-    style Display fill:#e1f5e1
-    style Parallel fill:#d1ecf1
-    style BatchAgents fill:#d1ecf1
-    style Final fill:#fff3cd
+    Final --> Results[Display Results<br/>Track Performance]
+    
+    style Start fill:#4CAF50,color:#fff
+    style Fetch fill:#2196F3,color:#fff
+    style Build fill:#FF9800,color:#fff
+    style Final fill:#9C27B0,color:#fff
+    style Results fill:#4CAF50,color:#fff
 ```
 
-### Detailed Component Breakdown
-
-**Universe & Filtering (1-2 seconds)**
-- Load from config/universe.yaml
-- Apply sector, liquidity, data availability filters
-- Result: Filtered list of candidate stocks
-
-**Parallel Data Fetching (2-3 seconds)**
-- Bulk price snapshot: Polygon.io API (all tickers in one call)
-- Bulk fundamentals: ThreadPoolExecutor (10 concurrent workers)
-- Bulk technical: Vectorized calculations on cached history
-
-**Batch Agent Analysis (30-60 seconds for 50 stocks)**
-- All agents process all stocks in parallel
-- Rank stocks by each agent's criteria
-- Generate composite scores with agent weights
-
-**Portfolio Construction (5-10 seconds)**
-- Apply IPS constraints (risk tolerance, time horizon)
-- Diversification rules: Max 30% per sector, min 3 sectors
-- Position sizing: Equal weight / Score-based / Risk parity
-- Quality checks: Min stocks, max concentration, sector diversity
-
-**Portfolio Metrics**
-- Expected return, portfolio risk, Sharpe ratio
-- Diversification score, sector allocation
-- Individual stock analytics
+### Key Features
+- **Parallel Processing**: Fetches and analyzes 50+ stocks in ~3 seconds using bulk APIs
+- **Smart Diversification**: Automatic sector balancing, correlation checking, size distribution
+- **Multiple Weighting**: Choose equal weight, score-based, or risk parity
+- **Quality Assurance**: Validates min stocks, max concentration, sector diversity before finalizing
 
 ---
 
 ## 📈 Mode 3: QA & Learning Center
 
-### Overall Architecture
+**Purpose**: Track performance, learn from outcomes, and automatically improve the AI system  
+**Time**: Continuous monitoring + weekly learning cycles  
+**Output**: Performance metrics, learning insights, autonomous system improvements
+
+### System Overview
 
 ```mermaid
 graph TB
-    Start([User Opens QA Center]) --> LoadQA[Load QA System]
+    Start([QA & Learning Center]) --> Track[Track All Recommendations]
     
-    LoadQA --> Tab1[Tab 1: Dashboard]
-    LoadQA --> Tab2[Tab 2: Tracked Tickers]
-    LoadQA --> Tab3[Tab 3: Archives]
-    LoadQA --> Tab4[Tab 4: Reviews]
-    LoadQA --> Tab5[Tab 5: Learning Insights]
-    LoadQA --> Tab6[Tab 6: Performance Analysis]
+    Track --> Monitor[Monitor Performance<br/>Real-time Price Updates]
     
-    Tab1 --> CurrentPrices[Fetch Current Prices]
-    CurrentPrices --> CalcPerf[Calculate Performance]
-    CalcPerf --> Metrics[Display Metrics]
+    Monitor --> Tab1[Dashboard<br/>Accuracy Metrics]
+    Monitor --> Tab2[Tracked Tickers<br/>Individual Performance]
+    Monitor --> Tab3[Archives<br/>Historical Analysis]
     
-    Tab2 --> TickerList[Display Tracked]
-    TickerList --> Alerts[Smart Alerts]
-    Alerts --> ReviewFlow[Review Process]
+    Tab1 --> Review[Weekly Review Cycle]
+    Tab2 --> Review
+    Tab3 --> Review
     
-    Tab3 --> Archive[Full Archive]
-    Archive --> FilterSearch[Filter & Search]
-    FilterSearch --> Export[Export Options]
-    Export --> SheetsSync[Google Sheets Sync]
+    Review --> Learn[Performance Analysis<br/>Autonomous Learning]
     
-    Tab4 --> ReviewSchedule[Review Management]
-    ReviewSchedule --> Conduct[Conduct Review]
-    Conduct --> Document[Document Learning]
+    Learn --> Identify[Identify What Worked<br/>and What Did Not]
     
-    Tab5 --> Aggregate[Aggregate Insights]
-    Aggregate --> Patterns[Pattern Analysis]
-    Patterns --> ModelGaps[Identify Gaps]
-    ModelGaps --> Recommend[Recommendations]
+    Identify --> Adjust[Automatically Adjust<br/>Agent Weights & Thresholds]
     
-    Tab6 --> Configure[Configure Analysis]
-    Configure --> RunAnalysis[Run Analysis]
-    RunAnalysis --> FetchSheets[Fetch Google Sheets]
-    FetchSheets --> ParseMove[Parse Movements]
-    ParseMove --> ParallelAnal[Parallel Stock Analysis]
-    ParallelAnal --> AIAnalysis[AI Root Cause Analysis]
-    AIAnalysis --> PatternID[Identify Patterns]
-    PatternID --> Autonomous[Autonomous Adjustment]
-    Autonomous --> ApplyChanges[Apply Config Changes]
-    ApplyChanges --> Results[Display Results]
+    Adjust --> Improve[Improved Future<br/>Recommendations]
     
-    style Start fill:#e1f5e1
-    style Autonomous fill:#fff3cd
-    style ApplyChanges fill:#fff3cd
+    Improve --> Track
+    
+    style Start fill:#4CAF50,color:#fff
+    style Learn fill:#FF9800,color:#fff
+    style Adjust fill:#F44336,color:#fff
+    style Improve fill:#4CAF50,color:#fff
 ```
 
-### Tab 6: Performance Analysis (Autonomous Learning)
+### The Autonomous Learning Engine (Core Innovation)
+
+**Purpose**: Analyze significant stock movements and automatically improve the AI system  
+**Time**: ~2-5 minutes per analysis  
+**Output**: System automatically updates itself to perform better
 
 ```mermaid
 graph TB
-    Start([Run Performance Analysis]) --> DateRange[Select Date Range]
-    DateRange --> Threshold[Set Movement Threshold]
-    Threshold --> FetchData[Fetch Google Sheets Data]
+    Start([Run Performance Analysis]) --> Fetch[Fetch Stock Movement Data<br/>from Google Sheets]
     
-    FetchData --> Validate{Valid Sheet?}
-    Validate -->|No| ShowError[Show Available Sheets]
-    Validate -->|Yes| ParseMovements[Parse Stock Movements]
+    Fetch --> Filter[Find Significant Moves<br/>Over 15 percent threshold]
     
-    ParseMovements --> FilterThreshold[Filter by Threshold]
-    FilterThreshold --> Dedupe[Deduplicate Tickers]
-    Dedupe --> MovementList[Movement List: X up Y down]
+    Filter --> Analyze[For Each Stock Movement]
     
-    MovementList --> ParallelLoop[For Each Stock in Parallel]
+    Analyze --> News[Gather Recent News<br/>Multi-source strategy]
+    Analyze --> Context[Get Market Context<br/>Fundamentals & Events]
     
-    ParallelLoop --> FetchNews[Fetch Recent News]
-    FetchNews --> Strategy1{Polygon.io}
-    Strategy1 -->|Success| Got10[Got 10 articles]
-    Strategy1 -->|Fail| Strategy2[get_news_with_sources]
-    Strategy2 -->|Success| Got8[Got 8 articles]
-    Strategy2 -->|Fail| Strategy3[Perplexity Fast Search]
-    Strategy3 --> Got5[Got 5 articles]
+    News --> AI[AI Deep Dive Analysis<br/>Why did this happen?]
+    Context --> AI
     
-    Got10 --> GetFund[Get Fundamentals]
-    Got8 --> GetFund
-    Got5 --> GetFund
+    AI --> Causes[Identify Root Causes<br/>Earnings, News, Sector, Technical]
     
-    GetFund --> AIModel{Choose AI}
-    AIModel -->|OpenAI| GPT4[GPT-4 Analysis]
-    AIModel -->|Perplexity| Sonar[Sonar-Pro Analysis]
+    Causes --> Done{All Stocks<br/>Analyzed?}
+    Done -->|No| Analyze
+    Done -->|Yes| Patterns[Identify Patterns<br/>Across All Movements]
     
-    GPT4 --> Analyze[Analyze Root Causes]
-    Sonar --> Analyze
+    Patterns --> Learn[Learning Phase<br/>What did we miss?]
     
-    Analyze --> ParseJSON[Parse Response]
-    ParseJSON --> StockDone[Stock Analysis Complete]
+    Learn --> Miss1{Value Agent<br/>Missed earnings?}
+    Learn --> Miss2{Sentiment Agent<br/>Missed news?}
+    Learn --> Miss3{Macro Agent<br/>Missed sector trends?}
     
-    StockDone --> AllDone{All Stocks Done?}
-    AllDone -->|No| ParallelLoop
-    AllDone -->|Yes| IdentifyPatterns[Identify Patterns]
+    Miss1 -->|Yes| Adjust[Autonomous Adjustment]
+    Miss2 -->|Yes| Adjust
+    Miss3 -->|Yes| Adjust
     
-    IdentifyPatterns --> CalcFreq[Calculate Pattern Frequencies]
-    CalcFreq --> AutoPhase[AUTONOMOUS ADJUSTMENT]
+    Adjust --> Backup[Backup Current Config<br/>Safety first]
     
-    AutoPhase --> CalcWeights[Calculate Agent Weight Changes]
-    CalcWeights --> MissRate[Check Agent Miss Rates]
-    MissRate --> PatternAdj[Pattern-Based Adjustments]
+    Backup --> Update[Update Agent Weights<br/>and Thresholds]
     
-    PatternAdj --> Earnings{Earnings over 40 percent?}
-    PatternAdj --> NewsPattern{News over 40 percent?}
-    PatternAdj --> SectorPattern{Sector over 30 percent?}
+    Update --> Log[Log All Changes<br/>Full audit trail]
     
-    Earnings -->|Yes| IncValue[Increase Value Agent]
-    NewsPattern -->|Yes| IncSent[Increase Sentiment Agent]
-    SectorPattern -->|Yes| IncMacro[Increase Macro Agent]
+    Log --> Apply[Apply to Next Analysis<br/>System Improved]
     
-    IncValue --> CalcThresh[Calculate Threshold Changes]
-    IncSent --> CalcThresh
-    IncMacro --> CalcThresh
-    
-    CalcThresh --> ConfCheck{Avg Confidence?}
-    ConfCheck -->|High over 75| Aggressive[More Aggressive Thresholds]
-    ConfCheck -->|Low under 50| Conservative[More Conservative Thresholds]
-    
-    Aggressive --> Backup[Backup config file]
-    Conservative --> Backup
-    
-    Backup --> UpdateYAML[Update config model yaml]
-    UpdateYAML --> LogHistory[Log to adjustment history]
-    
-    LogHistory --> DisplayResults[Display Results]
-    DisplayResults --> MoveSummary[Movement Summary]
-    DisplayResults --> RootCauses[Root Causes]
-    DisplayResults --> AdjustReport[Adjustment Report]
-    DisplayResults --> Recommendations[Model Recommendations]
-    
-    MoveSummary --> SaveAll[Save All Results]
-    RootCauses --> SaveAll
-    AdjustReport --> SaveAll
-    Recommendations --> SaveAll
-    
-    SaveAll --> FeedbackLoop[Feedback to System]
-    FeedbackLoop --> NextRun[Next Portfolio Uses New Weights]
-    
-    style Start fill:#e1f5e1
-    style AutoPhase fill:#fff3cd
-    style UpdateYAML fill:#fff3cd
-    style FeedbackLoop fill:#d4edda
-    style NextRun fill:#d4edda
+    style Start fill:#4CAF50,color:#fff
+    style AI fill:#2196F3,color:#fff
+    style Learn fill:#FF9800,color:#fff
+    style Adjust fill:#F44336,color:#fff
+    style Apply fill:#4CAF50,color:#fff
 ```
 
-### Autonomous Adjustment Logic
+### How It Learns (The Magic)
 
-**Agent Weight Adjustment**
-- If agent miss rate over 30 percent: Increase weight by 10-25 percent
-- Earnings-driven (over 40 percent): Plus 15 percent to Value Agent
-- News-driven (over 40 percent): Plus 20 percent to Sentiment Agent
-- Sector-driven (over 30 percent): Plus 15 percent to Macro Agent
-- Technical (over 20 percent): Plus 10 percent to Growth Agent
-- Max adjustment: Plus 25 percent per run
+**1. Detection**: Finds stocks that moved significantly (default: over 15 percent)
 
-**Threshold Adjustment**
-- High confidence (over 75 percent): Lower thresholds (more aggressive)
-- Low confidence (under 50 percent): Raise thresholds (more conservative)
-- Moderate confidence (50-75 percent): Keep current thresholds
+**2. Investigation**: For each movement, the AI asks "Why did this happen?"
+   - Fetches recent news from multiple sources
+   - Gets company fundamentals and events
+   - Uses GPT-4 or Perplexity to analyze root causes
 
-**Safety Features**
-- Automatic backup: config model yaml backup with TIMESTAMP
-- Full audit trail: adjustment history json
-- Revertible changes: Can roll back to any backup
-- Capped adjustments: Prevents over-correction
+**3. Pattern Recognition**: Looks across all movements
+   - 40 percent earnings-driven → Value Agent needs more weight
+   - 40 percent news-driven → Sentiment Agent needs more weight
+   - 30 percent sector-driven → Macro Agent needs more weight
+
+**4. Autonomous Adjustment**: Automatically updates `config/model.yaml`
+   - Increases weights for agents that missed opportunities
+   - Adjusts thresholds based on confidence levels
+   - Creates automatic backup before changes
+
+**5. Continuous Improvement**: Next time the system runs
+   - Uses updated agent weights
+   - Makes better predictions
+   - Learns from every cycle
+
+### Safety Features
+- ✅ **Automatic backups** before any changes
+- ✅ **Capped adjustments** (max 25 percent per run)
+- ✅ **Full audit trail** in adjustment_history.json
+- ✅ **Revertible** - can roll back to any previous state
 
 ---
 
-## 🔄 Cross-Mode Integration
+## 🔄 How Everything Works Together
+
+**The Complete Learning Loop**
+
+```mermaid
+graph TB
+    User([You Use The System]) --> Action{What Do You Need?}
+    
+    Action -->|Analyze One Stock| Mode1[Mode 1: Single Stock Analysis]
+    Action -->|Build Portfolio| Mode2[Mode 2: Portfolio Generation]
+    Action -->|Review Performance| Mode3[Mode 3: QA & Learning]
+    
+    Mode1 --> Rec1[Get Recommendation]
+    Mode2 --> Rec2[Get Portfolio]
+    
+    Rec1 --> Track[Saved to QA System<br/>Tracked Automatically]
+    Rec2 --> Track
+    
+    Track --> Monitor[System Monitors<br/>Real-time Performance]
+    
+    Monitor --> Weekly[Weekly: Performance Analysis]
+    
+    Weekly --> Learn[AI Analyzes Results<br/>What worked? What did not?]
+    
+    Learn --> Auto[Autonomous Adjustment<br/>System Updates Itself]
+    
+    Auto --> Better[Improved Agent Weights<br/>Better Predictions]
+    
+    Better --> Mode1
+    Better --> Mode2
+    
+    Mode3 --> Export[Export Reports<br/>Share Insights]
+    
+    style User fill:#4CAF50,color:#fff
+    style Track fill:#2196F3,color:#fff
+    style Learn fill:#FF9800,color:#fff
+    style Auto fill:#F44336,color:#fff
+    style Better fill:#9C27B0,color:#fff
+```
+
+### The Key Innovation: Self-Improvement
+
+1. **You analyze stocks or build portfolios** → System makes recommendations
+2. **QA System tracks everything** → Monitors actual outcomes vs predictions
+3. **Performance Analysis runs weekly** → AI investigates why stocks moved
+4. **System learns automatically** → Updates its own configuration
+5. **Future predictions improve** → Gets smarter with every cycle
+
+**This is not static AI. It's a continuously learning system that improves itself.**
+
+---
+
+## � System Comparison
+
+| Feature | Mode 1: Single Stock | Mode 2: Portfolio | Mode 3: QA & Learning |
+|---------|---------------------|-------------------|----------------------|
+| **Time** | ~15 seconds | ~2-4 minutes | ~2-5 minutes |
+| **Input** | 1 ticker symbol | Portfolio parameters | Historical data |
+| **Output** | BUY/HOLD/SELL + analysis | Complete portfolio | System improvements |
+| **Best For** | Quick stock checks | Building positions | Weekly reviews |
+| **Learns?** | No | No | **YES - Updates system** |
+
+---
+
+## 🎯 Data Sources & Technology
 
 ```mermaid
 graph LR
-    subgraph Mode1[Mode 1: Single Stock]
-        A1[Analyze Stock] --> A2[Generate Recommendation]
-        A2 --> A3[Save to QA System]
-    end
+    Sources[Data Sources] --> System[AI Investment System]
     
-    subgraph Mode2[Mode 2: Portfolio]
-        B1[Generate Portfolio] --> B2[Multiple Analyses]
-        B2 --> B3[Save All to QA]
-    end
+    Sources --> A[Yahoo Finance<br/>Price & Fundamentals]
+    Sources --> B[Polygon.io<br/>News & Real-time Data]
+    Sources --> C[Perplexity AI<br/>News Analysis]
+    Sources --> D[OpenAI GPT-4<br/>Deep Analysis]
     
-    subgraph Mode3[Mode 3: QA & Learning]
-        C1[Track Performance] --> C2[Analyze Patterns]
-        C2 --> C3[Autonomous Adjustment]
-        C3 --> C4[Update Config]
-    end
+    System --> Out1[Stock Recommendations]
+    System --> Out2[Portfolio Suggestions]
+    System --> Out3[Learning Insights]
     
-    A3 -->|Feeds Into| C1
-    B3 -->|Feeds Into| C1
-    C4 -->|Improves| A1
-    C4 -->|Improves| B1
+    Out1 --> Storage[QA Tracking System]
+    Out2 --> Storage
+    Out3 --> Config[Auto-Updated Config]
     
-    style Mode1 fill:#e3f2fd
-    style Mode2 fill:#f3e5f5
-    style Mode3 fill:#e8f5e9
-```
-
----
-
-## 📊 Data Flow Architecture
-
-```mermaid
-graph TB
-    subgraph External[External Data Sources]
-        Polygon[Polygon.io: Prices & News]
-        YFinance[Yahoo Finance: Prices & Fundamentals]
-        Perplexity[Perplexity AI: News & Analysis]
-        OpenAI[OpenAI GPT-4: Deep Analysis]
-    end
+    Config --> System
     
-    subgraph System[Core System]
-        DataProvider[Enhanced Data Provider]
-        Cache[data cache directory]
-        
-        Mode1[Mode 1: Single Stock Analysis]
-        Mode2[Mode 2: Portfolio Generation]
-        Mode3[Mode 3: QA & Learning]
-    end
-    
-    subgraph Storage[Data Storage]
-        QAStorage[data qa system directory]
-        PerfStorage[data performance analysis directory]
-        Config[config model yaml]
-    end
-    
-    Polygon --> DataProvider
-    YFinance --> DataProvider
-    Perplexity --> DataProvider
-    OpenAI --> Mode3
-    
-    DataProvider --> Cache
-    Cache --> Mode1
-    Cache --> Mode2
-    
-    Mode1 --> QAStorage
-    Mode2 --> QAStorage
-    
-    QAStorage --> Mode3
-    Mode3 --> PerfStorage
-    Mode3 --> Config
-    
-    Config --> Mode1
-    Config --> Mode2
-    
+    style Sources fill:#FF9800,color:#fff
     style System fill:#4CAF50,color:#fff
-    style Storage fill:#2196F3,color:#fff
-    style External fill:#FF9800,color:#fff
+    style Config fill:#F44336,color:#fff
 ```
 
 ---
 
-## 📝 Performance Metrics
+## 🚀 Quick Start Guide
 
-| Metric | Mode 1 | Mode 2 | Mode 3 (Performance Analysis) |
-|--------|--------|--------|-------------------------------|
-| **Typical Duration** | 10-15 seconds | 2-4 minutes | 2-5 minutes |
-| **API Calls** | 5-10 | 50-200 | 100-500 |
-| **Stocks Analyzed** | 1 | 5-50 | All with over 15 percent movement |
-| **Outputs** | 1 recommendation | 1 portfolio | Learning updates plus config changes |
-| **Storage Impact** | ~50KB | ~500KB-2MB | ~1-5MB |
-| **Autonomous Actions** | None | None | **Yes: Modifies config model yaml** |
+### For Investment Analysis
+1. **Analyze a single stock**: Enter ticker → Get AI recommendation in 15 seconds
+2. **Build a portfolio**: Set parameters → Get optimized portfolio in 2-4 minutes
+3. **Review weekly**: Run Performance Analysis → System improves automatically
 
----
+### For System Learning
+- **Connect Google Sheets**: Track all stocks and their performance
+- **Run Performance Analysis**: Weekly or after major market moves
+- **Let it learn**: System automatically adjusts weights and improves
 
-## 🎯 Key Features Summary
-
-### Mode 1: Single Stock Analysis
-- Real-time data from multiple sources
-- 5 specialized AI agents
-- IPS alignment checking
-- Comprehensive reporting
-- Automatic QA tracking
-
-### Mode 2: Portfolio Generation
-- Parallel bulk processing (50-60 percent faster)
-- Smart diversification rules
-- Multiple weighting strategies
-- Quality checks and constraints
-- Full portfolio analytics
-
-### Mode 3: QA & Learning Center
-- Continuous performance tracking
-- Smart alert system
-- Pattern identification
-- **Autonomous self-adjustment**
-- **Automatically modifies agent weights**
-- **Learns from mistakes**
-- Google Sheets integration
+### What Makes This Special
+- ✅ **5 Specialized AI Agents**: Each expert in different aspects
+- ✅ **Parallel Processing**: Fast bulk analysis (50+ stocks in ~3 seconds)
+- ✅ **Autonomous Learning**: System improves itself automatically
+- ✅ **Full Transparency**: Complete audit trail of all decisions
+- ✅ **IPS Compliance**: Respects your investment policy and risk tolerance
 
 ---
 
-## 🚀 Getting Started
+## � Key Insights
 
-1. **Single Stock Analysis**: Enter ticker → Get recommendation in 10-15 seconds
-2. **Portfolio Generation**: Set parameters → Get diversified portfolio in 2-4 minutes  
-3. **Performance Analysis**: Run weekly → System learns and improves automatically
+### Why Multiple AI Agents?
+Different aspects of investing require different expertise:
+- **Value Agent**: Looks at fundamentals and valuation
+- **Growth Agent**: Analyzes momentum and trajectory
+- **Sentiment Agent**: Interprets news and market sentiment
+- **Macro Agent**: Considers broader market conditions
+- **Risk Agent**: Assesses volatility and downside protection
 
-The system continuously learns from its performance and automatically adjusts its configuration to improve future predictions. No manual intervention required!
+### Why Autonomous Learning?
+Markets change constantly. What worked last quarter may not work now. The system:
+- Detects when agents miss important signals
+- Identifies patterns in successful vs failed predictions
+- Automatically adjusts agent weights to improve
+- Creates backups and audit trails for transparency
+
+### Why Google Sheets Integration?
+- Easy to review and share performance data
+- Automatic sync of all tracked stocks
+- Visual tracking of recommendations vs reality
+- Export-friendly for further analysis
 
 ---
 
-*These diagrams are rendered natively on GitHub. View them at: https://github.com/yaboibean2/Wharton/blob/main/SYSTEM_FLOW_DIAGRAMS.md*
+*View these interactive diagrams on GitHub: https://github.com/yaboibean2/Wharton*
