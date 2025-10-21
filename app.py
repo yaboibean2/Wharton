@@ -3567,7 +3567,20 @@ def run_single_stock_analysis(ticker, analysis_date):
     with st.spinner(f"Analyzing {ticker}..."):
         # Initialize orchestrator
         if 'orchestrator' not in st.session_state:
-            st.session_state.orchestrator = PortfolioOrchestrator()
+            # Ensure configs and data provider are initialized
+            if 'config_loader' not in st.session_state or st.session_state.config_loader is None:
+                st.session_state.config_loader = get_config_loader()
+            config_loader = st.session_state.config_loader
+            model_config = config_loader.load_model_config()
+            ips_config = config_loader.load_ips()
+            if 'data_provider' not in st.session_state or st.session_state.data_provider is None:
+                st.session_state.data_provider = EnhancedDataProvider()
+            enhanced_data_provider = st.session_state.data_provider
+            st.session_state.orchestrator = PortfolioOrchestrator(
+                model_config=model_config,
+                ips_config=ips_config,
+                enhanced_data_provider=enhanced_data_provider
+            )
         
         orchestrator = st.session_state.orchestrator
         
