@@ -433,10 +433,13 @@ Provide your analysis after the sentiment score."""
         """
         events = []
         keywords = {
-            'earnings_beat': ['beat', 'exceeds expectations', 'earnings surprise', 'strong quarter'],
-            'earnings_miss': ['miss', 'disappoints', 'below expectations', 'weak quarter'],
-            'guidance_raise': ['raises guidance', 'increases forecast', 'upgraded outlook'],
-            'guidance_cut': ['lowers guidance', 'cuts forecast', 'reduced outlook'],
+            'earnings_beat': ['beat', 'exceeds expectations', 'earnings surprise', 'strong quarter', 'beats estimates', 'stronger than expected', 'outperformed estimates'],
+            'earnings_miss': ['miss', 'disappoints', 'below expectations', 'weak quarter', 'missed estimates', 'fell short', 'weaker than expected'],
+            'earnings_report': ['reported earnings', 'quarterly earnings', 'earnings results', 'financial results', 'q1 earnings', 'q2 earnings', 'q3 earnings', 'q4 earnings', 'quarterly results', 'earnings call', 'earnings announcement'],
+            'guidance_raise': ['raises guidance', 'increases forecast', 'upgraded outlook', 'raised full-year', 'boosted outlook', 'increased guidance'],
+            'guidance_cut': ['lowers guidance', 'cuts forecast', 'reduced outlook', 'lowered full-year', 'cut outlook', 'reduced guidance'],
+            'revenue_beat': ['revenue beat', 'sales beat', 'top-line beat', 'revenue exceeded', 'sales exceeded'],
+            'revenue_miss': ['revenue miss', 'sales miss', 'top-line miss', 'revenue fell short', 'sales disappointed'],
             'litigation': ['lawsuit', 'sued', 'legal', 'investigation', 'regulatory'],
             'management_change': ['ceo', 'chief executive', 'management change', 'appoints'],
             'product_launch': ['launches', 'new product', 'unveils', 'announces'],
@@ -457,8 +460,11 @@ Provide your analysis after the sentiment score."""
         event_impacts = {
             'earnings_beat': 70,
             'earnings_miss': 30,
+            'earnings_report': 55,  # Neutral earnings report (no beat/miss info)
             'guidance_raise': 75,
             'guidance_cut': 25,
+            'revenue_beat': 65,
+            'revenue_miss': 35,
             'litigation': 35,
             'management_change': 50,  # Neutral
             'product_launch': 65,

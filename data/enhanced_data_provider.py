@@ -948,18 +948,24 @@ class EnhancedDataProvider:
             company_info = self._get_company_info(ticker)
             company_name = company_info.get('name', ticker)
             
-            # More specific, targeted query with enhanced context
+            # Enhanced query with EARNINGS PRIORITY for better detection
             news_query = f"""
-            Find the most recent and investment-relevant news about {ticker} ({company_name}) from the last 7-14 days. 
+            🚨 ENHANCED EARNINGS DETECTION + News Search for {ticker} ({company_name}) - Past 14 days:
             
-            PRIORITY SEARCH CRITERIA (in order of importance):
-            1. FINANCIAL PERFORMANCE: Quarterly/annual earnings, revenue beats/misses, guidance revisions, margin changes
-            2. ANALYST COVERAGE: Rating upgrades/downgrades, price target changes, initiation of coverage, sector comparisons
-            3. BUSINESS DEVELOPMENTS: New product launches, major partnerships, acquisitions, market expansion, regulatory approvals
-            4. CORPORATE ACTIONS: Stock splits, dividend announcements, share buybacks, spin-offs, insider trading
+            **ABSOLUTE PRIORITY #1 - EARNINGS SEARCH:**
+            Search comprehensively for earnings/financial reports using ALL these patterns:
+            - "{ticker} reported earnings", "{ticker} quarterly earnings", "{ticker} earnings results"
+            - "{company_name} earnings", "{company_name} quarterly results", "{company_name} financial results"
+            - "Q1/Q2/Q3/Q4 2024 earnings {ticker}", "{ticker} earnings call", "{ticker} EPS"
+            - "{ticker} beat/missed estimates", "{ticker} guidance", "{ticker} revenue results"
+            
+            **ADDITIONAL NEWS PRIORITIES:**
+            2. ANALYST COVERAGE: Rating upgrades/downgrades, price target changes, initiation of coverage
+            3. BUSINESS DEVELOPMENTS: New product launches, major partnerships, acquisitions, market expansion
+            4. CORPORATE ACTIONS: Stock splits, dividend announcements, share buybacks, spin-offs
             5. MANAGEMENT CHANGES: CEO/CFO appointments, strategic leadership shifts, board changes
-            6. SECTOR/COMPETITIVE NEWS: Industry trends affecting {ticker}, competitive positioning, market share changes
-            7. MACROECONOMIC IMPACT: How broader economic events specifically affect {ticker}'s business model
+            6. SECTOR/COMPETITIVE NEWS: Industry trends affecting {ticker}, competitive positioning
+            7. REGULATORY NEWS: FDA approvals, legal settlements, compliance issues
             
             ARTICLE REQUIREMENTS:
             - Must specifically mention "{ticker}" stock symbol or "{company_name}" company name

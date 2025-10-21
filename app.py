@@ -5517,7 +5517,7 @@ def generate_custom_recommendations(holdings, analysis_data, target_sectors, ris
 
 
 def get_portfolio_news_analysis(tickers, deep_analysis=None):
-    """Get comprehensive real-time news analysis using Perplexity AI."""
+    """Get comprehensive real-time news analysis using Perplexity AI with enhanced earnings detection."""
     
     # Check if Perplexity is available
     if not hasattr(st.session_state, 'perplexity_client') or st.session_state.perplexity_client is None:
@@ -5533,7 +5533,10 @@ regulatory changes, and competitive dynamics in your key sectors for optimal ris
 """.format(len(tickers))
     
     try:
-        # Build comprehensive prompt for Perplexity
+        # First, run dedicated earnings detection
+        earnings_info = detect_recent_earnings_reports(tickers, days_back=14)
+        
+        # Build comprehensive prompt for Perplexity with enhanced earnings focus
         ticker_list = ', '.join(tickers)
         sector_info = ""
         
@@ -5541,24 +5544,62 @@ regulatory changes, and competitive dynamics in your key sectors for optimal ris
             top_sectors = sorted(deep_analysis['sector_allocation'].items(), key=lambda x: x[1], reverse=True)[:3]
             sector_info = f"\nTop sector exposures: {', '.join([f'{s[0]} ({s[1]:.1f}%)' for s in top_sectors])}"
         
-        prompt = f"""Analyze the current market environment and recent news (past 7 days) for this investment portfolio:
+        # Create earnings summary for context
+        earnings_summary = ""
+        if earnings_info:
+            earnings_found = [ticker for ticker, info in earnings_info.items() if info.get('found', False)]
+            if earnings_found:
+                earnings_summary = f"\n\n🚨 RECENT EARNINGS DETECTED: {', '.join(earnings_found)} recently reported earnings."
+            else:
+                earnings_summary = f"\n\n📊 EARNINGS STATUS: No recent earnings found for portfolio holdings in past 14 days."
+        
+        prompt = f"""Analyze the current market environment and recent news (past 14 days) for this investment portfolio:
 
 Holdings: {ticker_list}
-Total positions: {len(tickers)}{sector_info}
+Total positions: {len(tickers)}{sector_info}{earnings_summary}
 
-Provide a comprehensive analysis covering:
+Provide a comprehensive market analysis covering:
 
-1. **Overall Market Context**: Current market conditions, trends, and sentiment affecting these holdings
-2. **Company-Specific News**: Recent earnings, announcements, or significant developments for each ticker
-3. **Sector Trends**: Industry dynamics and rotation patterns affecting the portfolio sectors
-4. **Risk Factors**: Immediate concerns, regulatory issues, or competitive threats
-5. **Opportunities**: Positive catalysts, favorable trends, or underappreciated developments
-6. **Portfolio Impact Assessment**: How recent news affects the overall portfolio positioning
+1. **🚨 EARNINGS & FINANCIAL REPORTS**: 
+   - Focus on any earnings reports, quarterly results, or financial updates from portfolio holdings
+   - Include EPS results vs estimates, revenue performance, guidance changes
+   - Analyze market reactions and analyst responses to any earnings
+   - Highlight which companies have upcoming earnings if relevant
 
-Focus on actionable insights and be specific about which holdings are impacted by each development. 
-Rate the overall news sentiment as Positive, Neutral, or Negative with brief justification.
+2. **Company-Specific Developments**: 
+   - Major announcements, partnerships, product launches, acquisitions
+   - Management changes, strategic initiatives, regulatory approvals
+   - Analyst upgrades/downgrades and price target changes
 
-Format the response in clear sections with bullet points for easy reading."""
+3. **Market Environment & Sentiment**: 
+   - Current market conditions and macroeconomic factors
+   - Risk-on vs risk-off sentiment and impact on holdings
+   - Interest rate environment and sector rotation patterns
+
+4. **Sector Analysis**: 
+   - Industry dynamics affecting the portfolio sectors
+   - Competitive developments and market share changes
+   - Regulatory or technological disruptions
+
+5. **Risk Assessment**: 
+   - Immediate concerns, geopolitical risks, regulatory issues
+   - Earnings disappointments or guidance cuts
+   - Technical or fundamental deterioration
+
+6. **Opportunities & Catalysts**: 
+   - Positive earnings surprises or guidance raises
+   - Favorable industry trends or policy changes
+   - Undervalued opportunities in current holdings
+
+7. **Portfolio Positioning Impact**: 
+   - How recent developments affect overall portfolio risk/return
+   - Suggestions for position sizing or rebalancing
+   - Key events to monitor in coming weeks
+
+Focus on specific, actionable insights for each holding. Be concrete about impacts on stock prices and investment thesis.
+Rate overall portfolio news sentiment as: **Positive**, **Neutral**, or **Negative** with clear reasoning.
+
+Format with clear headers and bullet points for easy reading."""
 
         # Call Perplexity API
         response = st.session_state.perplexity_client.chat.completions.create(
@@ -5579,13 +5620,32 @@ Format the response in clear sections with bullet points for easy reading."""
         
         analysis_text = response.choices[0].message.content.strip()
         
+        # Add earnings detection summary
+        earnings_display = ""
+        if earnings_info:
+            earnings_display = "\n### 🔍 Earnings Detection Summary\n\n"
+            for ticker, info in earnings_info.items():
+                if info.get('found', False):
+                    earnings_display += f"**{ticker}**: ✅ Recent earnings found\n"
+                    if info.get('date'):
+                        earnings_display += f"  - Date: {info['date']}\n"
+                    if info.get('eps'):
+                        earnings_display += f"  - EPS: {info['eps']}\n"
+                    if info.get('revenue'):
+                        earnings_display += f"  - Revenue: {info['revenue']}\n"
+                    if info.get('summary'):
+                        earnings_display += f"  - Summary: {info['summary']}\n"
+                else:
+                    earnings_display += f"**{ticker}**: ❌ No recent earnings found\n"
+            earnings_display += "\n---\n\n"
+        
         # Add metadata
         analysis_header = f"""## 📰 Real-Time Portfolio News & Market Analysis
-*Analysis generated on {datetime.now().strftime('%Y-%m-%d at %H:%M')} using Perplexity AI with real-time data*
+*Analysis generated on {datetime.now().strftime('%Y-%m-%d at %H:%M')} using Enhanced Earnings Detection + Perplexity AI*
 
 ---
 
-"""
+{earnings_display}"""
         
         return analysis_header + analysis_text
         
@@ -5607,6 +5667,101 @@ Your portfolio of {len(tickers)} holdings includes: {', '.join(tickers[:5])}{'..
 
 **Next Steps:** Check API configuration or try again later for comprehensive real-time analysis.
 """
+
+
+def detect_recent_earnings_reports(tickers, days_back=14):
+    """
+    Dedicated function to detect recent earnings reports for portfolio tickers.
+    This runs a focused search specifically for earnings detection.
+    """
+    if not hasattr(st.session_state, 'perplexity_client') or st.session_state.perplexity_client is None:
+        return {}
+    
+    try:
+        ticker_list = ', '.join(tickers)
+        
+        prompt = f"""EARNINGS DETECTION MISSION: Search comprehensively for earnings reports from these tickers in the past {days_back} days:
+
+Tickers to check: {ticker_list}
+
+For EACH ticker, determine if they reported quarterly earnings in the past {days_back} days.
+
+Search specifically for these patterns:
+- "[TICKER] reported Q1/Q2/Q3/Q4 2024 earnings"
+- "[TICKER] quarterly results"
+- "[TICKER] earnings call"
+- "[TICKER] financial results"
+- "[TICKER] beats/misses estimates"
+- "earnings announcement [TICKER]"
+
+For EACH ticker, respond in this EXACT format:
+
+**[TICKER]**: [YES/NO]
+- Date: [MM/DD/YYYY or "Not found"]
+- EPS: [Actual vs Estimate or "Not found"]
+- Revenue: [Actual vs Estimate or "Not found"] 
+- Key: [One sentence summary or "No earnings found"]
+
+CRITICAL: You must provide a response for EVERY ticker in the list, even if no earnings found.
+Be thorough - check the past {days_back} days carefully for each company."""
+
+        response = st.session_state.perplexity_client.chat.completions.create(
+            model="sonar-pro",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an earnings detection specialist. Your only job is to find recent quarterly earnings reports. Be thorough and accurate."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.1,  # Very low for factual accuracy
+            max_tokens=1500
+        )
+        
+        earnings_text = response.choices[0].message.content.strip()
+        
+        # Parse the response to extract earnings info per ticker
+        earnings_info = {}
+        current_ticker = None
+        
+        for line in earnings_text.split('\n'):
+            line = line.strip()
+            if line.startswith('**') and line.endswith('**:'):
+                # Extract ticker
+                current_ticker = line.replace('**', '').replace(':', '').strip()
+                earnings_info[current_ticker] = {
+                    'found': False,
+                    'date': None,
+                    'eps': None,
+                    'revenue': None,
+                    'summary': None
+                }
+            elif current_ticker and line.startswith('-'):
+                # Parse details
+                if 'Date:' in line:
+                    date_part = line.split('Date:')[1].strip()
+                    earnings_info[current_ticker]['date'] = date_part
+                elif 'EPS:' in line:
+                    eps_part = line.split('EPS:')[1].strip()
+                    earnings_info[current_ticker]['eps'] = eps_part
+                elif 'Revenue:' in line:
+                    revenue_part = line.split('Revenue:')[1].strip()
+                    earnings_info[current_ticker]['revenue'] = revenue_part
+                elif 'Key:' in line:
+                    key_part = line.split('Key:')[1].strip()
+                    earnings_info[current_ticker]['summary'] = key_part
+                    # Determine if earnings were found
+                    if 'No earnings found' not in key_part and 'Not found' not in key_part:
+                        earnings_info[current_ticker]['found'] = True
+        
+        return earnings_info
+        
+    except Exception as e:
+        logger.error(f"Error in earnings detection: {e}")
+        return {}
 
 
 def get_portfolio_upcoming_events(tickers, timeframe, deep_analysis, format_type="Detailed"):
@@ -5953,7 +6108,7 @@ Enable Perplexity API for comprehensive real-time news and market intelligence.
 """
     
     try:
-        # Build detailed prompt for individual ticker
+        # Build detailed prompt for individual ticker with enhanced earnings focus
         prompt = f"""Provide a comprehensive news and market analysis for {ticker}:
 
 Position Context:
@@ -5961,36 +6116,54 @@ Position Context:
 - Current recommendation: {analysis_data.get('recommendation', 'N/A')}
 - Analysis date: {analysis_data.get('timestamp', 'Unknown')}
 
+**🚨 CRITICAL: EARNINGS PRIORITY SEARCH**
+First and most importantly, search thoroughly for ANY earnings reports, quarterly results, or financial announcements for {ticker} in the past 21 days. Look specifically for:
+- "Q1/Q2/Q3/Q4 2024 earnings", "quarterly earnings", "financial results"
+- "reported earnings", "earnings call", "earnings announcement"
+- "EPS results", "revenue results", "earnings beat/miss"
+- "quarterly guidance", "earnings guidance", "outlook"
+
 Provide detailed analysis covering:
 
-1. **Breaking News & Recent Developments** (past 7 days):
-   - Earnings reports, guidance, or analyst updates
-   - Product launches, partnerships, or acquisitions
+1. **🏆 EARNINGS ANALYSIS (MANDATORY FIRST SECTION)**:
+   - Did {ticker} report earnings in the past 21 days? (YES/NO)
+   - If YES: Exact date, EPS actual vs estimate, revenue actual vs estimate
+   - Management guidance changes, key metrics, analyst reactions
+   - Stock price reaction and trading volume response
+   - If NO: Explicitly state "No earnings reported in past 21 days" and estimate next earnings date
+
+2. **Breaking News & Recent Developments** (past 14 days):
+   - Product launches, partnerships, or acquisitions  
    - Management changes or strategic announcements
    - Any regulatory or legal developments
+   - Analyst upgrades/downgrades and price target changes
 
-2. **Stock Performance & Market Reaction**:
-   - Recent price action and volume trends
-   - Analyst rating changes and price target adjustments
-   - Institutional buying/selling activity if notable
+3. **Stock Performance & Market Reaction**:
+   - Recent price action and volume trends (past 2 weeks)
    - Technical levels and momentum indicators
+   - Institutional buying/selling activity if notable
+   - Options activity or short interest changes
 
-3. **Competitive Landscape**:
+4. **Competitive Landscape & Industry Position**:
    - Industry trends affecting the company
    - Competitor moves or market share dynamics
    - Disruptive threats or emerging opportunities
+   - Sector rotation impacts
 
-4. **Forward Outlook**:
-   - Upcoming catalysts (earnings date, product releases, etc.)
+5. **Forward Outlook & Catalysts**:
+   - Upcoming catalysts (next earnings date, product releases, etc.)
    - Consensus expectations and potential surprises
    - Risk factors to monitor in coming weeks/months
+   - Key dates to watch
 
-5. **Portfolio Recommendation**:
-   - Given the {allocation}% allocation, should this position be: Maintained, Increased, Decreased, or Exited?
+6. **Portfolio Action Recommendation**:
+   - Given the {allocation}% allocation, should this position be: MAINTAIN, INCREASE, DECREASE, or EXIT?
    - Specific price levels or events to watch
    - Suggested action items for the investor
+   - Timing considerations for any changes
 
-Be specific with dates, numbers, and actionable insights. Rate overall sentiment as Bullish, Neutral, or Bearish."""
+**CRITICAL REQUIREMENT**: Must explicitly address earnings in section 1, even if none found.
+Be specific with dates, numbers, and actionable insights. Rate overall sentiment as Bullish, Neutral, or Bearish with specific reasoning."""
 
         # Call Perplexity API
         response = st.session_state.perplexity_client.chat.completions.create(
@@ -9118,7 +9291,7 @@ def update_google_sheets_qa_analyses(analysis_archive: dict, show_price_ui: bool
                     'EPS': safe_float(fundamentals.get('eps'), 2),
                     'Week 52 Low': safe_float(fundamentals.get('week_52_low'), 2),
                     'Week 52 High': safe_float(fundamentals.get('week_52_high'), 2),
-                    'Is EFT?': safe_value(fundamentals.get('is_etf', 'No')),
+                    'Is ETF?': safe_value(fundamentals.get('is_etf', 'No')),
                     'Market Cap': safe_float(fundamentals.get('market_cap'), 0),
                     'Summary': (safe_value(fundamentals.get('description', fundamentals.get('name', 'N/A'))) or 'N/A')[:500],
                     'Value Agent Score': safe_float(agent_scores.get('value_agent'), 1),
@@ -9159,7 +9332,7 @@ def update_google_sheets_qa_analyses(analysis_archive: dict, show_price_ui: bool
         column_order = ['Ticker', 'Recommendation', 'Confidence Score', 'Price at Analysis', 'Current Price', 'Price Change %']
         
         column_order.extend([
-            'Beta', 'EPS', 'Week 52 Low', 'Week 52 High', 'Is EFT?', 'Market Cap',
+            'Beta', 'EPS', 'Week 52 Low', 'Week 52 High', 'Is ETF?', 'Market Cap',
             'Value Agent Score', 'Growth Momentum Agent Score', 'Macro Regime Agent Score',
             'Risk Agent Score', 'Sentiment Agent Score', 'Client Layer Agent Score',
             'Summary', 'Learning Agent Score',
