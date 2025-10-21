@@ -16,6 +16,26 @@ from pathlib import Path
 import yaml
 import json
 
+
+def safe_rerun():
+    """Safely rerun the app, handling WebSocket closure errors gracefully."""
+    try:
+        st.rerun()
+    except Exception:
+        # Ignore websocket closure errors that can occur when user navigates away
+        # or connection is interrupted during rerun
+        pass
+
+
+def get_session_state(key: str, default=None):
+    """Safely get a session state value with a default fallback."""
+    try:
+        return st.session_state.get(key, default)
+    except Exception:
+        # In case session state isn't initialized yet
+        return default
+
+
 # Setup page config
 st.set_page_config(
     page_title="Wharton Investment Analysis System",
@@ -58,18 +78,44 @@ logging.getLogger('asyncio').setLevel(logging.ERROR)
 import logging
 logger = logging.getLogger(__name__)
 
-# Initialize session state
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = False
-    st.session_state.data_provider = None
-    st.session_state.orchestrator = None
-    st.session_state.config_loader = None
-    st.session_state.client_data = None
-    st.session_state.qa_system = None
-    st.session_state.sheets_integration = None
-    st.session_state.sheets_enabled = False
-    st.session_state.sheets_auto_update = False
-    st.session_state.show_sheets_export = False
+
+def _init_session_state():
+    """Initialize session state variables safely."""
+    # Initialize all session state variables with defaults
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = False
+    if 'data_provider' not in st.session_state:
+        st.session_state.data_provider = None
+    if 'orchestrator' not in st.session_state:
+        st.session_state.orchestrator = None
+    if 'config_loader' not in st.session_state:
+        st.session_state.config_loader = None
+    if 'client_data' not in st.session_state:
+        st.session_state.client_data = None
+    if 'qa_system' not in st.session_state:
+        st.session_state.qa_system = None
+    if 'sheets_integration' not in st.session_state:
+        st.session_state.sheets_integration = None
+    if 'sheets_enabled' not in st.session_state:
+        st.session_state.sheets_enabled = False
+    if 'sheets_auto_update' not in st.session_state:
+        st.session_state.sheets_auto_update = False
+    if 'show_sheets_export' not in st.session_state:
+        st.session_state.show_sheets_export = False
+    if 'portfolio_holdings' not in st.session_state:
+        st.session_state.portfolio_holdings = {}
+    if 'analysis_notes' not in st.session_state:
+        st.session_state.analysis_notes = {}
+    if 'saved_weight_presets' not in st.session_state:
+        st.session_state.saved_weight_presets = {}
+    if 'custom_agent_weights' not in st.session_state:
+        st.session_state.custom_agent_weights = {
+            'value': 0.20,
+            'growth_momentum': 0.20,
+            'sentiment': 0.20,
+            'macro_regime': 0.20,
+            'risk': 0.20
+        }
 
 
 def get_client_profile_weights(client_name: str) -> dict:
@@ -191,8 +237,17 @@ def get_client_profile_weights(client_name: str) -> dict:
 
 def initialize_system():
     """Initialize the system components."""
-    if st.session_state.initialized:
-        return True
+    # Safety check: ensure initialized flag exists
+    try:
+        if 'initialized' not in st.session_state:
+            st.session_state.initialized = False
+        
+        if st.session_state.initialized:
+            return True
+    except Exception as e:
+        st.error(f"⚠️ Session state error: {e}")
+        st.info("Please refresh the page to restart the application.")
+        return False
     
     # Check API keys
     if not os.getenv('OPENAI_API_KEY'):
@@ -202,82 +257,92 @@ def initialize_system():
     if not os.getenv('ALPHA_VANTAGE_API_KEY'):
         st.warning("⚠️ ALPHA_VANTAGE_API_KEY not found. Some features may be limited.")
     
-    try:
-        # Initialize components
-        st.session_state.config_loader = get_config_loader()
-        
-        # Use Enhanced Data Provider with fallbacks
-        st.session_state.data_provider = EnhancedDataProvider()
-        
-        # Load configurations
-        model_config = st.session_state.config_loader.load_model_config()
-        ips_config = st.session_state.config_loader.load_ips()
-        
-        # Initialize AI clients for advanced features
-        openai_client = None
-        perplexity_client = None
-        
+    # Show initialization progress
+    with st.spinner("🚀 Initializing system components..."):
         try:
-            if OpenAI is not None:
-                openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-                st.session_state.openai_client = openai_client
-            else:
-                st.warning("⚠️ OpenAI library not available. Please install: pip install openai")
+            # Initialize components
+            st.session_state.config_loader = get_config_loader()
+            
+            # Use Enhanced Data Provider with fallbacks
+            st.session_state.data_provider = EnhancedDataProvider()
+            
+            # Load configurations
+            model_config = st.session_state.config_loader.load_model_config()
+            ips_config = st.session_state.config_loader.load_ips()
+        
+            # Initialize AI clients for advanced features
+            openai_client = None
+            perplexity_client = None
+            
+            try:
+                if OpenAI is not None:
+                    openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+                    st.session_state.openai_client = openai_client
+                else:
+                    st.warning("⚠️ OpenAI library not available. Please install: pip install openai")
+            except Exception as e:
+                st.warning(f"⚠️ OpenAI client initialization failed: {e}")
+            
+            try:
+                if OpenAI is not None:
+                    perplexity_client = OpenAI(
+                        api_key=os.getenv('PERPLEXITY_API_KEY'),
+                        base_url="https://api.perplexity.ai"
+                    )
+                    st.session_state.perplexity_client = perplexity_client
+                else:
+                    st.warning("⚠️ OpenAI library not available for Perplexity. Please install: pip install openai")
+            except Exception as e:
+                st.warning(f"⚠️ Perplexity client initialization failed: {e}")
+            
+            # Initialize orchestrator with enhanced data provider and AI clients
+            st.session_state.orchestrator = PortfolioOrchestrator(
+                model_config=model_config,
+                ips_config=ips_config,
+                enhanced_data_provider=st.session_state.data_provider,
+                openai_client=openai_client,
+                perplexity_client=perplexity_client
+            )
+            
+            # Initialize QA system
+            st.session_state.qa_system = QASystem()
+            
+            # Initialize Step Time Manager for persistent step-level timing
+            from utils.step_time_manager import StepTimeManager
+            if 'step_time_manager' not in st.session_state:
+                st.session_state.step_time_manager = StepTimeManager()
+                print(st.session_state.step_time_manager.get_summary())
+            
+            # Initialize analysis time tracking
+            if 'analysis_times' not in st.session_state:
+                st.session_state.analysis_times = []  # List of historical analysis times in seconds
+            
+            # Initialize current analysis tracking
+            if 'current_analysis_start' not in st.session_state:
+                st.session_state.current_analysis_start = None
+            if 'current_step_start' not in st.session_state:
+                st.session_state.current_step_start = None
+            if 'last_step' not in st.session_state:
+                st.session_state.last_step = 0
+            
+            st.session_state.initialized = True
+            return True
+            
         except Exception as e:
-            st.warning(f"⚠️ OpenAI client initialization failed: {e}")
-        
-        try:
-            if OpenAI is not None:
-                perplexity_client = OpenAI(
-                    api_key=os.getenv('PERPLEXITY_API_KEY'),
-                    base_url="https://api.perplexity.ai"
-                )
-                st.session_state.perplexity_client = perplexity_client
-            else:
-                st.warning("⚠️ OpenAI library not available for Perplexity. Please install: pip install openai")
-        except Exception as e:
-            st.warning(f"⚠️ Perplexity client initialization failed: {e}")
-        
-        # Initialize orchestrator with enhanced data provider and AI clients
-        st.session_state.orchestrator = PortfolioOrchestrator(
-            model_config=model_config,
-            ips_config=ips_config,
-            enhanced_data_provider=st.session_state.data_provider,
-            openai_client=openai_client,
-            perplexity_client=perplexity_client
-        )
-        
-        # Initialize QA system
-        st.session_state.qa_system = QASystem()
-        
-        # Initialize Step Time Manager for persistent step-level timing
-        from utils.step_time_manager import StepTimeManager
-        if 'step_time_manager' not in st.session_state:
-            st.session_state.step_time_manager = StepTimeManager()
-            print(st.session_state.step_time_manager.get_summary())
-        
-        # Initialize analysis time tracking
-        if 'analysis_times' not in st.session_state:
-            st.session_state.analysis_times = []  # List of historical analysis times in seconds
-        
-        # Initialize current analysis tracking
-        if 'current_analysis_start' not in st.session_state:
-            st.session_state.current_analysis_start = None
-        if 'current_step_start' not in st.session_state:
-            st.session_state.current_step_start = None
-        if 'last_step' not in st.session_state:
-            st.session_state.last_step = 0
-        
-        st.session_state.initialized = True
-        return True
-        
-    except Exception as e:
-        st.error(f"❌ System initialization failed: {e}")
-        return False
+            st.error(f"❌ System initialization failed: {e}")
+            st.error("Please check your .env file and API keys, then refresh the page.")
+            import traceback
+            with st.expander("🔍 Error Details"):
+                st.code(traceback.format_exc())
+            return False
 
 
 def main():
     """Main application entry point."""
+    
+    # CRITICAL: Initialize session state variables FIRST before any UI rendering
+    # This prevents "SessionInfo before it was initialized" errors
+    _init_session_state()
     
     # Header
     st.title("Wharton Investment Analysis System")
@@ -288,26 +353,35 @@ def main():
     if not initialize_system():
         st.stop()
     
-    # Check for stocks due for weekly review and show notification
-    if st.session_state.qa_system:
-        stocks_due = st.session_state.qa_system.get_stocks_due_for_review()
-        if stocks_due:
-            st.sidebar.warning(f"⏰ {len(stocks_due)} stock(s) due for weekly review")
-            st.sidebar.info("Visit QA & Learning Center to conduct reviews")
+    # Check for stocks due for weekly review and show notification - use safe access
+    try:
+        qa_system = get_session_state('qa_system', None)
+        if qa_system:
+            stocks_due = qa_system.get_stocks_due_for_review()
+            if stocks_due:
+                st.sidebar.warning(f"⏰ {len(stocks_due)} stock(s) due for weekly review")
+                st.sidebar.info("Visit QA & Learning Center to conduct reviews")
+    except Exception as e:
+        # Silently ignore errors checking for reviews - non-critical feature
+        pass
     
     # Google Sheets Settings
     st.sidebar.markdown("---")
     st.sidebar.subheader("📊 Google Sheets Integration")
     
     # Ensure Google Sheets session state variables exist (must be first!)
-    if 'sheets_integration' not in st.session_state:
-        st.session_state.sheets_integration = get_sheets_integration()
-    if 'sheets_enabled' not in st.session_state:
-        st.session_state.sheets_enabled = False
-    if 'sheets_auto_update' not in st.session_state:
-        st.session_state.sheets_auto_update = False
-    
-    sheets_integration = st.session_state.sheets_integration
+    try:
+        if 'sheets_integration' not in st.session_state:
+            st.session_state.sheets_integration = get_sheets_integration()
+        if 'sheets_enabled' not in st.session_state:
+            st.session_state.sheets_enabled = False
+        if 'sheets_auto_update' not in st.session_state:
+            st.session_state.sheets_auto_update = False
+        
+        sheets_integration = get_session_state('sheets_integration', None)
+    except Exception as e:
+        st.sidebar.error(f"⚠️ Error initializing Google Sheets: {e}")
+        sheets_integration = None
     
     # Safety check: ensure sheets_integration is not None
     if sheets_integration is None:
@@ -599,7 +673,7 @@ def stock_analysis_page():
                     if st.button("📂 Load Preset", key="load_preset_btn"):
                         st.session_state.custom_agent_weights = st.session_state.saved_weight_presets[preset_to_load].copy()
                         st.success(f"✅ Loaded preset: {preset_to_load}")
-                        st.rerun()
+                        safe_rerun()
                 else:
                     st.info("No saved presets yet")
             
@@ -702,13 +776,17 @@ def stock_analysis_page():
                 import time
                 
                 # Initialize step tracking for this analysis
-                st.session_state.current_analysis_start = time.time()
-                st.session_state.current_step_start = time.time()
-                st.session_state.last_step = 0
+                try:
+                    st.session_state.current_analysis_start = time.time()
+                    st.session_state.current_step_start = time.time()
+                    st.session_state.last_step = 0
+                except Exception:
+                    pass  # Non-critical - continue without time tracking
                 
                 # Calculate estimated time
-                if st.session_state.analysis_times:
-                    avg_time = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
+                analysis_times = get_session_state('analysis_times', [])
+                if analysis_times:
+                    avg_time = sum(analysis_times) / len(analysis_times)
                     est_minutes = int(avg_time // 60)
                     est_seconds = int(avg_time % 60)
                     status_text.text(f"🚀 Starting analysis... (Est. {est_minutes}m {est_seconds}s)")
@@ -730,7 +808,12 @@ def stock_analysis_page():
                     date_str = datetime.now().strftime('%Y-%m-%d')
                 
                 # Run analysis with optional agent weights
-                result = st.session_state.orchestrator.analyze_stock(
+                orchestrator = get_session_state('orchestrator', None)
+                if not orchestrator:
+                    st.error("❌ System not initialized. Please refresh the page.")
+                    return
+                
+                result = orchestrator.analyze_stock(
                     ticker=ticker,
                     analysis_date=date_str,
                     agent_weights=agent_weights
@@ -825,18 +908,21 @@ def stock_analysis_page():
                 stock_status_text = st.empty()
                 
                 # Initialize step tracking for this stock
-                st.session_state.current_analysis_start = time.time()
-                st.session_state.current_step_start = time.time()
-                st.session_state.last_step = 0
-                
-                # Re-initialize progress tracking in session state for this stock
-                st.session_state.analysis_progress = {
-                    'step': 0,
-                    'total_steps': 10,
-                    'current_status': 'Starting analysis...',
-                    'progress_bar': stock_progress_bar,
-                    'status_text': stock_status_text
-                }
+                try:
+                    st.session_state.current_analysis_start = time.time()
+                    st.session_state.current_step_start = time.time()
+                    st.session_state.last_step = 0
+                    
+                    # Re-initialize progress tracking in session state for this stock
+                    st.session_state.analysis_progress = {
+                        'step': 0,
+                        'total_steps': 10,
+                        'current_status': 'Starting analysis...',
+                        'progress_bar': stock_progress_bar,
+                        'status_text': stock_status_text
+                    }
+                except Exception:
+                    pass  # Non-critical - continue without progress tracking
                 
                 try:
                     # Convert analysis_date to string format
@@ -849,7 +935,12 @@ def stock_analysis_page():
                         date_str = datetime.now().strftime('%Y-%m-%d')
                     
                     # Run analysis for this stock
-                    result = st.session_state.orchestrator.analyze_stock(
+                    orchestrator = get_session_state('orchestrator', None)
+                    if not orchestrator:
+                        st.error(f"❌ System not initialized for {stock_ticker}. Skipping...")
+                        continue
+                    
+                    result = orchestrator.analyze_stock(
                         ticker=stock_ticker,
                         analysis_date=date_str,
                         agent_weights=agent_weights
@@ -858,11 +949,17 @@ def stock_analysis_page():
                     # Track time for this stock
                     stock_end_time = time.time()
                     stock_duration = stock_end_time - stock_start_time
-                    st.session_state.analysis_times.append(stock_duration)
-                    
-                    # Keep only last 50 times
-                    if len(st.session_state.analysis_times) > 50:
-                        st.session_state.analysis_times = st.session_state.analysis_times[-50:]
+                    try:
+                        analysis_times = get_session_state('analysis_times', [])
+                        if analysis_times is None:
+                            analysis_times = []
+                        analysis_times.append(stock_duration)
+                        # Keep only last 50 times
+                        if len(analysis_times) > 50:
+                            analysis_times = analysis_times[-50:]
+                        st.session_state.analysis_times = analysis_times
+                    except Exception:
+                        pass  # Non-critical
                     
                     # Clear individual progress indicators
                     stock_progress_bar.empty()
@@ -1750,7 +1847,7 @@ Formula: Blended Score = Weighted Sum / Total Weight
                 with open(notes_file, 'w') as f:
                     json.dump(st.session_state.analysis_notes, f, indent=2)
                 st.success("✅ Note cleared!")
-                st.rerun()
+                safe_rerun()
     
     # Show historical notes for this ticker
     ticker_notes = {k: v for k, v in st.session_state.analysis_notes.items() if k.startswith(f"{ticker}_") and v.strip()}
@@ -3588,7 +3685,7 @@ def run_single_stock_analysis(ticker, analysis_date):
             # Run the analysis
             result = orchestrator.analyze_stock(
                 ticker=ticker,
-                weights=st.session_state.custom_agent_weights,
+                agent_weights=st.session_state.custom_agent_weights,
                 analysis_date=analysis_date
             )
             
@@ -3620,9 +3717,10 @@ def run_multiple_stocks_analysis(tickers, analysis_date):
     # Display analysis
     st.subheader(f"Analysis Results for {len(tickers)} Stocks")
     
-    # Initialize orchestrator
+    # Use orchestrator from session state (already initialized in initialize_system)
     if 'orchestrator' not in st.session_state:
-        st.session_state.orchestrator = PortfolioOrchestrator()
+        st.error("System not initialized. Please refresh the page.")
+        return
     
     orchestrator = st.session_state.orchestrator
     
@@ -3638,7 +3736,7 @@ def run_multiple_stocks_analysis(tickers, analysis_date):
         try:
             result = orchestrator.analyze_stock(
                 ticker=ticker,
-                weights=st.session_state.custom_agent_weights,
+                agent_weights=st.session_state.custom_agent_weights,
                 analysis_date=analysis_date
             )
             
@@ -3664,19 +3762,20 @@ def run_portfolio_generation(challenge_context, selection_mode, num_stocks, reba
     st.subheader("Portfolio Generation Results")
     
     with st.spinner("Generating optimal portfolio..."):
-        # Initialize orchestrator
+        # Use orchestrator from session state (already initialized in initialize_system)
         if 'orchestrator' not in st.session_state:
-            st.session_state.orchestrator = PortfolioOrchestrator()
+            st.error("System not initialized. Please refresh the page.")
+            return
         
         orchestrator = st.session_state.orchestrator
         
         try:
             if selection_mode == "AI-Powered Selection (Recommended)":
-                # Use AI selection
-                portfolio_result = orchestrator.generate_ai_portfolio(
+                # Use AI selection - recommend_portfolio is the correct method
+                portfolio_result = orchestrator.recommend_portfolio(
                     challenge_context=challenge_context,
-                    num_stocks=num_stocks,
-                    risk_profile=risk_profile.lower()
+                    num_positions=num_stocks
+                    # Note: risk_profile is handled within the IPS config
                 )
             else:
                 # Manual mode - would need ticker input (simplified for now)
@@ -3953,7 +4052,12 @@ Focus on high-quality companies with strong fundamentals and growth potential.""
                 status_text.text("Stage 1/4: AI Ticker Selection (Searching ALL market caps for best opportunities)...")
                 progress_bar.progress(25)
                 
-                result = st.session_state.orchestrator.recommend_portfolio(
+                orchestrator = get_session_state('orchestrator', None)
+                if not orchestrator:
+                    st.error("❌ System not initialized. Please refresh the page.")
+                    return
+                
+                result = orchestrator.recommend_portfolio(
                     challenge_context=challenge_context,
                     tickers=tickers,
                     num_positions=num_positions
@@ -3970,8 +4074,12 @@ Focus on high-quality companies with strong fundamentals and growth potential.""
                 
                 status_text.text("✅ Portfolio generation complete!")
                 
-                # Store result in session state
-                st.session_state.portfolio_result = result
+                # Store result in session state - use safe access
+                try:
+                    st.session_state.portfolio_result = result
+                except Exception as state_error:
+                    st.warning(f"Could not save to session: {state_error}")
+                    # Continue anyway - we can still display the result
                 
                 # Log ALL analyzed stocks to QA archive (every stock gets same treatment as individual analysis)
                 status_text.text("📝 Logging all analyzed stocks to QA archive...")
@@ -4062,15 +4170,18 @@ Focus on high-quality companies with strong fundamentals and growth potential.""
                 
                 status_text.text(f"✅ Logged {len(all_analyses)} analyses to QA archive")
                 
-                # Auto-update Google Sheets if enabled
-                if st.session_state.sheets_auto_update and st.session_state.sheets_integration.sheet:
+                # Auto-update Google Sheets if enabled - use safe access
+                sheets_auto_update = get_session_state('sheets_auto_update', False)
+                sheets_integration = get_session_state('sheets_integration', None)
+                if sheets_auto_update and sheets_integration and hasattr(sheets_integration, 'sheet') and sheets_integration.sheet:
                     status_text.text("📊 Updating Google Sheets...")
                     
                     # Update both QA Analyses sheet (all stocks) and Portfolio Recommendations sheet (selected only)
                     sheets_success = update_google_sheets_portfolio(result)
                     
                     # Also update QA analyses with all analyzed stocks
-                    if hasattr(st.session_state, 'qa_system') and st.session_state.qa_system:
+                    qa_system = get_session_state('qa_system', None)
+                    if qa_system:
                         qa_archive = st.session_state.qa_system.get_analysis_archive()
                         update_google_sheets_qa_analyses(qa_archive)
                     
@@ -4778,7 +4889,7 @@ def portfolio_management_page():
                 if selected_portfolio and st.button("📂 Load Portfolio"):
                     st.session_state.portfolio_holdings = saved_portfolios[selected_portfolio]['holdings']
                     st.success(f"Loaded portfolio: {selected_portfolio}")
-                    st.rerun()
+                    safe_rerun()
         
         with col2:
             # Save current portfolio
@@ -4792,7 +4903,7 @@ def portfolio_management_page():
             # Clear portfolio button
             if st.session_state.portfolio_holdings and st.button("🗑️ Clear Portfolio"):
                 st.session_state.portfolio_holdings = {}
-                st.rerun()
+                safe_rerun()
         
         col1, col2 = st.columns([2, 1])
         
@@ -5265,7 +5376,7 @@ def portfolio_management_page():
                                     deep_analysis
                                 )
                                 st.session_state.portfolio_news_cache = news_analysis
-                                st.rerun()
+                                safe_rerun()
                     
                     # Macro Market Overview
                     elif analysis_type == "Macro Overview":
@@ -6877,7 +6988,7 @@ def qa_learning_center_page():
             qa_system.all_analyses = qa_system._load_all_analyses()
             qa_system.reviews = qa_system._load_reviews()
             st.success("QA data refreshed!")
-            st.rerun()
+            safe_rerun()
     
     # Get analysis archive first
     analysis_archive = qa_system.get_analysis_archive()
@@ -7040,7 +7151,7 @@ def qa_learning_center_page():
             
             if st.button("❌ Close"):
                 st.session_state.show_batch_export = False
-                st.rerun()
+                safe_rerun()
     
     # Show Google Sheets export interface if requested
     if st.session_state.get('show_sheets_export', False):
@@ -7063,7 +7174,7 @@ def qa_learning_center_page():
             
             if st.button("❌ Close", key="close_sheets_export"):
                 st.session_state.show_sheets_export = False
-                st.rerun()
+                safe_rerun()
     
     # Get data for display
     qa_summary = qa_system.get_qa_summary()
@@ -7563,7 +7674,7 @@ def qa_learning_center_page():
                                     analysis_archive = qa_system.get_analysis_archive()
                                     update_google_sheets_qa_analyses(analysis_archive, show_price_ui=False)
                                 st.success(f"✅ Deleted all analyses for {ticker}")
-                                st.rerun()
+                                safe_rerun()
                             else:
                                 st.error(f"❌ Failed to delete analyses for {ticker}")
                     
@@ -7689,7 +7800,7 @@ def qa_learning_center_page():
                                         analysis_archive = qa_system.get_analysis_archive()
                                         update_google_sheets_qa_analyses(analysis_archive, show_price_ui=False)
                                     st.success(f"✅ Deleted analysis from {analysis.timestamp.strftime('%Y-%m-%d %H:%M')} for {ticker}")
-                                    st.rerun()
+                                    safe_rerun()
                                 else:
                                     st.error(f"❌ Failed to delete analysis")
                         
@@ -7764,7 +7875,7 @@ def qa_learning_center_page():
                                         
                                         if review:
                                             st.success(f"✅ Review completed for {ticker}")
-                                            st.rerun()
+                                            safe_rerun()
                                         else:
                                             st.error(f"Failed to complete review for {ticker}")
                                     else:
@@ -7883,7 +7994,7 @@ def qa_learning_center_page():
                             
                             if review:
                                 st.success("✅ Manual review completed")
-                                st.rerun()
+                                safe_rerun()
             else:
                 st.info("No recommendations logged yet. Analyze some stocks first!")
         
@@ -7897,26 +8008,36 @@ def qa_learning_center_page():
             })
     
     with tab5:
-        st.subheader("🔬 Performance Analysis & Model Improvement")
-        st.write("**Analyze stocks that moved significantly to identify patterns and improve the model.**")
+        st.subheader("🔬 Performance Analysis V2 - Fast & Reliable")
+        st.write("**Analyze significant stock movements to improve the model. NEW: Faster, more reliable, with actionable insights.**")
         st.markdown("---")
         
-        # Initialize Performance Analysis Engine
+        # Initialize Performance Analysis Engine V2 (NEW)
         try:
-            from utils.performance_analysis_engine import PerformanceAnalysisEngine
+            from utils.performance_analysis_engine_v2 import PerformanceAnalysisEngineV2
             
-            if 'performance_engine' not in st.session_state:
-                data_provider = st.session_state.data_provider
-                openai_client = st.session_state.get('openai_client')
-                perplexity_client = st.session_state.get('perplexity_client')
-                st.session_state.performance_engine = PerformanceAnalysisEngine(
+            # Safe access to session state variables
+            if 'performance_engine_v2' not in st.session_state:
+                data_provider = get_session_state('data_provider', None)
+                openai_client = get_session_state('openai_client', None)
+                perplexity_client = get_session_state('perplexity_client', None)
+                
+                if not data_provider:
+                    st.error("❌ System not initialized. Please wait for initialization to complete.")
+                    return
+                
+                st.session_state.performance_engine_v2 = PerformanceAnalysisEngineV2(
                     data_provider, openai_client, perplexity_client
                 )
             
-            engine = st.session_state.performance_engine
+            engine = get_session_state('performance_engine_v2', None)
+            if not engine:
+                st.error("❌ Performance engine not available. Please refresh the page.")
+                return
             
             # Info box about data source
-            sheets_connected = st.session_state.get('sheets_integration') and st.session_state.sheets_integration.sheet
+            sheets_integration = get_session_state('sheets_integration', None)
+            sheets_connected = sheets_integration and hasattr(sheets_integration, 'sheet') and sheets_integration.sheet
             if sheets_connected:
                 st.info("📊 **Using Google Sheets data**: Analysis will use 'Percent Change' from your connected sheet for faster and more accurate movement detection.")
             else:
@@ -8005,106 +8126,106 @@ def qa_learning_center_page():
                     help="View model improvement recommendations"
                 )
             
-            # Run analysis
+            # Run analysis (NEW V2: Fast and Reliable)
             if run_analysis_btn:
-                with st.spinner(f"🔍 Analyzing stock performance from {start_date_str} to {end_date_str}..."):
-                    try:
-                        # Get Google Sheets integration if available
-                        sheets_integration = st.session_state.get('sheets_integration')
-                        
-                        # Check if we can get stocks from sheets
-                        if not sheets_integration or not sheets_integration.sheet:
-                            st.warning("⚠️ Google Sheets not connected. This feature requires Google Sheets to identify stocks with significant movements.")
-                            st.info("💡 Go to System Configuration → Google Sheets Integration to connect your sheet.")
-                        else:
-                            # Get available worksheets first
-                            try:
-                                worksheets = [ws.title for ws in sheets_integration.sheet.worksheets()]
-                                st.info(f"� Available worksheets: {', '.join(worksheets)}")
-                                
-                                # Check if required worksheet exists
-                                required_names = ['Historical Price Analysis', 'Portfolio Analysis', 'Price Analysis']
-                                has_required = any(name in worksheets for name in required_names)
-                                
-                                if not has_required:
-                                    st.error(f"❌ Missing required worksheet!")
-                                    st.error(f"Please create a worksheet named one of: **{', '.join(required_names)}**")
-                                    st.error(f"Current worksheets: {', '.join(worksheets)}")
-                                    st.info("💡 The worksheet must have columns: **Ticker**, **Percent Change** (or **Price at Analysis** + **Price**)")
-                                else:
-                                    st.info(f"�🔍 Scanning all stocks in Google Sheets for movements ≥{custom_threshold}%...")
-                                    
-                                    # Run comprehensive analysis (will auto-detect stocks with significant movement from sheets)
-                                    report = engine.analyze_performance_period(
-                                        start_date_str,
-                                        end_date_str,
-                                        tickers=None,  # Don't filter by tracked - analyze ALL stocks
-                                        qa_system=qa_system,
-                                        sheets_integration=sheets_integration,
-                                        min_threshold=custom_threshold
-                                    )
-                                    
-                                    # Store in session state
-                                    st.session_state.latest_performance_report = report
-                                    
-                                    st.success("✅ Performance analysis complete!")
-                                    st.rerun()
-                            except Exception as check_error:
-                                st.warning(f"Could not check worksheets: {check_error}")
-                                # Continue anyway - let the engine handle it
-                                st.info(f"🔍 Scanning all stocks in Google Sheets for movements ≥{custom_threshold}%...")
-                                
-                                report = engine.analyze_performance_period(
-                                    start_date_str,
-                                    end_date_str,
-                                    tickers=None,
-                                    qa_system=qa_system,
-                                    sheets_integration=sheets_integration,
-                                    min_threshold=custom_threshold
-                                )
-                                
-                                st.session_state.latest_performance_report = report
-                                st.success("✅ Performance analysis complete!")
-                                st.rerun()
-                    
-                    except KeyError as e:
-                        st.error(f"❌ Data error: Missing required field {e}")
-                        st.info("💡 Tip: Ensure your Google Sheets has the required columns (Ticker, Percent Change, or Price at Analysis + Price)")
-                    except Exception as e:
-                        st.error(f"❌ Error during analysis: {e}")
-                        with st.expander("🔍 Debug Information"):
-                            import traceback
-                            st.code(traceback.format_exc())
-                        st.info("💡 Common fixes: Check API keys, verify tracked stocks exist, ensure date range is valid")
-            
-            # Display results if available
-            if 'latest_performance_report' in st.session_state and st.session_state.latest_performance_report:
-                report = st.session_state.latest_performance_report
+                # Create progress placeholders
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                # Handle case where analysis found no movements
+                def update_progress(message: str, progress: int):
+                    """Update progress without causing WebSocket errors."""
+                    try:
+                        status_text.text(message)
+                        progress_bar.progress(min(progress, 100) / 100)
+                    except:
+                        pass  # Silently ignore any display errors
+                
+                try:
+                    # Get required components safely
+                    sheets_integration = get_session_state('sheets_integration', None)
+                    qa_system = get_session_state('qa_system', None)
+                    
+                    # Check Google Sheets connection
+                    if not sheets_integration or not hasattr(sheets_integration, 'sheet') or not sheets_integration.sheet:
+                        progress_bar.empty()
+                        status_text.empty()
+                        st.warning("⚠️ Google Sheets not connected. This feature requires Google Sheets to identify stocks with significant movements.")
+                        st.info("💡 Go to Settings → Google Sheets Integration to connect your sheet.")
+                    else:
+                        update_progress("🚀 Starting analysis...", 5)
+                        
+                        # Run V2 analysis with progress updates
+                        report = engine.analyze_performance_period(
+                            start_date_str,
+                            end_date_str,
+                            tickers=None,  # Analyze ALL stocks
+                            qa_system=qa_system,
+                            sheets_integration=sheets_integration,
+                            min_threshold=custom_threshold,
+                            progress_callback=update_progress
+                        )
+                        
+                        # Store results safely
+                        try:
+                            st.session_state.latest_performance_report = report
+                        except Exception as state_error:
+                            st.warning(f"Could not cache results: {state_error}")
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        # Show success
+                        st.success("✅ Performance Analysis V2 complete! Results below.")
+                        safe_rerun()
+                
+                except Exception as e:
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    st.error(f"❌ Analysis failed: {str(e)}")
+                    st.info("💡 Make sure Google Sheets is connected with valid data.")
+                    
+                    with st.expander("🔍 Error Details"):
+                        import traceback
+                        st.code(traceback.format_exc())
+            
+            # Display results if available - use safe access
+            report = get_session_state('latest_performance_report', None)
+            if report:
+                # Handle error or no movements
+                if report.get('status') == 'error':
+                    st.error(f"❌ {report.get('message', 'Analysis error')}")
+                    return
+                
                 if report.get('status') == 'no_movements':
-                    st.warning("⚠️ " + report.get('message', 'No significant stock movements detected in this period'))
-                    st.info("💡 Try expanding the date range or lowering movement thresholds")
+                    st.warning("⚠️ " + report.get('message', 'No significant movements detected'))
+                    st.info("💡 Try lowering the threshold or expanding the date range")
                     return
                 
                 st.markdown("---")
-                st.write("## 📊 Analysis Results")
+                st.write("## 📊 Analysis Results (V2)")
                 
-                # Executive Summary - with safe access
+                # Executive Summary
                 if 'executive_summary' in report:
-                    st.info(f"**Executive Summary:** {report['executive_summary']}")
+                    st.info(f"**Summary:** {report['executive_summary']}")
                 
-                # Key Metrics - with safe access
+                # Key Metrics
                 if 'summary' in report:
+                    summary = report['summary']
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Total Movements", report['summary'].get('total_movements', 0))
+                        st.metric("Total Movements", summary.get('total_movements', 0))
                     with col2:
-                        st.metric("Analyses Completed", report['summary'].get('analyses_completed', 0))
+                        up_moves = summary.get('up_movements', 0)
+                        st.metric("📈 Up Movements", up_moves)
                     with col3:
-                        st.metric("Top Gainers", report['summary'].get('top_gainers_count', 0))
+                        down_moves = summary.get('down_movements', 0)
+                        st.metric("📉 Down Movements", down_moves)
                     with col4:
-                        st.metric("Top Losers", report['summary'].get('top_losers_count', 0))
+                        extreme = summary.get('extreme_movements', 0)
+                        st.metric("🔥 Extreme (>20%)", extreme)
                 
                 # Top Movers tabs
                 st.markdown("---")
@@ -8120,44 +8241,33 @@ def qa_learning_center_page():
                                 
                                 with col1:
                                     st.write(f"**Price Movement:**")
-                                    st.write(f"- Start Price: ${movement['start_price']:.2f}")
-                                    st.write(f"- End Price: ${movement['end_price']:.2f}")
-                                    st.write(f"- Change: +${movement['price_change_abs']:.2f} (+{movement['price_change_pct']:.2f}%)")
-                                    if movement.get('volume_change_pct'):
-                                        st.write(f"- Volume Change: {movement['volume_change_pct']:+.1f}%")
+                                    start_price = movement.get('start_price', 0)
+                                    end_price = movement.get('end_price', 0)
+                                    pct_change = movement.get('price_change_pct', 0)
+                                    abs_change = abs(end_price - start_price)
+                                    
+                                    st.write(f"- Start Price: ${start_price:.2f}")
+                                    st.write(f"- End Price: ${end_price:.2f}")
+                                    st.write(f"- Change: ${abs_change:+.2f} ({pct_change:+.2f}%)")
                                 
                                 with col2:
                                     st.write(f"**Details:**")
+                                    st.write(f"- Magnitude: {movement.get('magnitude', 'N/A').upper()}")
                                     st.write(f"- Sector: {movement.get('sector', 'N/A')}")
-                                    if movement.get('market_cap'):
-                                        market_cap_b = movement['market_cap'] / 1e9
-                                        st.write(f"- Market Cap: ${market_cap_b:.1f}B")
-                                    st.write(f"- Period: {movement['start_date']} to {movement['end_date']}")
+                                    st.write(f"- Period: {movement.get('start_date', 'N/A')} to {movement.get('end_date', 'N/A')}")
                                 
-                                # Find corresponding analysis
-                                analysis = next((a for a in report['analyses'] if a['ticker'] == movement['ticker']), None)
-                                if analysis:
-                                    st.write(f"**🔍 Root Cause Analysis:**")
-                                    st.write(f"**Catalyst:** {analysis['catalyst_summary']}")
-                                    st.write(f"**Confidence:** {analysis['confidence']:.0f}%")
+                                # V2 Insight (simpler than old analysis)
+                                insights = report.get('insights', [])
+                                insight = next((i for i in insights if i.get('ticker') == movement['ticker']), None)
+                                if insight:
+                                    st.write(f"**� Quick Insight:**")
+                                    st.write(f"**Type:** {insight.get('catalyst_type', 'N/A').replace('_', ' ').title()}")
+                                    st.write(f"**Summary:** {insight.get('summary', 'N/A')}")
+                                    confidence_stars = "⭐" * insight.get('confidence', 1)
+                                    st.write(f"**Confidence:** {confidence_stars}")
                                     
-                                    if analysis['root_causes']:
-                                        st.write("**Primary Drivers:**")
-                                        for cause in analysis['root_causes']:
-                                            st.write(f"  • {cause}")
-                                    
-                                    # Show flags
-                                    flags = []
-                                    if analysis['earnings_related']:
-                                        flags.append("📊 Earnings")
-                                    if analysis['news_driven']:
-                                        flags.append("📰 News")
-                                    if analysis['sector_driven']:
-                                        flags.append("🏢 Sector")
-                                    if analysis['fundamental_change']:
-                                        flags.append("📈 Fundamental")
-                                    if flags:
-                                        st.write(f"**Flags:** {' | '.join(flags)}")
+                                    if insight.get('actionable'):
+                                        st.info(f"💡 {insight['actionable']}")
                     else:
                         st.info("No significant gainers in this period")
                 
@@ -8171,52 +8281,41 @@ def qa_learning_center_page():
                                 
                                 with col1:
                                     st.write(f"**Price Movement:**")
-                                    st.write(f"- Start Price: ${movement['start_price']:.2f}")
-                                    st.write(f"- End Price: ${movement['end_price']:.2f}")
-                                    st.write(f"- Change: ${movement['price_change_abs']:.2f} ({movement['price_change_pct']:.2f}%)")
-                                    if movement.get('volume_change_pct'):
-                                        st.write(f"- Volume Change: {movement['volume_change_pct']:+.1f}%")
+                                    start_price = movement.get('start_price', 0)
+                                    end_price = movement.get('end_price', 0)
+                                    pct_change = movement.get('price_change_pct', 0)
+                                    abs_change = abs(end_price - start_price)
+                                    
+                                    st.write(f"- Start Price: ${start_price:.2f}")
+                                    st.write(f"- End Price: ${end_price:.2f}")
+                                    st.write(f"- Change: ${abs_change:+.2f} ({pct_change:+.2f}%)")
                                 
                                 with col2:
                                     st.write(f"**Details:**")
+                                    st.write(f"- Magnitude: {movement.get('magnitude', 'N/A').upper()}")
                                     st.write(f"- Sector: {movement.get('sector', 'N/A')}")
-                                    if movement.get('market_cap'):
-                                        market_cap_b = movement['market_cap'] / 1e9
-                                        st.write(f"- Market Cap: ${market_cap_b:.1f}B")
-                                    st.write(f"- Period: {movement['start_date']} to {movement['end_date']}")
+                                    st.write(f"- Period: {movement.get('start_date', 'N/A')} to {movement.get('end_date', 'N/A')}")
                                 
-                                # Find corresponding analysis
-                                analysis = next((a for a in report['analyses'] if a['ticker'] == movement['ticker']), None)
-                                if analysis:
-                                    st.write(f"**🔍 Root Cause Analysis:**")
-                                    st.write(f"**Catalyst:** {analysis['catalyst_summary']}")
-                                    st.write(f"**Confidence:** {analysis['confidence']:.0f}%")
+                                # V2 Insight (simpler than old analysis)
+                                insights = report.get('insights', [])
+                                insight = next((i for i in insights if i.get('ticker') == movement['ticker']), None)
+                                if insight:
+                                    st.write(f"**� Quick Insight:**")
+                                    st.write(f"**Type:** {insight.get('catalyst_type', 'N/A').replace('_', ' ').title()}")
+                                    st.write(f"**Summary:** {insight.get('summary', 'N/A')}")
+                                    confidence_stars = "⭐" * insight.get('confidence', 1)
+                                    st.write(f"**Confidence:** {confidence_stars}")
                                     
-                                    if analysis['root_causes']:
-                                        st.write("**Primary Drivers:**")
-                                        for cause in analysis['root_causes']:
-                                            st.write(f"  • {cause}")
-                                    
-                                    # Show flags
-                                    flags = []
-                                    if analysis['earnings_related']:
-                                        flags.append("📊 Earnings")
-                                    if analysis['news_driven']:
-                                        flags.append("📰 News")
-                                    if analysis['sector_driven']:
-                                        flags.append("🏢 Sector")
-                                    if analysis['fundamental_change']:
-                                        flags.append("📈 Fundamental")
-                                    if flags:
-                                        st.write(f"**Flags:** {' | '.join(flags)}")
+                                    if insight.get('actionable'):
+                                        st.info(f"💡 {insight['actionable']}")
                     else:
                         st.info("No significant losers in this period")
                 
-                # Model Recommendations
-                if report['recommendations']:
+                # Model Recommendations (V2 Format - Simplified)
+                if report.get('recommendations'):
                     st.markdown("---")
-                    st.write("## 💡 Model Improvement Recommendations")
-                    st.write(f"**Generated {report['summary']['recommendations_generated']} recommendations** based on observed patterns")
+                    st.write("## 💡 Actionable Recommendations (V2)")
+                    st.write(f"**{len(report['recommendations'])} recommendations** generated from performance patterns")
                     
                     # Filter by priority
                     priority_filter = st.multiselect(
@@ -8225,93 +8324,39 @@ def qa_learning_center_page():
                         default=["critical", "high"]
                     )
                     
-                    filtered_recommendations = [
+                    filtered_recs = [
                         r for r in report['recommendations']
-                        if r['priority'] in priority_filter
+                        if r.get('priority', 'medium') in priority_filter
                     ]
                     
-                    for i, rec in enumerate(filtered_recommendations, 1):
-                        priority_emoji = {
-                            'critical': '🚨',
-                            'high': '⚠️',
-                            'medium': '💡',
-                            'low': 'ℹ️'
-                        }
-                        
-                        emoji = priority_emoji.get(rec['priority'], '💡')
-                        
-                        with st.expander(f"{emoji} [{rec['priority'].upper()}] {rec['specific_change']}", expanded=(rec['priority'] in ['critical', 'high'])):
-                            col1, col2 = st.columns([2, 1])
+                    if not filtered_recs:
+                        st.info("No recommendations match your filter. Try selecting more priorities.")
+                    else:
+                        for i, rec in enumerate(filtered_recs, 1):
+                            priority_emoji = {
+                                'critical': '🚨',
+                                'high': '⚠️',
+                                'medium': '💡',
+                                'low': 'ℹ️'
+                            }
                             
-                            with col1:
-                                st.write(f"**Recommendation:** {rec['specific_change']}")
-                                st.write(f"**Rationale:** {rec['rationale']}")
-                                st.write(f"**Expected Impact:** {rec['expected_impact']}")
-                                
-                                if rec['supporting_evidence']:
-                                    st.write("**Supporting Evidence:**")
-                                    for evidence in rec['supporting_evidence'][:3]:
-                                        st.write(f"  • {evidence}")
-                                
-                                st.write("**Implementation Steps:**")
-                                for step in rec['implementation_steps']:
-                                    st.write(f"  {step}")
+                            emoji = priority_emoji.get(rec.get('priority', 'medium'), '💡')
+                            title = rec.get('title', rec.get('specific_change', 'Recommendation'))
                             
-                            with col2:
-                                st.metric("Confidence", f"{rec['confidence']:.0f}%")
-                                st.write(f"**Category:** {rec['category']}")
-                                st.write(f"**Affected Agents:**")
-                                for agent in rec['affected_agents']:
-                                    st.write(f"  • {agent}")
-                                
-                                # Action buttons
-                                if st.button(f"✅ Mark as Implemented", key=f"implement_{rec['recommendation_id']}"):
-                                    notes = st.text_input("Implementation notes:", key=f"notes_{rec['recommendation_id']}")
-                                    engine.mark_recommendation_implemented(rec['recommendation_id'], notes)
-                                    st.success("Marked as implemented!")
-                
-                # Pattern Analysis
-                if report.get('patterns'):
-                    st.markdown("---")
-                    st.write("## 📊 Pattern Analysis")
-                    
-                    patterns = report['patterns']
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Earnings-Related", f"{patterns.get('earnings_frequency', 0)*100:.0f}%")
-                        st.metric("News-Driven", f"{patterns.get('news_driven_frequency', 0)*100:.0f}%")
-                    
-                    with col2:
-                        st.metric("Market-Driven", f"{patterns.get('market_driven_frequency', 0)*100:.0f}%")
-                        st.metric("Sector-Driven", f"{patterns.get('sector_driven_frequency', 0)*100:.0f}%")
-                    
-                    with col3:
-                        st.metric("Fundamental Change", f"{patterns.get('fundamental_change_frequency', 0)*100:.0f}%")
-                        st.metric("Technical Breakout", f"{patterns.get('technical_breakout_frequency', 0)*100:.0f}%")
-                    
-                    # Direction breakdown
-                    st.write("**Movement Direction:**")
-                    total_moves = patterns.get('up_movements', 0) + patterns.get('down_movements', 0)
-                    if total_moves > 0:
-                        up_pct = (patterns.get('up_movements', 0) / total_moves) * 100
-                        down_pct = (patterns.get('down_movements', 0) / total_moves) * 100
-                        st.write(f"  • Up movements: {patterns.get('up_movements', 0)} ({up_pct:.1f}%)")
-                        st.write(f"  • Down movements: {patterns.get('down_movements', 0)} ({down_pct:.1f}%)")
+                            with st.expander(f"{emoji} [{rec['priority'].upper()}] {title}", expanded=(rec.get('priority') in ['critical', 'high'])):
+                                st.write(f"**Description:** {rec.get('description', 'N/A')}")
+                                st.write(f"**Action:** {rec.get('action', 'N/A')}")
+                                st.write(f"**Expected Impact:** {rec.get('expected_impact', 'N/A')}")
+                                st.metric("Confidence", f"{rec.get('confidence', 50)}%")
+                                st.write(f"**Category:** {rec.get('category', 'N/A')}")
             
-            # View history
-            elif view_history_btn:
-                st.write("### 📜 Analysis History")
-                # TODO: Implement history viewing
-                st.info("Analysis history feature coming soon")
-            
-            # View recommendations
+            # View recommendations button
             elif view_recommendations_btn:
-                st.write("### 💡 All Model Recommendations")
-                latest_recs = engine.get_latest_recommendations(20)
+                st.write("### � Latest Recommendations")
+                latest_recs = engine.get_latest_recommendations(10)
                 
                 if latest_recs:
-                    for rec in latest_recs:
+                    for i, rec in enumerate(latest_recs, 1):
                         priority_emoji = {'critical': '🚨', 'high': '⚠️', 'medium': '💡', 'low': 'ℹ️'}
                         emoji = priority_emoji.get(rec.get('priority', 'medium'), '💡')
                         
@@ -8343,12 +8388,11 @@ def system_status_and_ai_disclosure_page():
     with tab1:
         st.subheader("📊 Data Provider Status")
         
-        # Check if data provider is available
-        if not st.session_state.data_provider:
+        # Check if data provider is available - use safe access
+        data_provider = get_session_state('data_provider', None)
+        if not data_provider:
             st.error("❌ Data provider not initialized. Please restart the application.")
             return
-        
-        data_provider = st.session_state.data_provider
         
         # Display Data Provider Information
         st.write("**Provider Information**")
@@ -9105,7 +9149,7 @@ def settings_page():
             # Reload environment variables
             load_dotenv(override=True)
             st.success("✅ Environment variables reloaded")
-            st.rerun()
+            safe_rerun()
 
 
 def sync_all_archives_to_sheets() -> bool:
@@ -9985,4 +10029,12 @@ def update_google_sheets_qa_analyses(analysis_archive: dict, show_price_ui: bool
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        st.error("🚨 Application Error")
+        st.error(f"An unexpected error occurred: {e}")
+        st.info("Please refresh the page. If the problem persists, check the logs.")
+        import traceback
+        with st.expander("🔍 Technical Details"):
+            st.code(traceback.format_exc())

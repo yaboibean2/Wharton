@@ -1,0 +1,44 @@
+# Streamlit Configuration for Optimal Performance
+# This configuration file optimizes the app for smoother operation
+
+[server]
+# Increase message size limits to prevent websocket errors
+maxUploadSize = 200
+maxMessageSize = 200
+
+# Enable WebSocket compression for better performance
+enableWebsocketCompression = true
+
+# Increase timeout to prevent premature disconnections
+enableXsrfProtection = true
+
+[browser]
+# Automatically open browser on startup
+gatherUsageStats = false
+
+[runner]
+# Faster script runs
+fastReruns = true
+
+# Prevent memory leaks by clearing cache on reruns
+magicEnabled = false
+
+[client]
+# Show less verbose error messages
+showErrorDetails = true
+
+# Reduce connection issues
+toolbarMode = "minimal"
+
+[logger]
+# Reduce console noise
+level = "error"
+messageFormat = "%(asctime)s %(message)s"
+
+[theme]
+# Optional: Set a professional theme
+primaryColor = "#FF4B4B"
+backgroundColor = "#35455eff"
+secondaryBackgroundColor = "#2b3039ff"
+textColor = "#acaec2ff"
+font = "sans serif"
