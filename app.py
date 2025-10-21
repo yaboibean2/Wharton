@@ -414,23 +414,19 @@ def main():
     st.sidebar.title("NAVIGATION")
     st.sidebar.markdown("---")
     page = st.sidebar.radio(
-        "Select Analysis Mode:",
-        ["Stock Analysis", "Portfolio Recommendations", "Portfolio Management", "QA & Learning Center", "System Configuration", "System Status & AI Disclosure"]
+        "Select Mode:",
+        ["Analysis", "Portfolio Tracking", "QA & Learning Center", "Settings"]
     )
     
     # Route to appropriate page
-    if page == "Stock Analysis":
-        stock_analysis_page()
-    elif page == "Portfolio Recommendations":
-        portfolio_recommendations_page()
-    elif page == "Portfolio Management":
+    if page == "Analysis":
+        analysis_page()
+    elif page == "Portfolio Tracking":
         portfolio_management_page()
     elif page == "QA & Learning Center":
         qa_learning_center_page()
-    elif page == "System Configuration":
-        configuration_page()
-    elif page == "System Status & AI Disclosure":
-        system_status_and_ai_disclosure_page()
+    elif page == "Settings":
+        settings_page()
 
 
 def stock_analysis_page():
@@ -1654,7 +1650,7 @@ Formula: Blended Score = Weighted Sum / Total Weight
                         sector = result['fundamentals'].get('sector', 'Unknown')
                         market_cap = result['fundamentals'].get('market_cap')
                     
-                    # Log the recommendation (this moves it from analysis archive to tracked tickers)
+                    # Log the recommendation to the QA system for tracking and review
                     print(f"🔧 DEBUG: About to log recommendation for {ticker} with price {price}")
                     success = qa_system.log_recommendation(
                         ticker=ticker,
@@ -1678,9 +1674,9 @@ Formula: Blended Score = Weighted Sum / Total Weight
                         st.session_state.qa_system = qa_system
                         
                         # Debug: Show current recommendations count
-                        current_count = len(qa_system.get_tracked_tickers())
-                        st.success(f"✅ Successfully added {ticker} to tracked tickers!")
-                        st.info(f"📊 Total tracked tickers: {current_count}")
+                        current_count = len(qa_system.get_all_recommendations())
+                        st.success(f"✅ Successfully logged {ticker} analysis!")
+                        st.info(f"📊 Total logged analyses: {current_count}")
                         
                         # Show the actual tickers for verification
                         if current_count > 0:
@@ -1689,9 +1685,9 @@ Formula: Blended Score = Weighted Sum / Total Weight
                             
                         # Provide clear debugging information
                         st.success("🎯 Ticker is now being monitored in the QA system!")
-                        st.info("💡 Go to the QA & Learning Center → 🎯 Tracked Tickers tab to see your analysis.")
+                        st.info("💡 Go to the QA & Learning Center → 📚 Complete Archives tab to see your analysis.")
                         # Since we can't programmatically change radio selection, show clear instruction
-                        st.markdown("**👈 Click 'QA & Learning Center' in the sidebar, then go to the '🎯 Tracked Tickers' tab!**")
+                        st.markdown("**👈 Click 'QA & Learning Center' in the sidebar to view and manage your analyses!**")
                         # Removed st.rerun() to prevent page refresh that loses analysis results
                     else:
                         st.error("❌ Failed to log recommendation. Please try again.")
@@ -3422,6 +3418,391 @@ def extract_key_factors(agent_key: str, result: dict) -> list:
         factors.append("Significant concerns in multiple areas")
     
     return factors
+
+
+def analysis_page():
+    """Consolidated analysis page combining stock analysis and portfolio recommendations."""
+    st.header("🔍 Investment Analysis")
+    st.write("Comprehensive analysis using multi-agent investment research methodology.")
+    st.markdown("---")
+    
+    # Main tabs for different analysis types
+    tab1, tab2 = st.tabs(["📊 Stock Analysis", "🎯 Portfolio Builder"])
+    
+    with tab1:
+        # Stock Analysis Content (simplified from stock_analysis_page)
+        st.subheader("Stock Analysis")
+        st.write("Evaluate individual securities or analyze multiple stocks at once.")
+        
+        # Analysis mode selection
+        analysis_mode = st.radio(
+            "Analysis Mode",
+            options=["Single Stock", "Multiple Stocks"],
+            horizontal=True,
+            help="Choose to analyze one stock or multiple stocks at once"
+        )
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            if analysis_mode == "Single Stock":
+                ticker = st.text_input(
+                    "Stock Ticker Symbol",
+                    value="AAPL",
+                    help="Enter a stock ticker symbol (e.g., AAPL, MSFT, GOOGL)"
+                ).upper()
+            else:
+                ticker_input = st.text_area(
+                    "Stock Ticker Symbols",
+                    value="AAPL MSFT GOOGL",
+                    height=100,
+                    help="Enter multiple ticker symbols separated by spaces, commas, or line breaks"
+                )
+                # Parse tickers
+                import re
+                ticker_list = [t.strip().upper() for t in re.split(r'[,\s\n]+', ticker_input) if t.strip()]
+                seen = set()
+                tickers = []
+                for t in ticker_list:
+                    if t not in seen:
+                        seen.add(t)
+                        tickers.append(t)
+                ticker = None
+        
+        with col2:
+            analysis_date = st.date_input(
+                "Analysis Date",
+                value=datetime.now().date(),
+                help="Date for the analysis"
+            )
+        
+        # Run analysis button
+        if analysis_mode == "Single Stock":
+            if st.button("🔍 Analyze Stock", type="primary", use_container_width=True):
+                if ticker:
+                    # Use existing logic from stock_analysis_page for single stock
+                    run_single_stock_analysis(ticker, analysis_date)
+                else:
+                    st.error("Please enter a valid ticker symbol")
+        else:
+            if st.button("🔍 Analyze Stocks", type="primary", use_container_width=True):
+                if tickers:
+                    # Use existing logic from stock_analysis_page for multiple stocks
+                    run_multiple_stocks_analysis(tickers, analysis_date)
+                else:
+                    st.error("Please enter valid ticker symbols")
+    
+    with tab2:
+        # Portfolio Builder Content (simplified from portfolio_recommendations_page)
+        st.subheader("AI-Powered Portfolio Builder")
+        st.write("Multi-stage AI selection using OpenAI and Perplexity to identify optimal stocks.")
+        
+        # Challenge context input
+        challenge_context = st.text_area(
+            "Investment Goals & Requirements:",
+            value="""Generate an optimal diversified portfolio that maximizes risk-adjusted returns 
+while adhering to the client's Investment Policy Statement constraints.
+Focus on high-quality companies with strong fundamentals and growth potential.""",
+            height=100,
+            help="Describe investment goals and requirements"
+        )
+        
+        # Configuration options
+        with st.expander("⚙️ Portfolio Configuration", expanded=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                selection_mode = st.selectbox(
+                    "Selection Mode",
+                    ["AI-Powered Selection (Recommended)", "Manual Ticker Input"],
+                    help="AI-Powered uses OpenAI + Perplexity to select best tickers"
+                )
+                
+                num_stocks = st.slider(
+                    "Target Number of Stocks",
+                    min_value=5, max_value=50, value=15,
+                    help="Target portfolio size"
+                )
+            
+            with col2:
+                rebalance_frequency = st.selectbox(
+                    "Rebalancing Frequency",
+                    ["Monthly", "Quarterly", "Semi-Annual", "Annual"],
+                    index=1,
+                    help="How often to rebalance the portfolio"
+                )
+                
+                risk_profile = st.selectbox(
+                    "Risk Profile",
+                    ["Conservative", "Moderate", "Aggressive"],
+                    index=1,
+                    help="Client risk tolerance"
+                )
+        
+        # Generate portfolio button
+        if st.button("🎯 Generate Portfolio", type="primary", use_container_width=True):
+            # Use existing logic from portfolio_recommendations_page
+            run_portfolio_generation(challenge_context, selection_mode, num_stocks, rebalance_frequency, risk_profile)
+
+
+def run_single_stock_analysis(ticker, analysis_date):
+    """Run single stock analysis - extracted from stock_analysis_page."""
+    # Set up the analysis parameters
+    st.session_state.ticker = ticker
+    st.session_state.analysis_date = analysis_date
+    
+    # Use default weights if not customized
+    if 'custom_agent_weights' not in st.session_state:
+        st.session_state.custom_agent_weights = {
+            'value': 0.20,
+            'growth_momentum': 0.20,
+            'sentiment': 0.20,
+            'macro_regime': 0.20,
+            'risk': 0.20
+        }
+    
+    # Display analysis
+    st.subheader(f"Analysis Results for {ticker}")
+    
+    with st.spinner(f"Analyzing {ticker}..."):
+        # Initialize orchestrator
+        if 'orchestrator' not in st.session_state:
+            st.session_state.orchestrator = PortfolioOrchestrator()
+        
+        orchestrator = st.session_state.orchestrator
+        
+        try:
+            # Run the analysis
+            result = orchestrator.analyze_stock(
+                ticker=ticker,
+                weights=st.session_state.custom_agent_weights,
+                analysis_date=analysis_date
+            )
+            
+            if result:
+                display_single_stock_result(result, ticker)
+            else:
+                st.error(f"Failed to analyze {ticker}. Please check the ticker symbol.")
+                
+        except Exception as e:
+            st.error(f"Error analyzing {ticker}: {str(e)}")
+
+
+def run_multiple_stocks_analysis(tickers, analysis_date):
+    """Run multiple stocks analysis - extracted from stock_analysis_page."""
+    # Set up the analysis parameters
+    st.session_state.tickers = tickers
+    st.session_state.analysis_date = analysis_date
+    
+    # Use default weights if not customized
+    if 'custom_agent_weights' not in st.session_state:
+        st.session_state.custom_agent_weights = {
+            'value': 0.20,
+            'growth_momentum': 0.20,
+            'sentiment': 0.20,
+            'macro_regime': 0.20,
+            'risk': 0.20
+        }
+    
+    # Display analysis
+    st.subheader(f"Analysis Results for {len(tickers)} Stocks")
+    
+    # Initialize orchestrator
+    if 'orchestrator' not in st.session_state:
+        st.session_state.orchestrator = PortfolioOrchestrator()
+    
+    orchestrator = st.session_state.orchestrator
+    
+    # Track progress
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    results = []
+    for i, ticker in enumerate(tickers):
+        status_text.text(f"Analyzing {ticker} ({i+1}/{len(tickers)})...")
+        progress_bar.progress((i + 1) / len(tickers))
+        
+        try:
+            result = orchestrator.analyze_stock(
+                ticker=ticker,
+                weights=st.session_state.custom_agent_weights,
+                analysis_date=analysis_date
+            )
+            
+            if result:
+                results.append(result)
+            else:
+                st.warning(f"Failed to analyze {ticker}")
+                
+        except Exception as e:
+            st.error(f"Error analyzing {ticker}: {str(e)}")
+    
+    progress_bar.empty()
+    status_text.empty()
+    
+    if results:
+        display_multiple_stocks_results(results)
+    else:
+        st.error("No stocks were successfully analyzed.")
+
+
+def run_portfolio_generation(challenge_context, selection_mode, num_stocks, rebalance_frequency, risk_profile):
+    """Run portfolio generation - simplified from portfolio_recommendations_page."""
+    st.subheader("Portfolio Generation Results")
+    
+    with st.spinner("Generating optimal portfolio..."):
+        # Initialize orchestrator
+        if 'orchestrator' not in st.session_state:
+            st.session_state.orchestrator = PortfolioOrchestrator()
+        
+        orchestrator = st.session_state.orchestrator
+        
+        try:
+            if selection_mode == "AI-Powered Selection (Recommended)":
+                # Use AI selection
+                portfolio_result = orchestrator.generate_ai_portfolio(
+                    challenge_context=challenge_context,
+                    num_stocks=num_stocks,
+                    risk_profile=risk_profile.lower()
+                )
+            else:
+                # Manual mode - would need ticker input (simplified for now)
+                st.error("Manual ticker input mode not yet implemented in consolidated view")
+                return
+            
+            if portfolio_result:
+                display_portfolio_results(portfolio_result, rebalance_frequency, risk_profile)
+            else:
+                st.error("Failed to generate portfolio. Please try again.")
+                
+        except Exception as e:
+            st.error(f"Error generating portfolio: {str(e)}")
+
+
+def display_single_stock_result(result, ticker):
+    """Display single stock analysis result."""
+    st.success(f"✅ Analysis complete for {ticker}")
+    
+    # Basic metrics display
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Overall Score", f"{result.get('composite_score', 0):.1f}/100")
+    with col2:
+        st.metric("Recommendation", result.get('recommendation', 'HOLD'))
+    with col3:
+        st.metric("Confidence", f"{result.get('confidence', 0)*100:.1f}%")
+    with col4:
+        price = result.get('current_price', 'N/A')
+        if price != 'N/A':
+            st.metric("Current Price", f"${price:.2f}")
+        else:
+            st.metric("Current Price", "N/A")
+    
+    # Agent scores
+    st.subheader("Agent Analysis Breakdown")
+    agent_results = result.get('agent_results', {})
+    
+    if agent_results:
+        for agent_name, agent_result in agent_results.items():
+            if isinstance(agent_result, dict):
+                score = agent_result.get('score', 0)
+                reasoning = agent_result.get('reasoning', 'No reasoning provided')
+                
+                with st.expander(f"{agent_name.replace('_', ' ').title()} Agent - Score: {score:.1f}"):
+                    st.write(reasoning)
+    
+    # Show if this stock is tracked
+    if 'qa_system' in st.session_state and st.session_state.qa_system:
+        qa_system = st.session_state.qa_system
+        if qa_system.is_ticker_tracked(ticker):
+            st.info(f"ℹ️ {ticker} is being tracked in the QA system")
+
+
+def display_multiple_stocks_results(results):
+    """Display multiple stocks analysis results."""
+    st.success(f"✅ Analysis complete for {len(results)} stocks")
+    
+    # Create summary table
+    summary_data = []
+    for result in results:
+        summary_data.append({
+            'Ticker': result.get('ticker', 'N/A'),
+            'Score': result.get('composite_score', 0),
+            'Recommendation': result.get('recommendation', 'HOLD'),
+            'Confidence': f"{result.get('confidence', 0)*100:.1f}%",
+            'Price': f"${result.get('current_price', 0):.2f}" if result.get('current_price') else 'N/A'
+        })
+    
+    df = pd.DataFrame(summary_data)
+    df = df.sort_values('Score', ascending=False)
+    
+    st.subheader("Summary Results")
+    st.dataframe(df, use_container_width=True)
+    
+    # Individual stock details in tabs
+    st.subheader("Detailed Analysis")
+    tabs = st.tabs([result['ticker'] for result in results])
+    
+    for i, (tab, result) in enumerate(zip(tabs, results)):
+        with tab:
+            display_single_stock_result(result, result.get('ticker', 'N/A'))
+
+
+def display_portfolio_results(portfolio_result, rebalance_frequency, risk_profile):
+    """Display portfolio generation results."""
+    st.success("✅ Portfolio generated successfully!")
+    
+    holdings = portfolio_result.get('holdings', [])
+    if not holdings:
+        st.error("No holdings in generated portfolio")
+        return
+    
+    # Portfolio overview
+    st.subheader("Portfolio Overview")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Number of Holdings", len(holdings))
+    with col2:
+        st.metric("Risk Profile", risk_profile)
+    with col3:
+        st.metric("Rebalancing", rebalance_frequency)
+    
+    # Holdings table
+    st.subheader("Portfolio Holdings")
+    holdings_data = []
+    
+    for holding in holdings:
+        holdings_data.append({
+            'Ticker': holding.get('ticker', 'N/A'),
+            'Weight': f"{holding.get('weight', 0)*100:.1f}%",
+            'Score': f"{holding.get('score', 0):.1f}",
+            'Recommendation': holding.get('recommendation', 'HOLD'),
+            'Sector': holding.get('sector', 'N/A')
+        })
+    
+    df = pd.DataFrame(holdings_data)
+    st.dataframe(df, use_container_width=True)
+    
+    # Portfolio metrics if available
+    metrics = portfolio_result.get('metrics', {})
+    if metrics:
+        st.subheader("Portfolio Metrics")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            expected_return = metrics.get('expected_return', 0)
+            st.metric("Expected Return", f"{expected_return*100:.1f}%")
+        with col2:
+            portfolio_risk = metrics.get('portfolio_risk', 0)
+            st.metric("Portfolio Risk", f"{portfolio_risk*100:.1f}%")
+        with col3:
+            sharpe_ratio = metrics.get('sharpe_ratio', 0)
+            st.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
+        with col4:
+            diversification = metrics.get('diversification_score', 0)
+            st.metric("Diversification", f"{diversification:.1f}/100")
 
 
 def portfolio_recommendations_page():
@@ -6485,18 +6866,19 @@ def qa_learning_center_page():
             st.success("QA data refreshed!")
             st.rerun()
     
-    # 🆕 IMPROVEMENT #9: Batch Export All Tracked Stocks
+    # Get analysis archive first
+    analysis_archive = qa_system.get_analysis_archive()
+    
+    # Export all analyses button
     with col_btn2:
-        tracked_tickers = qa_system.get_tracked_tickers()
-        if tracked_tickers and len(tracked_tickers) > 0:
-            if st.button(f"📥 Export All ({len(tracked_tickers)} stocks)", use_container_width=True):
+        if analysis_archive:
+            if st.button(f"📥 Export All ({len(analysis_archive)} analyses)", use_container_width=True):
                 st.session_state.show_batch_export = True
         else:
             st.button("📥 Export All (No data)", disabled=True, use_container_width=True)
     
     # Google Sheets Export with Price Fetching
     with col_btn3:
-        analysis_archive = qa_system.get_analysis_archive()
         sheets_enabled = st.session_state.get('sheets_enabled', False)
         if analysis_archive and sheets_enabled:
             if st.button("📊 Sync to Sheets", help="Export to Google Sheets with price options", use_container_width=True):
@@ -6672,21 +7054,16 @@ def qa_learning_center_page():
     
     # Get data for display
     qa_summary = qa_system.get_qa_summary()
-    tracked_tickers = qa_system.get_tracked_tickers()
-    analysis_archive = qa_system.get_analysis_archive()
     analysis_stats = qa_system.get_analysis_stats()
     
     # Debug info
     st.sidebar.write(f"**Debug Info:**")
-    st.sidebar.write(f"Tracked tickers: {len(tracked_tickers)}")
     st.sidebar.write(f"Analyses: {len(analysis_archive)}")
-    if tracked_tickers:
-        st.sidebar.write(f"Tickers: {', '.join(tracked_tickers)}")
+    st.sidebar.write(f"Total stocks analyzed: {len(analysis_archive)}")
     
     # Create tabs for different QA views
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Dashboard", 
-        "🎯 Tracked Tickers",
         "📚 Complete Archives", 
         "📈 Weekly Reviews", 
         "🧠 Learning Insights",
@@ -7032,35 +7409,6 @@ def qa_learning_center_page():
                 st.metric("Due for Review", stocks_due)
     
     with tab2:
-        st.subheader("🎯 Tracked Tickers in QA System")
-        st.write("These tickers are currently being tracked for performance against recommendations.")
-        
-        if tracked_tickers:
-            # Display tracked tickers in a nice grid
-            cols_per_row = 4
-            for i in range(0, len(tracked_tickers), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j, ticker in enumerate(tracked_tickers[i:i+cols_per_row]):
-                    with cols[j]:
-                        st.info(f"📈 **{ticker}**")
-            
-            st.markdown("---")
-            st.write(f"**Total: {len(tracked_tickers)} tickers being tracked**")
-            
-            # Show recommendation breakdown for tracked tickers
-            if st.session_state.qa_system.recommendations:
-                rec_types = {}
-                for rec in st.session_state.qa_system.recommendations.values():
-                    rec_type = rec.recommendation.value
-                    rec_types[rec_type] = rec_types.get(rec_type, 0) + 1
-                
-                st.subheader("Recommendation Types")
-                for rec_type, count in rec_types.items():
-                    st.write(f"• **{rec_type.upper()}**: {count} ticker(s)")
-        else:
-            st.info("No tickers currently being tracked in QA system. Analyze stocks and log them to QA to start tracking.")
-    
-    with tab3:
         st.subheader("📚 Complete Analysis Archives")
         st.write("All analyses performed, organized by ticker with expandable details.")
         
@@ -7361,7 +7709,7 @@ def qa_learning_center_page():
         else:
             st.info("No analyses in archive yet. Perform stock analyses to build your archive.")
     
-    with tab4:
+    with tab3:
         st.subheader("📈 Weekly Reviews")
         
         # Check for stocks due for review
@@ -7448,7 +7796,7 @@ def qa_learning_center_page():
                             for factor in latest_review.unforeseen_factors:
                                 st.write(f"• {factor}")
     
-    with tab5:
+    with tab4:
         st.subheader("🧠 Learning Insights")
         
         insights = qa_summary['insights']
@@ -7535,7 +7883,7 @@ def qa_learning_center_page():
                 "Success Rate": f"{(qa_summary['performance_stats']['better'] / max(qa_summary['total_reviews'], 1) * 100):.1f}%"
             })
     
-    with tab6:
+    with tab5:
         st.subheader("🔬 Performance Analysis & Model Improvement")
         st.write("**Analyze stocks that moved significantly to identify patterns and improve the model.**")
         st.markdown("---")
@@ -8477,6 +8825,274 @@ The client has expressed interest in technology, healthcare, and renewable energ
 
 
 # Old disclosure_page and data_status_page functions removed - consolidated into system_status_and_ai_disclosure_page
+
+
+def settings_page():
+    """Consolidated settings page combining configuration and system status."""
+    st.header("⚙️ Settings & System Status")
+    st.write("Manage system configuration, monitor performance, and view AI usage.")
+    st.markdown("---")
+    
+    # Main tabs for different settings areas
+    tab1, tab2, tab3, tab4 = st.tabs(["🎛️ System Configuration", "📊 System Status", "🤖 AI Disclosure", "🔑 API Settings"])
+    
+    with tab1:
+        # Configuration content (simplified from configuration_page)
+        st.subheader("Investment Policy Statement & Model Configuration")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📋 Client Profile")
+            
+            # Client profile upload
+            uploaded_file = st.file_uploader(
+                "Upload Client Profile (JSON format)",
+                type=['json'],
+                help="Upload a client profile in JSON format with investment preferences"
+            )
+            
+            if uploaded_file:
+                try:
+                    client_profile = json.load(uploaded_file)
+                    st.success("✅ Client profile loaded successfully")
+                    st.json(client_profile)
+                except Exception as e:
+                    st.error(f"Error loading client profile: {e}")
+            
+            # Risk tolerance
+            risk_tolerance = st.selectbox(
+                "Risk Tolerance",
+                ["Conservative", "Moderate", "Aggressive"],
+                index=1
+            )
+            
+            # Investment horizon
+            investment_horizon = st.selectbox(
+                "Investment Horizon", 
+                ["Short Term (< 2 years)", "Medium Term (2-5 years)", "Long Term (> 5 years)"],
+                index=2
+            )
+        
+        with col2:
+            st.subheader("🎯 Agent Weights")
+            
+            # Load current weights
+            if 'agent_weights' not in st.session_state:
+                st.session_state.agent_weights = {
+                    'value': 0.20,
+                    'growth_momentum': 0.20, 
+                    'sentiment': 0.20,
+                    'macro_regime': 0.20,
+                    'risk': 0.20
+                }
+            
+            # Weight sliders
+            st.session_state.agent_weights['value'] = st.slider(
+                "Value Agent", 0.0, 1.0, st.session_state.agent_weights['value'], 0.05
+            )
+            st.session_state.agent_weights['growth_momentum'] = st.slider(
+                "Growth/Momentum Agent", 0.0, 1.0, st.session_state.agent_weights['growth_momentum'], 0.05
+            )
+            st.session_state.agent_weights['sentiment'] = st.slider(
+                "Sentiment Agent", 0.0, 1.0, st.session_state.agent_weights['sentiment'], 0.05
+            )
+            st.session_state.agent_weights['macro_regime'] = st.slider(
+                "Macro Regime Agent", 0.0, 1.0, st.session_state.agent_weights['macro_regime'], 0.05
+            )
+            st.session_state.agent_weights['risk'] = st.slider(
+                "Risk Agent", 0.0, 1.0, st.session_state.agent_weights['risk'], 0.05
+            )
+            
+            # Normalize weights
+            total_weight = sum(st.session_state.agent_weights.values())
+            if total_weight > 0:
+                for key in st.session_state.agent_weights:
+                    st.session_state.agent_weights[key] /= total_weight
+            
+            st.info(f"Total weight: {sum(st.session_state.agent_weights.values()):.2f}")
+            
+            if st.button("💾 Save Weights", type="primary"):
+                # Save weights (for now just show success - can be extended later)
+                st.success("✅ Agent weights updated for this session!")
+                st.info("💡 Weights are active for current session. Future versions will support persistent storage.")
+    
+    with tab2:
+        # System status content (from system_status_and_ai_disclosure_page)
+        st.subheader("📊 Data Provider Status")
+        
+        if st.session_state.data_provider:
+            data_provider = st.session_state.data_provider
+            
+            # Get cache status
+            try:
+                cache_status = data_provider.get_cache_status()
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Cache Files", cache_status.get('cache_files', 0))
+                with col2:
+                    cache_size = cache_status.get('cache_size_mb', 0)
+                    st.metric("Cache Size", f"{cache_size:.1f} MB")
+                with col3:
+                    premium_count = sum(1 for v in cache_status.get('premium_services', {}).values() if v)
+                    st.metric("Premium APIs", f"{premium_count}/2")
+                
+                # API usage details
+                st.subheader("API Usage Today")
+                api_usage = cache_status.get('daily_api_usage', {})
+                
+                if api_usage:
+                    for service, usage in api_usage.items():
+                        used = usage.get('used', 0)
+                        limit = usage.get('limit', 100)
+                        remaining = usage.get('remaining', limit - used)
+                        
+                        col1, col2, col3 = st.columns([2, 1, 1])
+                        with col1:
+                            st.write(f"**{service.title()}**")
+                        with col2:
+                            st.write(f"{used}/{limit}")
+                        with col3:
+                            if remaining > 0:
+                                st.success(f"{remaining} remaining")
+                            else:
+                                st.error("Limit reached")
+                else:
+                    st.info("No API usage data available")
+                    
+            except Exception as e:
+                st.error(f"Error getting system status: {e}")
+        else:
+            st.error("❌ Data provider not initialized")
+        
+        # QA System status
+        st.subheader("📈 QA System Status")
+        if st.session_state.qa_system:
+            qa_system = st.session_state.qa_system
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                recommendations_count = len(qa_system.get_all_recommendations())
+                st.metric("Total Recommendations", recommendations_count)
+            with col2:
+                analyses_count = len(qa_system.get_all_analyses())
+                st.metric("Total Analyses", analyses_count)
+            with col3:
+                portfolios_count = len(qa_system.get_all_portfolios())
+                st.metric("Saved Portfolios", portfolios_count)
+        else:
+            st.error("❌ QA system not initialized")
+    
+    with tab3:
+        # AI Disclosure content
+        st.subheader("🤖 AI Usage Disclosure")
+        st.write("This system uses artificial intelligence to enhance investment analysis.")
+        
+        # AI disclosure information
+        ai_disclosure = {
+            "OpenAI GPT-4": "Used for natural language processing and analysis generation",
+            "Perplexity AI": "Used for real-time web search and market research",
+            "Multi-Agent System": "Custom AI agents for specialized analysis (Value, Growth, Sentiment, Macro, Risk)",
+            "Data Processing": "Automated data aggregation and technical analysis"
+        }
+        
+        for ai_type, description in ai_disclosure.items():
+            with st.expander(f"ℹ️ {ai_type}"):
+                st.write(description)
+        
+        # Recent AI usage logs
+        st.subheader("Recent AI Usage")
+        disclosure_logger = get_disclosure_logger()
+        
+        try:
+            # Get recent logs from the last 24 hours
+            log_dir = Path("logs")
+            today = datetime.now().strftime("%Y%m%d")
+            log_file = log_dir / f"ai_disclosure_{today}.jsonl"
+            
+            if log_file.exists():
+                with open(log_file, 'r') as f:
+                    logs = [json.loads(line) for line in f.readlines()[-10:]]  # Last 10 entries
+                
+                if logs:
+                    for log in reversed(logs):  # Show most recent first
+                        timestamp = log.get('timestamp', 'Unknown')
+                        action = log.get('action', 'Unknown')
+                        provider = log.get('ai_provider', 'Unknown')
+                        
+                        st.text(f"{timestamp} - {provider}: {action}")
+                else:
+                    st.info("No recent AI usage logs")
+            else:
+                st.info("No AI usage logs found for today")
+                
+        except Exception as e:
+            st.error(f"Error reading AI logs: {e}")
+    
+    with tab4:
+        # API Settings
+        st.subheader("🔑 API Configuration")
+        st.write("Configure API keys for enhanced data access.")
+        
+        # Show current API status
+        api_status = {
+            "Alpha Vantage": bool(os.getenv('ALPHA_VANTAGE_API_KEY')),
+            "News API": bool(os.getenv('NEWS_API_KEY')),
+            "Polygon.io": bool(os.getenv('POLYGON_API_KEY')),
+            "Perplexity AI": bool(os.getenv('PERPLEXITY_API_KEY')),
+            "OpenAI": bool(os.getenv('OPENAI_API_KEY'))
+        }
+        
+        st.subheader("Current API Status")
+        for api, configured in api_status.items():
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**{api}**")
+            with col2:
+                if configured:
+                    st.success("✅ Configured")
+                else:
+                    st.error("❌ Missing")
+        
+        # API configuration help
+        with st.expander("📖 API Setup Instructions"):
+            st.markdown("""
+            **Required API Keys (.env file):**
+            
+            ```
+            # Free APIs
+            ALPHA_VANTAGE_API_KEY=your_key_here
+            NEWS_API_KEY=your_key_here
+            
+            # Premium APIs (recommended)
+            POLYGON_API_KEY=your_key_here
+            PERPLEXITY_API_KEY=your_key_here
+            OPENAI_API_KEY=your_key_here
+            
+            # Optional
+            GOOGLE_SHEET_ID=your_sheet_id_here
+            ```
+            
+            **Get Your API Keys:**
+            - **Alpha Vantage**: https://www.alphavantage.co/support/#api-key (Free)
+            - **News API**: https://newsapi.org/register (Free)
+            - **Polygon.io**: https://polygon.io/ (Premium - $99/month)
+            - **Perplexity AI**: https://www.perplexity.ai/settings/api (Premium - $20/month)
+            - **OpenAI**: https://platform.openai.com/api-keys (Pay-per-use)
+            
+            **Cost Estimates:**
+            - Free tier: $0/month (basic functionality)
+            - Recommended setup: ~$120/month (professional grade)
+            """)
+        
+        if st.button("🔄 Reload Environment", type="secondary"):
+            # Reload environment variables
+            load_dotenv(override=True)
+            st.success("✅ Environment variables reloaded")
+            st.rerun()
 
 
 def sync_all_archives_to_sheets() -> bool:

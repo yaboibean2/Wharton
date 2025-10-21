@@ -4,11 +4,11 @@ Monitors news sentiment and narrative risks.
 Analyzes: earnings calls, headlines, analyst revisions, key events.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from agents.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -953,7 +953,6 @@ Focus on actionable insights about market sentiment momentum and investor behavi
                     return datetime.now(timezone.utc) - timedelta(days=days_ago)
             
             # Default to current time minus 1 day (assume recent)
-            from datetime import timedelta
             return datetime.now(timezone.utc) - timedelta(days=1)
         
         try:
@@ -1090,7 +1089,7 @@ Focus on actionable insights about market sentiment momentum and investor behavi
         
         return scraped_articles
     
-    def _scrape_single_article(self, url: str, ticker: str, article_num: int) -> Dict:
+    def _scrape_single_article(self, url: str, ticker: str, article_num: int) -> Optional[Dict]:
         """
         Scrape a single article URL to get content.
         First tries to use fetch_webpage tool if available, then falls back to BeautifulSoup.
@@ -1205,7 +1204,7 @@ Focus on actionable insights about market sentiment momentum and investor behavi
             logger.error(f"Error scraping {url}: {e}")
             return None
 
-    def _enhanced_scrape_with_fetch_webpage(self, url: str, ticker: str) -> Dict:
+    def _enhanced_scrape_with_fetch_webpage(self, url: str, ticker: str) -> Optional[Dict]:
         """
         Enhanced scraping using fetch_webpage tool if available.
         
