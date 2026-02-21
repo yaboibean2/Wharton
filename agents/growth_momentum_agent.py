@@ -344,7 +344,15 @@ Your analysis should be:
 
 CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "Earnings growth of +18.5% combined with 3-month momentum of +12.3%..." or "Revenue growth of 22% validates...").
 Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., earnings growth rate, revenue growth, price momentum, 52-week proximity)."""
+State which data sources informed your analysis (e.g., earnings growth rate, revenue growth, price momentum, 52-week proximity).
+
+ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
+- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
+- If a metric shows +0.0% or N/A, acknowledge that directly — do NOT describe it as "stagnant" or claim the data is unavailable when a number IS provided.
+- Before writing each number, mentally verify it matches the data provided verbatim.
+- If earnings growth is +0.0%, do NOT say "lack of fundamental growth" — say earnings growth is flat at +0.0%.
+- If 12-month momentum is +168.6%, cite that exact figure — do NOT alter it.
+- If something seems contradictory (e.g., 0% earnings growth but strong momentum), describe both facts accurately without fabricating an explanation."""
         
         earnings_growth = details.get('earnings_growth_pct', 0) or 0
         revenue_growth = details.get('revenue_growth_pct', 0) or 0

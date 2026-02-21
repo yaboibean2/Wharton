@@ -378,7 +378,13 @@ Your analysis should be:
 
 CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "With yield curve slope at 0.50 and inflation at 3.2%..." or "The sector adjustment of +15 points reflects...").
 Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., yield curve, inflation rate, unemployment, regime classification)."""
+State which data sources informed your analysis (e.g., yield curve, inflation rate, unemployment, regime classification).
+
+ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
+- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
+- If a metric says 'Data unavailable', say so — do NOT substitute a made-up value.
+- Before writing each number, mentally verify it matches the data provided verbatim.
+- Do NOT claim a yield curve slope, inflation rate, or interest rate that is not explicitly in the data below."""
         
         base_score = 50  # Neutral baseline
         final_score = actual_score if actual_score is not None else (base_score + sector_adjustment)

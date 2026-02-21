@@ -129,16 +129,21 @@ class BaseAgent(ABC):
         """
         Fetch domain-specific supporting articles using Perplexity.
 
+        Uses Perplexity's native citations (grounded URLs the model actually referenced)
+        as the primary source, then validates every URL with an HTTP HEAD check to ensure
+        links are live before including them in the output.
+
         Args:
             ticker: Stock ticker symbol
             domain_query: Domain-specific search query (e.g., "valuation P/E analysis")
             num_articles: Number of articles to fetch (default: 2)
 
         Returns:
-            List of article dicts with 'title', 'url', 'source' keys
+            List of article dicts with 'title', 'url', 'source', 'verified' keys
         """
         import requests
         import re
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         perplexity_key = os.getenv('PERPLEXITY_API_KEY')
         if not perplexity_key:
@@ -180,9 +185,29 @@ class BaseAgent(ABC):
             if response.status_code == 200:
                 result = response.json()
                 content = result['choices'][0]['message']['content']
-                articles = self._parse_article_citations(content, num_articles)
-                logger.info(f"{self.name}: Found {len(articles)} supporting articles for {ticker}")
-                return articles
+
+                # --- Primary source: Perplexity native citations ---
+                # These are grounded URLs that the model actually referenced
+                native_citations = result.get('citations', [])
+                if native_citations:
+                    logger.info(
+                        f"{self.name}: Perplexity returned {len(native_citations)} "
+                        f"native citations for {ticker}"
+                    )
+
+                # Parse model-generated article text as secondary source
+                parsed_articles = self._parse_article_citations(content, num_articles + 2)
+
+                # Cross-reference: prefer parsed titles matched to native citation URLs
+                articles = self._merge_citations(parsed_articles, native_citations, num_articles)
+
+                # --- Validate every URL with HTTP HEAD ---
+                articles = self._validate_article_urls(articles)
+
+                logger.info(
+                    f"{self.name}: {len(articles)} verified articles for {ticker}"
+                )
+                return articles[:num_articles]
             else:
                 logger.warning(f"{self.name}: Perplexity article fetch failed with status {response.status_code}")
                 return []
@@ -190,28 +215,160 @@ class BaseAgent(ABC):
             logger.warning(f"{self.name}: Failed to fetch supporting articles for {ticker}: {e}")
             return []
 
+    def _merge_citations(
+        self,
+        parsed_articles: List[Dict],
+        native_citations: List[str],
+        num_articles: int,
+    ) -> List[Dict]:
+        """
+        Merge parsed article text with Perplexity's native citation URLs.
+
+        Priority:
+        1. Parsed articles whose URL matches a native citation (highest confidence)
+        2. Parsed articles with non-citation URLs (model generated, lower confidence)
+        3. Native citations not matched to any parsed article (use domain as title)
+        """
+        merged: List[Dict] = []
+        used_native: set = set()
+        used_parsed: set = set()
+
+        # Pass 1 — match parsed articles to native citations by domain overlap
+        for i, art in enumerate(parsed_articles):
+            art_domain = art.get('source', '').lower()
+            art_url = art.get('url', '').lower()
+            for j, cite_url in enumerate(native_citations):
+                if j in used_native:
+                    continue
+                cite_lower = cite_url.lower()
+                # Match if domains overlap or one URL is a prefix of the other
+                if (art_domain and art_domain in cite_lower) or art_url == cite_lower:
+                    merged.append({
+                        'title': art['title'],
+                        'url': cite_url,  # prefer native citation URL (grounded)
+                        'source': art['source'],
+                        'citation_backed': True,
+                    })
+                    used_native.add(j)
+                    used_parsed.add(i)
+                    break
+
+        # Pass 2 — remaining parsed articles
+        for i, art in enumerate(parsed_articles):
+            if i in used_parsed:
+                continue
+            merged.append({**art, 'citation_backed': False})
+
+        # Pass 3 — leftover native citations (no matching parsed article)
+        for j, cite_url in enumerate(native_citations):
+            if j in used_native:
+                continue
+            source = cite_url.split('//')[1].split('/')[0].replace('www.', '') if '//' in cite_url else 'Unknown'
+            merged.append({
+                'title': f"Financial analysis from {source}",
+                'url': cite_url,
+                'source': source,
+                'citation_backed': True,
+            })
+
+        # Sort: citation-backed first, then by original order
+        merged.sort(key=lambda a: (not a.get('citation_backed', False)))
+        return merged[:num_articles + 2]  # keep extras in case some fail validation
+
+    def _validate_article_urls(self, articles: List[Dict]) -> List[Dict]:
+        """
+        Validate article URLs with concurrent HTTP HEAD requests.
+        Drops articles whose URLs are unreachable (non-2xx or timeout).
+        """
+        import requests as _req
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        if not articles:
+            return []
+
+        def _check_url(article: Dict) -> Optional[Dict]:
+            url = article.get('url', '')
+            if not url:
+                return None
+            try:
+                # HEAD first (fast); fall back to GET with stream for sites
+                # that block HEAD (e.g. some news paywalls)
+                resp = _req.head(
+                    url,
+                    timeout=4,
+                    allow_redirects=True,
+                    headers={'User-Agent': 'Mozilla/5.0 (compatible; InvestmentBot/1.0)'},
+                )
+                if resp.status_code < 400:
+                    article['verified'] = True
+                    return article
+
+                # Retry with GET (some servers reject HEAD)
+                resp = _req.get(
+                    url,
+                    timeout=4,
+                    allow_redirects=True,
+                    stream=True,  # don't download body
+                    headers={'User-Agent': 'Mozilla/5.0 (compatible; InvestmentBot/1.0)'},
+                )
+                resp.close()
+                if resp.status_code < 400:
+                    article['verified'] = True
+                    return article
+
+                logger.debug(f"{self.name}: URL returned {resp.status_code}: {url}")
+                return None
+            except Exception as e:
+                logger.debug(f"{self.name}: URL unreachable ({e}): {url}")
+                return None
+
+        verified: List[Dict] = []
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_check_url, art): art for art in articles}
+            for fut in as_completed(futures):
+                result = fut.result()
+                if result is not None:
+                    verified.append(result)
+
+        # Maintain original order
+        url_order = {art['url']: idx for idx, art in enumerate(articles)}
+        verified.sort(key=lambda a: url_order.get(a.get('url', ''), 999))
+        return verified
+
     def _parse_article_citations(self, content: str, max_articles: int = 2) -> List[Dict]:
         """Parse article citations from Perplexity response."""
         import re
 
         articles = []
 
+        def _clean_url(u: str) -> str:
+            """Strip trailing punctuation and Perplexity citation markers like [3]."""
+            u = u.strip()
+            u = re.sub(r'\[\d+\]$', '', u)       # remove trailing [N]
+            u = u.rstrip('.,;)')                   # trailing punctuation
+            return u
+
+        seen_urls: set = set()
+
+        def _add_article(title: str, url: str):
+            url = _clean_url(url)
+            norm = url.lower().rstrip('/')
+            if norm in seen_urls:
+                return
+            seen_urls.add(norm)
+            source = url.split('//')[1].split('/')[0].replace('www.', '') if '//' in url else 'Unknown'
+            articles.append({'title': title.strip()[:100], 'url': url, 'source': source})
+
         # Try TITLE: ... | URL: ... pattern first
-        pattern = r'TITLE:\s*(.+?)\s*\|\s*URL:\s*(https?://[^\s\]]+)'
+        pattern = r'TITLE:\s*(.+?)\s*\|\s*URL:\s*(https?://[^\s\]]+(?:\[\d+\])?)'
         matches = re.findall(pattern, content, re.IGNORECASE)
 
         for title, url in matches:
-            url_clean = url.strip().rstrip('.,;)')
-            source = url_clean.split('//')[1].split('/')[0].replace('www.', '') if '//' in url_clean else 'Unknown'
-            articles.append({
-                'title': title.strip(),
-                'url': url_clean,
-                'source': source
-            })
+            _add_article(title, url)
 
         # Fallback: extract URLs and nearby text
         if not articles:
-            url_pattern = r'(https?://[^\s\[\]<>()"]+)'
+            url_pattern = r'(https?://[^\s\[\]<>()"]+(?:\[\d+\])?)'
             lines = content.split('\n')
             for line in lines:
                 line = line.strip()
@@ -219,18 +376,13 @@ class BaseAgent(ABC):
                     continue
                 url_match = re.search(url_pattern, line)
                 if url_match:
-                    url = url_match.group(1).rstrip('.,;)')
+                    url = url_match.group(1)
                     title_part = line[:url_match.start()].strip()
                     title_part = re.sub(r'^[\d\.\)\-\*]+\s*', '', title_part).strip()
                     title_part = title_part.rstrip('|:- ').strip()
                     if not title_part or len(title_part) < 5:
                         title_part = "Financial Analysis Article"
-                    source = url.split('//')[1].split('/')[0].replace('www.', '') if '//' in url else 'Unknown'
-                    articles.append({
-                        'title': title_part[:100],
-                        'url': url,
-                        'source': source
-                    })
+                    _add_article(title_part, url)
 
         return articles[:max_articles]
 
@@ -244,8 +396,10 @@ class BaseAgent(ABC):
             title = article.get('title', 'Article')
             url = article.get('url', '')
             source = article.get('source', 'Unknown')
+            verified = article.get('verified', False)
+            badge = " ✓" if verified else ""
             if url:
-                refs += f"{i}. {title} | {source} | {url}\n"
+                refs += f"{i}. {title} | {source} | {url}{badge}\n"
             else:
                 refs += f"{i}. {title} | {source}\n"
         return refs

@@ -636,7 +636,14 @@ Your analysis should be:
 2. Evidence-based, citing specific news sources and events that drive sentiment
 3. Market-aware, considering broader market context and investor behavior
 4. Forward-looking, discussing implications for stock performance
-5. Around 120-180 words with specific, actionable insights about sentiment trends"""
+5. Around 120-180 words with specific, actionable insights about sentiment trends
+
+ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
+- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
+- ONLY reference headlines and sources that are explicitly listed in the data below. Do NOT invent article titles or sources.
+- If a sentiment score is provided, cite it exactly as given.
+- Before writing each number or headline, mentally verify it matches the data provided verbatim.
+- Do NOT claim sentiment shifts, analyst rating changes, or events that are not explicitly in the data below."""
         
         # Calculate component scores for comprehensive analysis
         news_volume_score = min(100, len(news_items) * 10)  # Approximate score based on volume
@@ -716,23 +723,38 @@ Focus on actionable insights about market sentiment momentum and investor behavi
     def _format_article_links(self, news_items: List[Dict]) -> str:
         """
         Format article links for display in the sentiment rationale.
+        Deduplicates by normalised URL so the same article never appears twice.
         """
+        import re as _re
+
         if not news_items:
             return ""
-        
+
+        seen_urls: set = set()
         links_with_info = []
-        for i, item in enumerate(news_items[:5], 1):
-            title = item.get('title', f'Article {i}')
+        idx = 1
+        for item in news_items[:8]:  # check up to 8 to fill 5 unique slots
+            title = item.get('title', f'Article {idx}')
             url = item.get('url', '')
             source = item.get('source', 'Unknown Source')
-            
+
+            if url:
+                # Strip trailing citation markers like [3]
+                url = _re.sub(r'\[\d+\]$', '', url.strip())
+                norm = url.lower().rstrip('/')
+                if norm in seen_urls:
+                    continue
+                seen_urls.add(norm)
+
             if url and url.startswith('http'):
-                # Format: "Article 1: Title | Source | URL"
                 title_short = title[:60] + '...' if len(title) > 60 else title
-                links_with_info.append(f"Article {i}: {title_short} | {source} | {url}")
+                links_with_info.append(f"Article {idx}: {title_short} | {source} | {url}")
             else:
-                links_with_info.append(f"Article {i}: {title} | {source} | (No URL available)")
-        
+                links_with_info.append(f"Article {idx}: {title} | {source} | (No URL available)")
+            idx += 1
+            if idx > 5:
+                break
+
         if links_with_info:
             return "ARTICLE SOURCES:\n" + '\n'.join(links_with_info)
         else:
@@ -1200,18 +1222,24 @@ Return ONLY the 5 URLs, one per line, with no other text or formatting."""
         
         # Clean URLs more carefully to preserve valid URLs
         cleaned_urls = []
+        seen_normalized = set()
         for url in all_urls:
             url = url.strip()
+            # Strip Perplexity citation markers like [3]
+            url = re.sub(r'\[\d+\]$', '', url)
             # Only remove trailing punctuation that's clearly not part of the URL
-            # Be more conservative - only remove trailing periods, commas if they look like sentence punctuation
             if url.endswith('.') and not url.endswith('.html') and not url.endswith('.php') and not url.endswith('.jsp'):
                 url = url[:-1]
             elif url.endswith(','):
                 url = url[:-1]
             
             # Validate URL structure
-            if url and len(url) > 15 and ('/' in url[8:]):  # Must have domain and path
-                cleaned_urls.append(url)
+            if url and len(url) > 15 and ('/' in url[8:]):
+                # Deduplicate by normalised form (lowercase, no trailing slash)
+                norm = url.lower().rstrip('/')
+                if norm not in seen_normalized:
+                    seen_normalized.add(norm)
+                    cleaned_urls.append(url)
         
         logger.info(f"Final cleaned URLs (first 5): {cleaned_urls[:5]}")
 

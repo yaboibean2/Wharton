@@ -302,7 +302,14 @@ You specialize in identifying undervalued stocks using fundamental analysis. You
 
 CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "The P/E ratio of 28.5x trades at a 12% discount..." or "Dividend yield of 1.8% provides...").
 Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., P/E ratio, dividend yield, FCF yield, EV/EBITDA)."""
+State which data sources informed your analysis (e.g., P/E ratio, dividend yield, FCF yield, EV/EBITDA).
+
+ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
+- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
+- If a metric is listed as N/A or 0.0%, say so — do NOT substitute a made-up value.
+- Before writing each number, mentally verify it matches the data provided verbatim.
+- Do NOT claim a growth rate, P/E, yield, or price that is not explicitly in the data below.
+- If something seems contradictory (e.g., 0% growth but high momentum), describe what the data shows rather than speculating about what it 'should' be."""
         
         # Get all component scores for comprehensive context
         pe_score = scores.get('pe_score', 50)

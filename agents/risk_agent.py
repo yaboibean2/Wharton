@@ -410,7 +410,13 @@ Your analysis should be:
 
 CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "With annualized volatility of 24.3%..." or "The beta of 1.21 indicates...").
 Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., price history, fundamental data, beta coefficient)."""
+State which data sources informed your analysis (e.g., price history, fundamental data, beta coefficient).
+
+ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
+- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
+- If a metric is N/A, say so — do NOT substitute a made-up value.
+- Before writing each number, mentally verify it matches the data provided verbatim.
+- Do NOT claim a volatility, beta, or drawdown figure that is not explicitly in the data below."""
         
         risk_boost = details.get('risk_boost_applied', 0)
         is_low_risk = details.get('is_low_risk_asset', False)
