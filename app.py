@@ -34,10 +34,10 @@ CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-    --primary: #635bff;
-    --primary-light: #7a73ff;
-    --primary-bg: #f0efff;
-    --primary-dark: #4f46e5;
+    --primary: #475569;
+    --primary-light: #64748b;
+    --primary-bg: #f1f5f9;
+    --primary-dark: #334155;
     --success: #10b981;
     --success-bg: #ecfdf5;
     --warning: #f59e0b;
@@ -234,6 +234,8 @@ p, li, span, div { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Seg
     border: 1px solid var(--border) !important;
     border-radius: var(--r) !important;
     background: var(--surface) !important;
+    color: var(--text) !important;
+    caret-color: var(--primary) !important;
     padding: 0.6rem 0.875rem !important;
     font-size: 0.875rem !important;
     transition: var(--transition);
@@ -319,6 +321,221 @@ html { scroll-behavior: smooth; }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 [data-testid="stStatusWidget"] { visibility: hidden; }
+
+/* =================================================================
+   DARK-MODE IMMUNITY
+   Streamlit's BaseWeb widgets inherit the OS color scheme via
+   prefers-color-scheme.  On macOS Dark Mode the browser sends
+   "dark" and BaseWeb flips backgrounds/text.  These overrides
+   ensure every widget renders in light mode regardless of OS.
+   ================================================================= */
+
+/* --- Global containers --- */
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > div,
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+section[data-testid="stSidebar"] > div,
+[data-testid="stSidebarContent"],
+[data-testid="stBottom"] {
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+}
+
+/* --- Text everywhere --- */
+[data-testid="stAppViewContainer"] p,
+[data-testid="stAppViewContainer"] li,
+[data-testid="stAppViewContainer"] span,
+[data-testid="stAppViewContainer"] label,
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
+.stMarkdown strong, .stMarkdown em, .stMarkdown a {
+    color: var(--text) !important;
+}
+
+/* --- Buttons (non-primary default to white bg + dark text) --- */
+.stButton > button {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+.stButton > button p,
+.stButton > button span {
+    color: inherit !important;
+}
+/* Primary buttons stay purple+white */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, var(--primary), var(--primary-light)) !important;
+    color: white !important;
+    border: none !important;
+}
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="baseButton-primary"]:hover {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary)) !important;
+    color: white !important;
+}
+.stButton > button[kind="primary"] p,
+.stButton > button[kind="primary"] span,
+.stButton > button[data-testid="baseButton-primary"] p,
+.stButton > button[data-testid="baseButton-primary"] span {
+    color: white !important;
+}
+
+/* --- All BaseWeb inputs --- */
+[data-baseweb="input"],
+[data-baseweb="base-input"],
+[data-baseweb="input"] > div,
+[data-baseweb="base-input"] > div,
+[data-baseweb="input"] input,
+[data-baseweb="base-input"] input,
+[data-baseweb="textarea"],
+[data-baseweb="textarea"] textarea {
+    background: var(--surface) !important;
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+    caret-color: var(--text) !important;
+}
+
+/* Input wrapper divs (Streamlit's extra wrapper) */
+.stTextInput > div > div,
+.stNumberInput > div > div,
+.stTextArea > div > div {
+    background: var(--surface) !important;
+    background-color: var(--surface) !important;
+}
+
+/* --- Selectbox / Dropdown --- */
+[data-baseweb="select"],
+[data-baseweb="select"] > div,
+[data-baseweb="select"] > div > div,
+.stSelectbox > div > div,
+.stSelectbox > div > div > div {
+    background: var(--surface) !important;
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+}
+/* Dropdown menu */
+[data-baseweb="popover"],
+[data-baseweb="popover"] > div,
+[data-baseweb="menu"],
+[data-baseweb="list"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+}
+[data-baseweb="menu-item"],
+[data-baseweb="option"],
+[role="option"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+}
+[data-baseweb="menu-item"]:hover,
+[data-baseweb="option"]:hover,
+[role="option"]:hover {
+    background: var(--primary-bg) !important;
+    color: var(--primary) !important;
+}
+
+/* --- Date Input --- */
+[data-testid="stDateInput"] [data-baseweb="input"],
+[data-testid="stDateInput"] [data-baseweb="base-input"],
+[data-testid="stDateInput"] [data-baseweb="input"] > div,
+[data-testid="stDateInput"] input {
+    background: var(--surface) !important;
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+}
+/* Calendar popover */
+[data-baseweb="datepicker"],
+[data-baseweb="calendar"],
+[data-baseweb="calendar"] > div,
+[data-baseweb="month-header"],
+[data-baseweb="calendar-header"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+}
+[data-baseweb="calendar"] button {
+    color: var(--text) !important;
+    background: transparent !important;
+}
+[data-baseweb="calendar"] button:hover {
+    background: var(--primary-bg) !important;
+}
+[data-baseweb="calendar"] [aria-selected="true"] {
+    background: var(--primary) !important;
+    color: white !important;
+}
+
+/* --- Radio / Checkbox labels --- */
+[data-testid="stRadio"] label,
+[data-testid="stRadio"] label p,
+[data-testid="stRadio"] label span,
+[data-testid="stRadio"] > div > label,
+[data-testid="stCheckbox"] label,
+[data-testid="stCheckbox"] label p {
+    color: var(--text) !important;
+}
+
+/* --- Widget labels --- */
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] span,
+.stLabel p {
+    color: var(--text-secondary) !important;
+}
+
+/* --- Alerts / Notifications --- */
+.stAlert,
+.stAlert > div,
+[data-baseweb="notification"] {
+    background: var(--surface) !important;
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+.stAlert p, .stAlert span, .stAlert li,
+.stAlert strong, .stAlert em {
+    color: var(--text) !important;
+}
+
+/* --- Slider --- */
+[data-testid="stSlider"] label,
+[data-testid="stSlider"] label p {
+    color: var(--text) !important;
+}
+[data-testid="stSlider"] [data-testid="stTickBarMin"],
+[data-testid="stSlider"] [data-testid="stTickBarMax"] {
+    color: var(--text-muted) !important;
+}
+
+/* --- Multiselect tags --- */
+.stMultiSelect [data-baseweb="tag"] {
+    background: var(--primary-bg) !important;
+    color: var(--primary) !important;
+}
+
+/* --- Tooltip / Popover --- */
+[data-baseweb="tooltip"],
+[data-baseweb="tooltip"] > div {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+}
+
+/* --- Tab panel content --- */
+.stTabs [data-baseweb="tab-panel"] {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+/* --- Progress bar background --- */
+.stProgress > div {
+    background: var(--border-light) !important;
+}
+
+/* --- Expander toggle icon --- */
+[data-testid="stExpander"] svg {
+    color: var(--text-secondary) !important;
+    fill: var(--text-secondary) !important;
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -326,8 +543,8 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 # Plotly Light Theme
 # ---------------------------------------------------------------------------
-CHART_COLORS = ["#635bff", "#0ea371", "#3b82f6", "#d97706", "#ec4899",
-                "#8b5cf6", "#06b6d4", "#f43f5e", "#10b981", "#6366f1"]
+CHART_COLORS = ["#475569", "#0ea371", "#3b82f6", "#d97706", "#ec4899",
+                "#8b5cf6", "#06b6d4", "#f43f5e", "#10b981", "#64748b"]
 
 _chart_template = dict(
     layout=dict(
@@ -482,9 +699,9 @@ def main():
     # Branded header
     st.markdown("""
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
-        <div style="background:linear-gradient(135deg,#635bff,#7a73ff);color:white;font-weight:700;font-size:1rem;
+        <div style="background:linear-gradient(135deg,#334155,#475569);color:white;font-weight:700;font-size:1rem;
                     width:38px;height:38px;border-radius:10px;display:flex;
-                    align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(99,91,255,0.25);
+                    align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(51,65,85,0.25);
                     letter-spacing:-0.02em;">IA</div>
         <div>
             <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
@@ -627,6 +844,13 @@ def stock_analysis_page():
                 weight_cols = st.columns(5)
                 agents = ['value', 'growth_momentum', 'macro_regime', 'risk', 'sentiment']
                 agent_labels = ['Value', 'Growth/Momentum', 'Macro Regime', 'Risk', 'Sentiment']
+                agent_tips = {
+                    'value':           'P/E, P/B, DCF intrinsic-value metrics',
+                    'growth_momentum': 'Revenue growth, earnings trends, price momentum',
+                    'macro_regime':    'Interest rates, inflation, economic cycle',
+                    'risk':            'Volatility, drawdown, debt-level risk',
+                    'sentiment':       'News tone, analyst ratings, social buzz',
+                }
                 for i, (agent, label) in enumerate(zip(agents, agent_labels)):
                     with weight_cols[i]:
                         st.session_state.custom_agent_weights[agent] = st.slider(
@@ -636,7 +860,7 @@ def stock_analysis_page():
                             value=st.session_state.custom_agent_weights[agent],
                             step=0.1,
                             key=f"custom_weight_{agent}",
-                            help=f"Weight for {label} agent's contribution to final score"
+                            help=agent_tips[agent]
                         )
                 # Show current weight distribution
                 st.write("**Current Weight Distribution:**")
@@ -645,7 +869,7 @@ def stock_analysis_page():
                 dist_cols = st.columns(5)
                 for i, (agent, pct) in enumerate(percentages.items()):
                     with dist_cols[i]:
-                        st.metric(agent_labels[i], f"{pct:.1f}%", help=f"This agent's influence: {pct:.1f}%")
+                        st.metric(agent_labels[i], f"{pct:.1f}%", help=agent_tips[agents[i]])
 
             st.write("**Configure Custom Agent Weights:**")
             _weight_slider_fragment()
@@ -706,25 +930,165 @@ def stock_analysis_page():
         # Create empty slots for progress display
         progress_slot = st.empty()
 
-        def _render_progress(slot, pct, message):
-            """Render a custom HTML progress bar into a Streamlit empty slot."""
+        # Agent step definitions for the progress display
+        # Clean inline SVG icons (Lucide-style, 14x14, stroke=currentColor)
+        _SVG = {
+            "data":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>',
+            "value": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+            "growth":'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+            "macro": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+            "risk":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+            "sent":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="10" y1="8" x2="18" y2="8"/><line x1="10" y1="12" x2="18" y2="12"/><line x1="10" y1="16" x2="14" y2="16"/></svg>',
+            "blend": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>',
+            "check": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+        }
+
+        _AGENT_STEPS = [
+            {"key": "data",      "label": "Data Gathering",     "svg": "data",  "range": (0, 42)},
+            {"key": "value",     "label": "Value Agent",        "svg": "value", "range": (42, 53)},
+            {"key": "growth",    "label": "Growth/Momentum",    "svg": "growth","range": (53, 64)},
+            {"key": "macro",     "label": "Macro Regime",       "svg": "macro", "range": (64, 76)},
+            {"key": "risk",      "label": "Risk Agent",         "svg": "risk",  "range": (76, 87)},
+            {"key": "sentiment", "label": "Sentiment Agent",    "svg": "sent",  "range": (87, 98)},
+            {"key": "blend",     "label": "Score Blending",     "svg": "blend", "range": (98, 100)},
+        ]
+
+        # Expected elapsed seconds at each progress point (for countdown estimation)
+        def _expected_elapsed_at(p):
+            """Piecewise-linear estimate: expected wall-clock seconds at progress p%."""
+            if p <= 0:  return 0.0
+            if p <= 42: return p * (37.0 / 42.0)
+            if p <= 98: return 37.0 + (p - 42.0) * (48.0 / 56.0)
+            return 85.0 + (p - 98.0) * (1.0 / 2.0)
+
+        _EXPECTED_TOTAL = _expected_elapsed_at(100)   # ~86s
+
+        # Slate palette for progress UI
+        _SLATE_600 = "#475569"
+        _SLATE_500 = "#64748b"
+        _SLATE_200 = "#e2e8f0"
+        _SLATE_100 = "#f1f5f9"
+
+        def _render_progress(slot, pct, message, remaining_secs=None):
+            """Render a professional analysis progress card with agent steps and countdown."""
             pct = max(0, min(100, int(pct)))
+
+            # --- Time remaining label ---
+            if remaining_secs is not None and pct < 100:
+                rs = max(0, int(remaining_secs))
+                if rs >= 60:
+                    time_label = f"{rs // 60}m {rs % 60:02d}s remaining"
+                else:
+                    time_label = f"{rs}s remaining" if rs > 0 else "finishing up..."
+            elif pct >= 100:
+                time_label = "Complete"
+            else:
+                time_label = "estimating..."
+
+            # --- Build step rows ---
+            steps_html = ""
+            for step in _AGENT_STEPS:
+                lo, hi = step["range"]
+                is_done   = pct >= hi
+                is_active = lo <= pct < hi
+
+                if is_done:
+                    badge_bg = "#ecfdf5"; badge_fg = "#059669"
+                    icon_svg = _SVG["check"]
+                    label_color = "#374151"; label_weight = "400"; row_bg = "transparent"
+                elif is_active:
+                    badge_bg = _SLATE_200; badge_fg = _SLATE_600
+                    icon_svg = _SVG[step["svg"]]
+                    label_color = "#111827"; label_weight = "600"; row_bg = _SLATE_100
+                else:
+                    badge_bg = "#f3f4f6"; badge_fg = "#9ca3af"
+                    icon_svg = _SVG[step["svg"]]
+                    label_color = "#9ca3af"; label_weight = "400"; row_bg = "transparent"
+
+                # Pulsing indicator for active step
+                pulse = ""
+                if is_active:
+                    pulse = (
+                        f'<span style="width:6px;height:6px;border-radius:50%;'
+                        f'background:{_SLATE_600};display:inline-block;margin-left:auto;'
+                        f'animation:_prog_pulse 1.4s ease-in-out infinite"></span>'
+                    )
+
+                steps_html += (
+                    f'<div style="display:flex;align-items:center;gap:10px;'
+                    f'padding:5px 8px;border-radius:6px;background:{row_bg};'
+                    f'transition:background 0.3s ease">'
+                    f'<span style="display:flex;align-items:center;justify-content:center;'
+                    f'width:26px;height:26px;border-radius:6px;font-size:13px;'
+                    f'background:{badge_bg};color:{badge_fg};flex-shrink:0">{icon_svg}</span>'
+                    f'<span style="font-size:13px;color:{label_color};'
+                    f'font-weight:{label_weight}">{step["label"]}</span>'
+                    f'{pulse}'
+                    f'</div>'
+                )
+
+            # --- Card assembly ---
             slot.markdown(
-                f'<div style="width:100%;background:#e0e0e0;border-radius:4px;overflow:hidden;'
-                f'height:8px;margin:8px 0 4px 0">'
-                f'<div style="width:{pct}%;background:#ff4b4b;height:100%;border-radius:4px;'
-                f'transition:width 0.3s ease"></div></div>'
-                f'<div style="color:#888;font-size:13px">{message}</div>',
+                f'<style>'
+                f'@keyframes _prog_pulse{{0%,100%{{opacity:.3;transform:scale(.8)}}50%{{opacity:1;transform:scale(1.1)}}}}'
+                f'@keyframes _prog_bar{{from{{background-position:0 0}}to{{background-position:30px 0}}}}'
+                f'</style>'
+                f'<div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;'
+                f'padding:20px 24px;box-shadow:0 1px 4px rgba(0,0,0,0.06);margin:10px 0;'
+                f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif">'
+
+                # Header row
+                f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
+                f'margin-bottom:14px">'
+                f'<span style="font-size:15px;font-weight:700;color:#111827;letter-spacing:-0.01em">'
+                f'Analysis Progress</span>'
+                f'<span style="font-size:13px;color:#6b7280;font-weight:500;'
+                f'font-variant-numeric:tabular-nums">{time_label}</span>'
+                f'</div>'
+
+                # Progress bar (with animated stripe when active)
+                f'<div style="width:100%;background:#f3f4f6;border-radius:99px;'
+                f'overflow:hidden;height:5px;margin-bottom:16px">'
+                f'<div style="width:{pct}%;height:100%;border-radius:99px;'
+                f'background:{"linear-gradient(90deg," + _SLATE_600 + "," + _SLATE_500 + ")" if pct < 100 else "#10b981"};'
+                f'{"background-size:30px 30px;background-image:linear-gradient(-45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);animation:_prog_bar .8s linear infinite;" if 0 < pct < 100 else ""}'
+                f'transition:width 0.15s linear"></div></div>'
+
+                # Step grid (2 columns)
+                f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;'
+                f'margin-bottom:14px">{steps_html}</div>'
+
+                # Status message
+                f'<div style="font-size:12px;color:#6b7280;border-top:1px solid #f0f1f3;'
+                f'padding-top:10px;line-height:1.4">{message}</div>'
+                f'</div>',
                 unsafe_allow_html=True
             )
 
         def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
-            """Run analysis in a background thread with smooth progress interpolation.
+            """Run analysis in a background thread with smooth progress interpolation
+            and a continuously-counting-down time-remaining estimate.
 
-            The orchestrator reports ~20 discrete milestones over ~80s.  Between
-            milestones this function uses phase-aware time predictions and an
-            asymptotic advance curve to creep the bar forward continuously.
-            An exponential-chase filter smooths the rendered value at ~10 fps.
+            Progress bar: asymptotic interpolation between orchestrator milestones
+            at ~10 fps, same as before.
+
+            Countdown (FIXED):
+            The previous implementation used display_pct (cosmetically smoothed) to
+            derive a pace_factor. Because display_pct lags behind real wall-clock
+            time early in the run, the pace_factor overestimated the remaining time,
+            causing the timer to count UP.
+
+            New approach:
+            1. smooth_remaining is decremented by real dt every tick (always counts
+               down).
+            2. A model-based estimate (est_remaining) is computed from the MILESTONE
+               percentage (mp), which reflects actual orchestrator progress, not the
+               smoothed display value.
+            3. If est_remaining < smooth_remaining (ahead of schedule): pull down
+               at ~10 % of the gap per tick.
+            4. If est_remaining > smooth_remaining (behind schedule): pull up at
+               most +dt per tick — so the timer can stall but NEVER visibly count
+               upward.  Net change per tick is always <= 0.
             """
             _prog = {
                 'mile_pct': 0.0,
@@ -736,7 +1100,6 @@ def stock_analysis_page():
             }
 
             def _on_milestone(pct, message):
-                """Called from background thread when orchestrator reports a milestone."""
                 _prog['mile_pct'] = pct
                 _prog['mile_msg'] = message
                 _prog['mile_t'] = time.time()
@@ -757,44 +1120,79 @@ def stock_analysis_page():
             thread = threading.Thread(target=_bg, daemon=True)
             thread.start()
 
-            # Phase speed calibration: expected seconds per percentage point.
-            # Derived from measured runs (~37s for data, ~45s for agents, ~1s final).
+            # Phase speed calibration (seconds per percentage point)
             def _phase_rate(p):
-                if p < 42:  return 0.88   # Data gathering  0-42%
-                if p < 98:  return 0.80   # Agent analysis  42-98%
-                return 0.50               # Finalization    98-100%
+                if p < 42:  return 0.88
+                if p < 98:  return 0.80
+                return 0.50
+
+            # Use historical average as initial total estimate if available
+            if st.session_state.analysis_times:
+                initial_total_est = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
+            else:
+                initial_total_est = _EXPECTED_TOTAL
 
             display_pct = 0.0
+            smooth_remaining = initial_total_est
             last_render = 0.0
+            last_tick = time.time()
+            start_wall = time.time()
 
             while not _prog['done']:
                 now = time.time()
+                dt  = now - last_tick
+                last_tick = now
+
                 mp  = _prog['mile_pct']
                 mt  = _prog['mile_t']
                 msg = _prog['mile_msg']
 
-                # Time-based advance prediction past last milestone
-                dt = now - mt
+                # --- Progress bar interpolation (unchanged) ---
+                elapsed_since_mile = now - mt
                 rate = _phase_rate(mp)
-                raw_advance = dt / rate if rate > 0 else 0
-
-                # Asymptotic curve: approaches max_advance but never overshoots.
-                # This prevents the bar from racing ahead of the actual work.
+                raw_advance = elapsed_since_mile / rate if rate > 0 else 0
                 max_advance = 9.0
                 predicted = max_advance * (1 - math.exp(-raw_advance / max_advance))
-
                 target = min(mp + predicted, 99.0)
 
-                # Exponential chase: display smoothly converges toward target.
-                # At 0.15 per tick (20 ticks/s) the half-life is ~0.2s — fast
-                # enough to feel responsive, slow enough to look smooth.
                 if target > display_pct:
                     display_pct += (target - display_pct) * 0.15
                 display_pct = max(0.0, min(display_pct, 99.0))
 
-                # Render at ~10 fps (every other tick)
+                # --- Countdown estimation (FIXED) ---
+                elapsed_wall = now - start_wall
+
+                # 1. Natural countdown — always subtract real elapsed time
+                smooth_remaining -= dt
+
+                # 2. Compute model-based estimate of remaining seconds
+                #    using MILESTONE pct (mp) which reflects actual orchestrator
+                #    progress, not the cosmetically-smoothed display_pct.
+                if mp >= 5:
+                    frac = mp / 100.0
+                    est_remaining = elapsed_wall * ((1.0 - frac) / frac)
+                else:
+                    # Very early — just rely on prior estimate
+                    est_remaining = max(0.0, initial_total_est - elapsed_wall)
+
+                est_remaining = max(0.0, est_remaining)
+
+                # 3. Asymmetric blend toward model estimate
+                diff = est_remaining - smooth_remaining
+                if diff < 0:
+                    # Ahead of schedule — pull timer down (max 4x normal speed)
+                    smooth_remaining += max(diff * 0.10, -dt * 3)
+                elif diff > 0:
+                    # Behind schedule — slow the countdown, but NEVER reverse it.
+                    # Correction capped at +dt so net change = -dt + dt = 0 (stall).
+                    smooth_remaining += min(diff * 0.02, dt)
+
+                smooth_remaining = max(0.0, smooth_remaining)
+
+                # Render at ~10 fps
                 if now - last_render >= 0.10:
-                    _render_progress(slot, display_pct, msg)
+                    _render_progress(slot, display_pct, msg,
+                                     remaining_secs=smooth_remaining)
                     last_render = now
 
                 time.sleep(0.05)
@@ -804,19 +1202,20 @@ def stock_analysis_page():
 
             return _prog['result']
 
-        _render_progress(progress_slot, 0, "Initializing analysis...")
+        # Compute initial time estimate for the countdown
+        if st.session_state.analysis_times:
+            _initial_est = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
+        else:
+            _initial_est = _EXPECTED_TOTAL
+
+        _render_progress(progress_slot, 0, "Initializing analysis…",
+                         remaining_secs=_initial_est)
 
         # Handle single or multiple stock analysis
         if analysis_mode == "Single Stock":
             try:
-                # Show initial estimate
-                if st.session_state.analysis_times:
-                    avg_time = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
-                    est_minutes = int(avg_time // 60)
-                    est_seconds = int(avg_time % 60)
-                    _render_progress(progress_slot, 0, f"Starting analysis... (Est. {est_minutes}m {est_seconds}s)")
-                else:
-                    _render_progress(progress_slot, 0, "Starting analysis... (Est. ~80s)")
+                _render_progress(progress_slot, 0, "Starting analysis…",
+                                 remaining_secs=_initial_est)
 
                 start_time = time.time()
 
@@ -844,7 +1243,9 @@ def stock_analysis_page():
 
                 actual_minutes = int(analysis_duration // 60)
                 actual_seconds = int(analysis_duration % 60)
-                _render_progress(progress_slot, 100, f"Analysis complete! (Took {actual_minutes}m {actual_seconds}s)")
+                _render_progress(progress_slot, 100,
+                                 f"Analysis complete — {actual_minutes}m {actual_seconds:02d}s",
+                                 remaining_secs=0)
 
                 time.sleep(0.5)
                 progress_slot.empty()
@@ -909,7 +1310,8 @@ def stock_analysis_page():
 
                 # Create a single empty slot for this stock's progress
                 stock_progress_slot = st.empty()
-                _render_progress(stock_progress_slot, 0, "Initializing analysis...")
+                _render_progress(stock_progress_slot, 0, "Initializing analysis…",
+                                 remaining_secs=_initial_est)
 
                 try:
                     # Convert analysis_date to string format
@@ -1754,26 +2156,38 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
 
 
 def get_gradient_color(score: float) -> str:
-    """Generate gradient color based on score value (0-100).
-    Red (low) -> Yellow (medium) -> Green (high)"""
-    
-    # Normalize score to 0-1 range
-    normalized = max(0, min(100, score)) / 100
-    
-    if normalized <= 0.5:
-        # Red to Yellow gradient (0-50)
-        ratio = normalized * 2  # 0 to 1
-        red = 255
-        green = int(255 * ratio)
-        blue = 0
-    else:
-        # Yellow to Green gradient (50-100)
-        ratio = (normalized - 0.5) * 2  # 0 to 1
-        red = int(255 * (1 - ratio))
-        green = 255
-        blue = 0
-    
-    return f"rgb({red},{green},{blue})"
+    """Generate a polished gradient color based on score (0-100).
+
+    Uses a 5-stop palette of professionally chosen colours:
+      0-25  Deep rose-red   → Warm coral
+      25-50 Warm coral      → Amber
+      50-70 Amber           → Soft teal-green
+      70-100 Soft teal-green → Rich emerald
+    """
+    s = max(0.0, min(100.0, float(score)))
+
+    # Palette stops: (score, R, G, B)
+    stops = [
+        (0,   200,  60,  60),   # Deep rose-red
+        (25,  224, 108,  72),   # Warm coral
+        (50,  217, 170,  62),   # Amber / warm gold
+        (70,   52, 179, 136),   # Soft teal-green
+        (100,  16, 152,  96),   # Rich emerald
+    ]
+
+    # Find the two surrounding stops and interpolate
+    for i in range(len(stops) - 1):
+        lo_s, lo_r, lo_g, lo_b = stops[i]
+        hi_s, hi_r, hi_g, hi_b = stops[i + 1]
+        if s <= hi_s:
+            t = (s - lo_s) / (hi_s - lo_s) if hi_s != lo_s else 0.0
+            r = int(lo_r + (hi_r - lo_r) * t)
+            g = int(lo_g + (hi_g - lo_g) * t)
+            b = int(lo_b + (hi_b - lo_b) * t)
+            return f"rgb({r},{g},{b})"
+
+    # Fallback (score == 100)
+    return f"rgb({stops[-1][1]},{stops[-1][2]},{stops[-1][3]})"
 
 
 def get_agent_specific_context(agent_key: str, result: dict) -> dict:
