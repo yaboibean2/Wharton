@@ -34,10 +34,10 @@ CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-    --primary: #475569;
-    --primary-light: #64748b;
-    --primary-bg: #f1f5f9;
-    --primary-dark: #334155;
+    --primary: #3b5998;
+    --primary-light: #5b7bb3;
+    --primary-bg: #eef2f9;
+    --primary-dark: #2c4a73;
     --success: #10b981;
     --success-bg: #ecfdf5;
     --warning: #f59e0b;
@@ -159,7 +159,7 @@ p, li, span, div { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Seg
     background: var(--primary) !important;
     color: white !important;
     font-weight: 600 !important;
-    box-shadow: 0 2px 4px rgba(99,91,255,0.25) !important;
+    box-shadow: 0 2px 4px rgba(59,89,152,0.25) !important;
 }
 .stTabs [data-baseweb="tab-highlight"],
 .stTabs [data-baseweb="tab-border"] { display: none !important; }
@@ -186,7 +186,7 @@ p, li, span, div { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Seg
 }
 .stButton > button[kind="primary"]:hover {
     background: linear-gradient(135deg, var(--primary-dark), var(--primary)) !important;
-    box-shadow: 0 4px 12px rgba(99,91,255,0.3) !important;
+    box-shadow: 0 4px 12px rgba(59,89,152,0.3) !important;
 }
 .stDownloadButton > button {
     background: var(--surface) !important;
@@ -317,6 +317,30 @@ html { scroll-behavior: smooth; }
 /* ===== Toast / Notification ===== */
 [data-testid="stToast"] { border-radius: var(--r-lg) !important; box-shadow: var(--shadow-lg) !important; }
 
+/* ===== Plotly Charts — force white container ===== */
+.js-plotly-plot,
+.js-plotly-plot .plot-container,
+.js-plotly-plot .svg-container {
+    background: #ffffff !important;
+    border-radius: var(--r-lg) !important;
+}
+
+/* ===== Code blocks ===== */
+[data-testid="stCode"],
+pre, code,
+.stCodeBlock pre {
+    background: #f8fafc !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--r) !important;
+}
+
+/* ===== Streamlit native charts (Vega-Lite) ===== */
+.vega-embed,
+.vega-embed .chart-wrapper {
+    background: #ffffff !important;
+}
+
 /* ===== Hide Streamlit Branding ===== */
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
@@ -363,7 +387,7 @@ section[data-testid="stSidebar"] > div,
 .stButton > button span {
     color: inherit !important;
 }
-/* Primary buttons stay purple+white */
+/* Primary buttons keep gradient + white text */
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="baseButton-primary"] {
     background: linear-gradient(135deg, var(--primary), var(--primary-light)) !important;
@@ -505,6 +529,13 @@ section[data-testid="stSidebar"] > div,
 [data-testid="stSlider"] [data-testid="stTickBarMin"],
 [data-testid="stSlider"] [data-testid="stTickBarMax"] {
     color: var(--text-muted) !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+/* Slider current value display */
+[data-testid="stSlider"] [data-testid="stThumbValue"],
+[data-testid="stSlider"] [data-baseweb="slider"] [data-testid="stThumbValue"] {
+    color: var(--primary) !important;
 }
 
 /* --- Multiselect tags --- */
@@ -536,6 +567,80 @@ section[data-testid="stSidebar"] > div,
     color: var(--text-secondary) !important;
     fill: var(--text-secondary) !important;
 }
+
+/* --- Slider track / thumb --- */
+[data-testid="stSlider"] [role="slider"] {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="progressbar"] {
+    background: var(--primary) !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] > div > div:first-child {
+    background: var(--border) !important;
+}
+
+/* --- Toggle / Switch --- */
+[data-baseweb="toggle"] span { background: var(--border) !important; }
+[data-baseweb="toggle"][aria-checked="true"] span,
+[data-baseweb="toggle"] input:checked + span { background: var(--primary) !important; }
+
+/* --- Number input stepper buttons --- */
+.stNumberInput button {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+.stNumberInput button:hover {
+    background: var(--bg) !important;
+}
+
+/* --- Dataframe header row --- */
+[data-testid="stDataFrame"] thead th {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+}
+
+/* =================================================================
+   CATCH-ALL: OS-level dark mode override
+   Even if Streamlit or BaseWeb injects dark-scheme styles via media
+   query, we force our light palette everywhere.
+   ================================================================= */
+@media (prefers-color-scheme: dark) {
+    .stApp,
+    .stApp > header,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"],
+    section[data-testid="stSidebar"] > div,
+    [data-testid="stSidebarContent"],
+    [data-testid="stBottom"] {
+        background-color: var(--bg) !important;
+        color: var(--text) !important;
+        color-scheme: light !important;
+    }
+    [data-baseweb="input"],
+    [data-baseweb="textarea"],
+    [data-baseweb="select"],
+    [data-baseweb="select"] > div,
+    [data-baseweb="popover"],
+    [data-baseweb="menu"],
+    [data-baseweb="list"],
+    [data-baseweb="tooltip"],
+    [data-baseweb="tooltip"] > div {
+        background: var(--surface) !important;
+        color: var(--text) !important;
+    }
+    .js-plotly-plot,
+    .js-plotly-plot .plot-container,
+    .js-plotly-plot .svg-container,
+    .vega-embed, .vega-embed .chart-wrapper {
+        background: #ffffff !important;
+    }
+    [data-testid="stCode"], pre, code, .stCodeBlock pre {
+        background: #f8fafc !important;
+        color: var(--text) !important;
+    }
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -543,15 +648,15 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 # Plotly Light Theme
 # ---------------------------------------------------------------------------
-CHART_COLORS = ["#475569", "#0ea371", "#3b82f6", "#d97706", "#ec4899",
-                "#8b5cf6", "#06b6d4", "#f43f5e", "#10b981", "#64748b"]
+CHART_COLORS = ["#3b5998", "#0ea371", "#3b82f6", "#d97706", "#ec4899",
+                "#8b5cf6", "#06b6d4", "#f43f5e", "#10b981", "#5b7bb3"]
 
 _chart_template = dict(
     layout=dict(
         font=dict(family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                   color="#111827", size=13),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
         title=dict(font=dict(size=15, color="#111827")),
         xaxis=dict(gridcolor="#f3f4f6", linecolor="#e5e7eb",
                    tickfont=dict(color="#6b7280", size=11),
@@ -560,7 +665,7 @@ _chart_template = dict(
                    tickfont=dict(color="#6b7280", size=11),
                    title_font=dict(color="#6b7280", size=12), zeroline=False),
         legend=dict(font=dict(color="#6b7280", size=12),
-                    bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
+                    bgcolor="#ffffff", bordercolor="#ffffff"),
         margin=dict(l=40, r=20, t=40, b=40),
         hoverlabel=dict(bgcolor="white", bordercolor="#e5e7eb",
                         font=dict(color="#111827", size=13)),
@@ -694,14 +799,14 @@ def main():
     # Initialize tier manager early (before system init) so sidebar shows
     if 'tier_manager' not in st.session_state:
         st.session_state.tier_manager = TierManager()
-    st.session_state.tier_manager.render_sidebar_ui()
+    # Tier sidebar removed — API keys resolved from .env / Streamlit Secrets
 
     # Branded header
     st.markdown("""
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
-        <div style="background:linear-gradient(135deg,#334155,#475569);color:white;font-weight:700;font-size:1rem;
+        <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
                     width:38px;height:38px;border-radius:10px;display:flex;
-                    align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(51,65,85,0.25);
+                    align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
                     letter-spacing:-0.02em;">IA</div>
         <div>
             <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
@@ -795,8 +900,8 @@ def stock_analysis_page():
             "Choose Weight Configuration:",
             options=["equal_weights", "custom_weights"],
             format_func=lambda x: {
-                "equal_weights": "1. Equal Weights",
-                "custom_weights": "2. Custom Weights"
+                "equal_weights": "Equal Weights",
+                "custom_weights": "Custom Weights"
             }[x],
             help="Select how agent weights should be configured for this analysis"
         )
@@ -859,8 +964,7 @@ def stock_analysis_page():
                             max_value=2.0,
                             value=st.session_state.custom_agent_weights[agent],
                             step=0.1,
-                            key=f"custom_weight_{agent}",
-                            help=agent_tips[agent]
+                            key=f"custom_weight_{agent}"
                         )
                 # Show current weight distribution
                 st.write("**Current Weight Distribution:**")
@@ -884,35 +988,19 @@ def stock_analysis_page():
         # Use locked custom weights if available
         if 'locked_custom_weights' in st.session_state:
             agent_weights = st.session_state.locked_custom_weights
-            
-            # Show which weights are active
-            with st.expander("Active Custom Weights", expanded=False):
-                st.write("**These custom weights will be applied to your analysis:**")
-                total_weight = sum(agent_weights.values())
-                cols = st.columns(5)
-                agent_labels_dict = {
-                    'value': 'Value',
-                    'growth_momentum': 'Growth/Momentum',
-                    'macro_regime': 'Macro Regime',
-                    'risk': 'Risk',
-                    'sentiment': 'Sentiment'
-                }
-                for i, (agent, weight) in enumerate(agent_weights.items()):
-                    with cols[i]:
-                        pct = (weight / total_weight) * 100
-                        st.metric(agent_labels_dict.get(agent, agent), f"{weight:.1f}x", delta=f"{pct:.1f}%")
 
     else:  # equal_weights
-        with col2:
-            if st.button("Apply Equal Weights"):
-                agent_weights = {
-                    'value': 1.0,
-                    'growth_momentum': 1.0,
-                    'macro_regime': 1.0,
-                    'risk': 1.0,
-                    'sentiment': 1.0
-                }
-                st.success("Equal weights applied!")
+        # Always use truly equal weights (1.0 each), overriding orchestrator defaults
+        agent_weights = {
+            'value': 1.0,
+            'growth_momentum': 1.0,
+            'macro_regime': 1.0,
+            'risk': 1.0,
+            'sentiment': 1.0
+        }
+        # Clear any previously locked custom weights so the display is consistent
+        if 'locked_custom_weights' in st.session_state:
+            del st.session_state['locked_custom_weights']
     
     st.markdown("---")
     
@@ -943,11 +1031,13 @@ def stock_analysis_page():
             "check": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
         }
 
+        # Step ranges must match the orchestrator's exact milestone percentages:
+        # Data: 0-42, then 5 agents evenly across 42-98 (each ~11.2%): 42, 53, 64, 75, 86, 98
         _AGENT_STEPS = [
             {"key": "data",      "label": "Data Gathering",     "svg": "data",  "range": (0, 42)},
-            {"key": "value",     "label": "Value Agent",        "svg": "value", "range": (42, 53)},
-            {"key": "growth",    "label": "Growth/Momentum",    "svg": "growth","range": (53, 64)},
-            {"key": "macro",     "label": "Macro Regime",       "svg": "macro", "range": (64, 76)},
+            {"key": "value",     "label": "Value Agent",        "svg": "value", "range": (42, 54)},
+            {"key": "growth",    "label": "Growth/Momentum",    "svg": "growth","range": (54, 65)},
+            {"key": "macro",     "label": "Macro Regime",       "svg": "macro", "range": (65, 76)},
             {"key": "risk",      "label": "Risk Agent",         "svg": "risk",  "range": (76, 87)},
             {"key": "sentiment", "label": "Sentiment Agent",    "svg": "sent",  "range": (87, 98)},
             {"key": "blend",     "label": "Score Blending",     "svg": "blend", "range": (98, 100)},
@@ -961,36 +1051,83 @@ def stock_analysis_page():
             if p <= 98: return 37.0 + (p - 42.0) * (48.0 / 56.0)
             return 85.0 + (p - 98.0) * (1.0 / 2.0)
 
-        _EXPECTED_TOTAL = _expected_elapsed_at(100)   # ~86s
+        _EXPECTED_TOTAL = 80.0   # 1 min 20 s fixed starting countdown
 
-        # Slate palette for progress UI
-        _SLATE_600 = "#475569"
-        _SLATE_500 = "#64748b"
-        _SLATE_200 = "#e2e8f0"
-        _SLATE_100 = "#f1f5f9"
+        # Slate-blue palette for progress UI
+        _SLATE_600 = "#3b5998"
+        _SLATE_500 = "#5b7bb3"
+        _SLATE_200 = "#dce4f0"
+        _SLATE_100 = "#eef2f9"
 
-        def _render_progress(slot, pct, message, remaining_secs=None):
-            """Render a professional analysis progress card with agent steps and countdown."""
-            pct = max(0, min(100, int(pct)))
+        def _render_progress(slot, bar_pct, message, remaining_secs=None, step_pct=None):
+            """Render a professional analysis progress card with agent steps and countdown.
+
+            Args:
+                bar_pct:  0-100 fill percentage for the progress bar (time-based).
+                message:  Status text shown below the card.
+                remaining_secs:  Seconds remaining (drives the timer label).
+                step_pct: Orchestrator milestone % used only for step indicators.
+                          Falls back to bar_pct when not provided.
+            """
+            import re as _re
+            bar_pct = max(0.0, min(100.0, float(bar_pct)))
+            bar_pct_int = int(bar_pct)  # for the HTML width
+            sp = int(step_pct) if step_pct is not None else bar_pct_int
+            sp = max(0, min(100, sp))
 
             # --- Time remaining label ---
-            if remaining_secs is not None and pct < 100:
+            if remaining_secs is not None and bar_pct < 100:
                 rs = max(0, int(remaining_secs))
                 if rs >= 60:
                     time_label = f"{rs // 60}m {rs % 60:02d}s remaining"
                 else:
                     time_label = f"{rs}s remaining" if rs > 0 else "finishing up..."
-            elif pct >= 100:
+            elif bar_pct >= 100:
                 time_label = "Complete"
             else:
                 time_label = "estimating..."
+
+            # Strip ~Xs ETA suffix from message (already shown in timer)
+            clean_msg = _re.sub(r'\s*~\d+(?:m\s+\d+)?s\s*$', '', message)
+
+            # --- Determine the active step from message content ---
+            # This ensures the highlighted step always matches the status text
+            _MSG_TO_STEP = {
+                'data':      ['initializ', 'starting', 'fetching data', 'data for',
+                              'data gathered', 'data ready', 'querying polygon',
+                              'received', 'all data', 'multiple sources',
+                              'no fundamental'],
+                'value':     ['value agent', 'evaluating p/e', 'dividend yield', 'intrinsic value'],
+                'growth':    ['growth', 'momentum', 'earnings growth', 'revenue momentum'],
+                'macro':     ['macro', 'regime', 'sector in current'],
+                'risk':      ['risk agent', 'computing volatility', 'beta (', 'drawdown'],
+                'sentiment': ['sentiment agent', 'fetching news', 'articles analyzed',
+                              'analyzing sentiment', 'articles and'],
+                'blend':     ['blending', 'blend', 'analysis complete', 'complete:'],
+            }
+            msg_lower = clean_msg.lower()
+            active_step_key = None
+            for step_key, keywords in _MSG_TO_STEP.items():
+                if any(kw in msg_lower for kw in keywords):
+                    active_step_key = step_key
+                    break
 
             # --- Build step rows ---
             steps_html = ""
             for step in _AGENT_STEPS:
                 lo, hi = step["range"]
-                is_done   = pct >= hi
-                is_active = lo <= pct < hi
+
+                if active_step_key is not None:
+                    # Message-driven: highlight the step that matches the message
+                    is_active = (step["key"] == active_step_key)
+                    # Steps before the active one are done; after are pending
+                    step_idx = next(i for i, s in enumerate(_AGENT_STEPS) if s["key"] == step["key"])
+                    active_idx = next(i for i, s in enumerate(_AGENT_STEPS) if s["key"] == active_step_key)
+                    is_done = step_idx < active_idx
+                else:
+                    # Fallback to %-based if message couldn't be parsed
+                    is_done   = sp >= hi
+                    is_active = lo <= sp < hi
 
                 if is_done:
                     badge_bg = "#ecfdf5"; badge_fg = "#059669"
@@ -1049,9 +1186,9 @@ def stock_analysis_page():
                 # Progress bar (with animated stripe when active)
                 f'<div style="width:100%;background:#f3f4f6;border-radius:99px;'
                 f'overflow:hidden;height:5px;margin-bottom:16px">'
-                f'<div style="width:{pct}%;height:100%;border-radius:99px;'
-                f'background:{"linear-gradient(90deg," + _SLATE_600 + "," + _SLATE_500 + ")" if pct < 100 else "#10b981"};'
-                f'{"background-size:30px 30px;background-image:linear-gradient(-45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);animation:_prog_bar .8s linear infinite;" if 0 < pct < 100 else ""}'
+                f'<div style="width:{bar_pct:.1f}%;height:100%;border-radius:99px;'
+                f'background:{"linear-gradient(90deg," + _SLATE_600 + "," + _SLATE_500 + ")" if bar_pct < 100 else "#10b981"};'
+                f'{"background-size:30px 30px;background-image:linear-gradient(-45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);animation:_prog_bar .8s linear infinite;" if 0 < bar_pct < 100 else ""}'
                 f'transition:width 0.15s linear"></div></div>'
 
                 # Step grid (2 columns)
@@ -1060,40 +1197,27 @@ def stock_analysis_page():
 
                 # Status message
                 f'<div style="font-size:12px;color:#6b7280;border-top:1px solid #f0f1f3;'
-                f'padding-top:10px;line-height:1.4">{message}</div>'
+                f'padding-top:10px;line-height:1.4">{clean_msg}</div>'
                 f'</div>',
                 unsafe_allow_html=True
             )
 
         def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
-            """Run analysis in a background thread with smooth progress interpolation
-            and a continuously-counting-down time-remaining estimate.
+            """Run analysis with time-based progress bar driven by the
+            orchestrator's own ~Xs ETA estimates embedded in status messages.
 
-            Progress bar: asymptotic interpolation between orchestrator milestones
-            at ~10 fps, same as before.
-
-            Countdown (FIXED):
-            The previous implementation used display_pct (cosmetically smoothed) to
-            derive a pace_factor. Because display_pct lags behind real wall-clock
-            time early in the run, the pace_factor overestimated the remaining time,
-            causing the timer to count UP.
-
-            New approach:
-            1. smooth_remaining is decremented by real dt every tick (always counts
-               down).
-            2. A model-based estimate (est_remaining) is computed from the MILESTONE
-               percentage (mp), which reflects actual orchestrator progress, not the
-               smoothed display value.
-            3. If est_remaining < smooth_remaining (ahead of schedule): pull down
-               at ~10 % of the gap per tick.
-            4. If est_remaining > smooth_remaining (behind schedule): pull up at
-               most +dt per tick — so the timer can stall but NEVER visibly count
-               upward.  Net change per tick is always <= 0.
+            Timer:   Extracted from '... ~56s' in each milestone message, then
+                     counts down smoothly between milestones.
+            Bar:     Fills based on elapsed / (elapsed + remaining) so it
+                     always advances steadily.
+            Steps:   Driven by the orchestrator's milestone percentage so they
+                     flip at the right moment.
             """
+            import re as _re
+
             _prog = {
                 'mile_pct': 0.0,
                 'mile_msg': 'Initializing...',
-                'mile_t': time.time(),
                 'done': False,
                 'result': None,
                 'error': None,
@@ -1102,7 +1226,6 @@ def stock_analysis_page():
             def _on_milestone(pct, message):
                 _prog['mile_pct'] = pct
                 _prog['mile_msg'] = message
-                _prog['mile_t'] = time.time()
 
             def _bg():
                 try:
@@ -1120,79 +1243,102 @@ def stock_analysis_page():
             thread = threading.Thread(target=_bg, daemon=True)
             thread.start()
 
-            # Phase speed calibration (seconds per percentage point)
-            def _phase_rate(p):
-                if p < 42:  return 0.88
-                if p < 98:  return 0.80
-                return 0.50
+            def _parse_eta(msg):
+                """Extract remaining seconds from '... ~56s' or '... ~1m 23s'."""
+                m = _re.search(r'~(\d+)m\s+(\d+)s\s*$', msg)
+                if m:
+                    return int(m.group(1)) * 60 + int(m.group(2))
+                m = _re.search(r'~(\d+)s\s*$', msg)
+                if m:
+                    return int(m.group(1))
+                return None
 
-            # Use historical average as initial total estimate if available
-            if st.session_state.analysis_times:
-                initial_total_est = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
-            else:
-                initial_total_est = _EXPECTED_TOTAL
+            # Always start the countdown at 1:20 (80 s)
+            initial_total_est = 80.0
 
             display_pct = 0.0
-            smooth_remaining = initial_total_est
+            display_remaining = initial_total_est   # what the user sees (smoothed)
             last_render = 0.0
             last_tick = time.time()
             start_wall = time.time()
 
+            # ETA anchor: when we last received a new ~Xs value
+            eta_anchor_secs = None
+            eta_anchor_time = None
+            last_parsed_msg = None
+            # Tick-rate factor so the countdown can slow down instead of jumping up
+            tick_rate = 1.0          # 1.0 = normal 1 s/s countdown
+
             while not _prog['done']:
                 now = time.time()
-                dt  = now - last_tick
+                dt = now - last_tick
                 last_tick = now
+                elapsed = now - start_wall
 
-                mp  = _prog['mile_pct']
-                mt  = _prog['mile_t']
                 msg = _prog['mile_msg']
+                mp = _prog['mile_pct']
 
-                # --- Progress bar interpolation (unchanged) ---
-                elapsed_since_mile = now - mt
-                rate = _phase_rate(mp)
-                raw_advance = elapsed_since_mile / rate if rate > 0 else 0
-                max_advance = 9.0
-                predicted = max_advance * (1 - math.exp(-raw_advance / max_advance))
-                target = min(mp + predicted, 99.0)
+                # --- Extract ~Xs remaining from orchestrator message ---
+                msg_eta = _parse_eta(msg)
+                if msg_eta is not None:
+                    if msg != last_parsed_msg:
+                        # New milestone message → compute true remaining
+                        last_parsed_msg = msg
+                        eta_anchor_secs = msg_eta
+                        eta_anchor_time = now
+                        true_remaining = float(msg_eta)
 
-                if target > display_pct:
-                    display_pct += (target - display_pct) * 0.15
-                display_pct = max(0.0, min(display_pct, 99.0))
-
-                # --- Countdown estimation (FIXED) ---
-                elapsed_wall = now - start_wall
-
-                # 1. Natural countdown — always subtract real elapsed time
-                smooth_remaining -= dt
-
-                # 2. Compute model-based estimate of remaining seconds
-                #    using MILESTONE pct (mp) which reflects actual orchestrator
-                #    progress, not the cosmetically-smoothed display_pct.
-                if mp >= 5:
-                    frac = mp / 100.0
-                    est_remaining = elapsed_wall * ((1.0 - frac) / frac)
+                        if true_remaining > display_remaining:
+                            # ETA went UP — never jump the display upward.
+                            # Instead slow the tick rate so display_remaining
+                            # glides down gently until the real value catches up.
+                            gap = true_remaining - display_remaining
+                            # The wider the gap, the slower we tick — but never
+                            # fully stall (min rate 0.15 s/s).
+                            tick_rate = max(0.15, display_remaining / true_remaining)
+                        else:
+                            # ETA same or lower — restore normal speed and snap
+                            tick_rate = 1.0
+                            display_remaining = true_remaining
+                    else:
+                        # Same milestone — count down from anchor at current tick_rate
+                        true_remaining = max(0.0, eta_anchor_secs - (now - eta_anchor_time))
+                        # If true remaining has fallen back to (or below) display,
+                        # resync and restore normal speed
+                        if true_remaining <= display_remaining:
+                            display_remaining = true_remaining
+                            tick_rate = min(1.0, tick_rate + dt * 0.5)  # ease back
                 else:
-                    # Very early — just rely on prior estimate
-                    est_remaining = max(0.0, initial_total_est - elapsed_wall)
+                    # Very early / no ETA yet — linear countdown
+                    true_remaining = max(0.0, initial_total_est - elapsed)
+                    if true_remaining <= display_remaining:
+                        display_remaining = true_remaining
+                        tick_rate = 1.0
 
-                est_remaining = max(0.0, est_remaining)
+                # Smoothly decrement the displayed remaining by tick_rate
+                display_remaining = max(0.0, display_remaining - dt * tick_rate)
 
-                # 3. Asymmetric blend toward model estimate
-                diff = est_remaining - smooth_remaining
-                if diff < 0:
-                    # Ahead of schedule — pull timer down (max 4x normal speed)
-                    smooth_remaining += max(diff * 0.10, -dt * 3)
-                elif diff > 0:
-                    # Behind schedule — slow the countdown, but NEVER reverse it.
-                    # Correction capped at +dt so net change = -dt + dt = 0 (stall).
-                    smooth_remaining += min(diff * 0.02, dt)
+                # --- Progress bar: time-based ---
+                total_est = elapsed + display_remaining
+                if total_est > 1.0:
+                    target = min(99.0, (elapsed / total_est) * 100.0)
+                else:
+                    target = min(99.0, display_pct + 0.1)
 
-                smooth_remaining = max(0.0, smooth_remaining)
+                # Smooth interpolation (never go backwards)
+                # Use a fast lerp so the bar visibly moves from the start
+                if target > display_pct:
+                    gap = target - display_pct
+                    # Large gap → faster catch-up; small gap → gentle glide
+                    lerp = min(0.8, 0.25 + gap * 0.01)
+                    display_pct += gap * lerp
+                display_pct = max(0.0, min(99.0, display_pct))
 
                 # Render at ~10 fps
                 if now - last_render >= 0.10:
                     _render_progress(slot, display_pct, msg,
-                                     remaining_secs=smooth_remaining)
+                                     remaining_secs=display_remaining,
+                                     step_pct=mp)
                     last_render = now
 
                 time.sleep(0.05)
@@ -1202,11 +1348,8 @@ def stock_analysis_page():
 
             return _prog['result']
 
-        # Compute initial time estimate for the countdown
-        if st.session_state.analysis_times:
-            _initial_est = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
-        else:
-            _initial_est = _EXPECTED_TOTAL
+        # Always start the countdown at 1:20 (80 s)
+        _initial_est = 80.0
 
         _render_progress(progress_slot, 0, "Initializing analysis…",
                          remaining_secs=_initial_est)
@@ -1450,12 +1593,14 @@ def display_stock_analysis(result: dict):
                 # Calculate and show final score calculation
                 weighted_sum = sum(agent_scores.get(f"{k}_agent", 50) * v for k, v in custom_weights.items())
                 calculated_final = weighted_sum / total_weight
+                actual_final = result.get('final_score', calculated_final)
                 
                 st.write(f"**Final Score Calculation:**")
                 st.code(f"""
                 Weighted Sum = {weighted_sum:.2f}
                 Total Weight = {total_weight:.2f}
-                Final Score = {weighted_sum:.2f} / {total_weight:.2f} = {calculated_final:.2f}
+                Blended Score = {weighted_sum:.2f} / {total_weight:.2f} = {calculated_final:.2f}
+                Final Score   = {actual_final:.2f}  (after upside/risk adjustments)
                 """)
                 
                 st.caption("Higher weights mean that agent's score had MORE influence on the final score.")
@@ -1469,16 +1614,16 @@ def display_stock_analysis(result: dict):
     with col1:
         final_score = result['final_score']
         delta_color = "normal" if final_score >= 70 else "inverse" if final_score < 50 else "off"
-        st.metric("Final Score", f"{final_score:.1f}/100", help="Overall investment recommendation score")
+        st.metric("Final Score", f"{final_score:.1f}/100")
     with col2:
         price_value = result['fundamentals'].get('price')
         st.metric("Current Price", f"${price_value:.2f}" if price_value and price_value != 0 else "N/A")
     with col3:
         pe_ratio = result['fundamentals'].get('pe_ratio')
-        st.metric("P/E Ratio", f"{pe_ratio:.1f}" if pe_ratio and pe_ratio != 0 else "N/A", help="Price-to-Earnings ratio")
+        st.metric("P/E Ratio", f"{pe_ratio:.1f}" if pe_ratio and pe_ratio != 0 else "N/A", help="Price-to-Earnings ratio: stock price divided by earnings per share")
     with col4:
         beta = result['fundamentals'].get('beta')
-        st.metric("Beta", f"{beta:.2f}" if beta and beta != 0 else "N/A", help="Market volatility coefficient")
+        st.metric("Beta", f"{beta:.2f}" if beta and beta != 0 else "N/A", help="Measures stock volatility vs. the market. >1 = more volatile, <1 = less volatile")
     
     # Additional Enhanced Metrics Row
     col5, col6, col7, col8, col9 = st.columns(5)
@@ -1488,40 +1633,40 @@ def display_stock_analysis(result: dict):
         if div_yield and div_yield != 0:
             # If it's a small decimal, multiply by 100, otherwise use as-is
             display_yield = div_yield * 100 if div_yield < 1 else div_yield
-            st.metric("Dividend Yield", f"{display_yield:.2f}%", help="Annual dividend yield percentage")
+            st.metric("Dividend Yield", f"{display_yield:.2f}%")
         else:
-            st.metric("Dividend Yield", "N/A", help="Annual dividend yield percentage")
+            st.metric("Dividend Yield", "N/A")
     with col6:
         eps = result['fundamentals'].get('eps')
         if eps and eps != 0:
-            st.metric("EPS", f"${eps:.2f}", help="Earnings per share")
+            st.metric("EPS", f"${eps:.2f}", help="Earnings Per Share: company profit divided by outstanding shares")
         else:
-            st.metric("EPS", "N/A", help="Earnings per share")
+            st.metric("EPS", "N/A", help="Earnings Per Share: company profit divided by outstanding shares")
     with col7:
         week_52_low = result['fundamentals'].get('week_52_low')
         week_52_high = result['fundamentals'].get('week_52_high')
         if week_52_low and week_52_high:
-            st.metric("52W Low", f"${week_52_low:.2f}", help="52-week low price")
+            st.metric("52W Low", f"${week_52_low:.2f}")
         else:
-            st.metric("52W Low", "N/A", help="52-week low price")
+            st.metric("52W Low", "N/A")
     with col8:
         week_52_low = result['fundamentals'].get('week_52_low')
         week_52_high = result['fundamentals'].get('week_52_high')
         if week_52_low and week_52_high:
-            st.metric("52W High", f"${week_52_high:.2f}", help="52-week high price")
+            st.metric("52W High", f"${week_52_high:.2f}")
         else:
-            st.metric("52W High", "N/A", help="52-week high price")
+            st.metric("52W High", "N/A")
     with col9:
         market_cap = result['fundamentals'].get('market_cap')
         if market_cap:
             if market_cap >= 1e12:
-                st.metric("Market Cap", f"${market_cap/1e12:.1f}T", help="Market capitalization")
+                st.metric("Market Cap", f"${market_cap/1e12:.1f}T")
             elif market_cap >= 1e9:
-                st.metric("Market Cap", f"${market_cap/1e9:.1f}B", help="Market capitalization")
+                st.metric("Market Cap", f"${market_cap/1e9:.1f}B")
             else:
-                st.metric("Market Cap", f"${market_cap/1e6:.0f}M", help="Market capitalization")
+                st.metric("Market Cap", f"${market_cap/1e6:.0f}M")
         else:
-            st.metric("Market Cap", "N/A", help="Market capitalization")
+            st.metric("Market Cap", "N/A")
     
     # 52-Week Range Visualization
     week_52_low = result['fundamentals'].get('week_52_low')
@@ -1663,43 +1808,47 @@ def display_stock_analysis(result: dict):
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Weighted Sum", f"{total_weighted_score:.2f}", help="Sum of all weighted scores")
+            st.metric("Weighted Sum", f"{total_weighted_score:.2f}")
         with col2:
-            st.metric("Total Weight", f"{total_weight:.2f}", help="Sum of all weights")
+            st.metric("Total Weight", f"{total_weight:.2f}")
         with col3:
             calculated_score = total_weighted_score / total_weight if total_weight > 0 else 50
-            st.metric("Blended Score", f"{calculated_score:.2f}", help="Weighted average of all agent scores")
+            st.metric("Blended Score", f"{calculated_score:.2f}", help="Weighted average of all agent scores before upside multiplier")
         
         # Show formula
+        actual_final = result.get('final_score', calculated_score)
         st.code(f"""
 Formula: Blended Score = Weighted Sum / Total Weight
          Blended Score = {total_weighted_score:.2f} / {total_weight:.2f} = {calculated_score:.2f}
+         Final Score   = {actual_final:.2f}  (after upside/risk adjustments)
         """)
         
-        # Weight impact analysis
-        st.write("---")
-        st.write("**Weight Impact Analysis:**")
-        
-        # Calculate equal weight score for comparison
-        equal_weight_score = sum(float(agent_scores.get(k, 50)) for k in agent_order) / len(agent_order)
-        weight_effect = calculated_score - equal_weight_score
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Equal Weight Score", f"{equal_weight_score:.2f}", 
-                     help="What the score would be if all weights were 1.0")
-        with col2:
-            st.metric("Weight Effect", f"{weight_effect:+.2f}", 
-                     help="How much the custom weights changed the score",
-                     delta=f"{weight_effect:+.2f}")
-        
-        if abs(weight_effect) > 0.5:
-            if weight_effect > 0:
-                st.success(f"Custom weights INCREASED the score by {weight_effect:.2f} points by emphasizing higher-scoring agents")
+        # Weight impact analysis (only when custom weights differ from equal)
+        is_custom = weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state
+        if is_custom:
+            st.write("---")
+            st.write("**Weight Impact Analysis:**")
+            
+            # Calculate equal weight score for comparison
+            equal_weight_score = sum(float(agent_scores.get(k, 50)) for k in agent_order) / len(agent_order)
+            weight_effect = calculated_score - equal_weight_score
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Equal Weight Score", f"{equal_weight_score:.2f}", 
+                         help="Score if all agents had equal influence (weight 1.0)")
+            with col2:
+                st.metric("Weight Effect", f"{weight_effect:+.2f}", 
+                         help="How much your custom weights shifted the score vs. equal weights",
+                         delta=f"{weight_effect:+.2f}")
+            
+            if abs(weight_effect) > 0.5:
+                if weight_effect > 0:
+                    st.success(f"Custom weights INCREASED the score by {weight_effect:.2f} points by emphasizing higher-scoring agents")
+                else:
+                    st.warning(f"Custom weights DECREASED the score by {abs(weight_effect):.2f} points by emphasizing lower-scoring agents")
             else:
-                st.warning(f"Custom weights DECREASED the score by {abs(weight_effect):.2f} points by emphasizing lower-scoring agents")
-        else:
-            st.info("Custom weights had minimal impact on the final score")
+                st.info("Custom weights had minimal impact on the final score")
         
         # Visual representation
         st.write("---")
@@ -1714,10 +1863,26 @@ Formula: Blended Score = Weighted Sum / Total Weight
         
         col1, col2 = st.columns(2)
         with col1:
-            st.bar_chart(chart_data.set_index('Agent')['Weight'], use_container_width=True)
+            fig_w = go.Figure(go.Bar(
+                x=chart_data['Agent'], y=chart_data['Weight'],
+                marker_color="#3b5998",
+                text=[f"{w:.1f}x" for w in chart_data['Weight']],
+                textposition='auto'
+            ))
+            fig_w.update_layout(yaxis_title="Weight", height=300, showlegend=False,
+                                paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
+            st.plotly_chart(fig_w, use_container_width=True)
             st.caption("Agent Weights (Higher = More Influence)")
         with col2:
-            st.bar_chart(chart_data.set_index('Agent')['Score'], use_container_width=True)
+            fig_s = go.Figure(go.Bar(
+                x=chart_data['Agent'], y=chart_data['Score'],
+                marker_color=[get_gradient_color(s) for s in chart_data['Score']],
+                text=[f"{s:.0f}" for s in chart_data['Score']],
+                textposition='auto'
+            ))
+            fig_s.update_layout(yaxis_title="Score", yaxis_range=[0, 100], height=300,
+                                showlegend=False, paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
+            st.plotly_chart(fig_s, use_container_width=True)
             st.caption("Agent Scores (0-100)")
     
     # Enhanced Agent Analysis Section
@@ -1967,7 +2132,9 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
             yaxis_range=[0, 100],
             yaxis_title="Score",
             height=400,
-            showlegend=True
+            showlegend=True,
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff"
         )
         st.plotly_chart(fig_bar, use_container_width=True)
     
@@ -1999,10 +2166,12 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
                 radialaxis=dict(
                     visible=True,
                     range=[0, 100]
-                )
+                ),
+                bgcolor="#ffffff"
             ),
             showlegend=True,
-            height=400
+            height=400,
+            paper_bgcolor="#ffffff"
         )
         st.plotly_chart(fig_radar, use_container_width=True)
     
@@ -2028,7 +2197,9 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
         yaxis_title="Final Score",
         xaxis_title="Stock",
         height=350,
-        showlegend=False
+        showlegend=False,
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff"
     )
     st.plotly_chart(fig_final, use_container_width=True)
     
@@ -2060,7 +2231,8 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
             marker=dict(colors=CHART_COLORS)
         )])
         
-        fig_sector.update_layout(height=350, showlegend=True)
+        fig_sector.update_layout(height=350, showlegend=True,
+                                   paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
         st.plotly_chart(fig_sector, use_container_width=True)
         
         # Sector concentration warning
@@ -2114,7 +2286,9 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
             yaxis_title="Final Score",
             xaxis_range=[0, 100],
             yaxis_range=[0, 100],
-            height=350
+            height=350,
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff"
         )
         st.plotly_chart(fig_risk, use_container_width=True)
         
@@ -2222,10 +2396,11 @@ def get_agent_specific_context(agent_key: str, result: dict) -> dict:
         })
     
     elif agent_key == 'sentiment_agent':
-        # Get actual scraped article count from sentiment agent details
+        # Get actual displayed article count from sentiment agent details
         agent_results = result.get('agent_results', {})
         sentiment_details = agent_results.get('sentiment_agent', {}).get('details', {})
-        news_count = sentiment_details.get('num_articles', 0)
+        article_details_list = sentiment_details.get('article_details', [])
+        news_count = len(article_details_list) if article_details_list else sentiment_details.get('num_articles', 0)
         context.update({
             'News Articles Analyzed': f"{news_count}",
             'Sector': f"{fundamentals.get('sector', 'Unknown')}",
@@ -2289,7 +2464,9 @@ def display_enhanced_agent_rationales(result: dict):
         yaxis_title="Score",
         yaxis_range=[0, 100],
         height=350,
-        showlegend=False
+        showlegend=False,
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff"
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -2579,7 +2756,7 @@ Technology sector typically exhibits moderate to high volatility but offers grow
         sentiment_details = result.get('agent_details', {}).get(mapped_key, {})
         article_details = sentiment_details.get('article_details', [])
         key_events = sentiment_details.get('key_events', [])
-        num_articles = sentiment_details.get('num_articles', 0)
+        num_articles = len(article_details) if article_details else sentiment_details.get('num_articles', 0)
         
         analysis = f"""
 **Market Sentiment Analysis for {ticker}:**
@@ -2597,7 +2774,34 @@ Analyzed {num_articles} recent articles to assess market sentiment and narrative
 **Recent News Articles:**"""
         
         if article_details:
-            for i, article in enumerate(article_details, 1):
+            # Rank articles: credible sources first, then most recent
+            _TIER_1_SOURCES = {'bloomberg', 'reuters', 'wsj', 'wall street journal',
+                               'financial times', 'ft', 'nytimes', 'new york times', 'economist'}
+            _TIER_2_SOURCES = {'cnbc', 'barrons', "barron's", 'marketwatch', 'yahoo finance',
+                               'yahoo', "investor's business daily", 'investors'}
+
+            def _article_rank(art):
+                src = (art.get('source', '') or '').lower()
+                if any(s in src for s in _TIER_1_SOURCES):
+                    tier = 0
+                elif any(s in src for s in _TIER_2_SOURCES):
+                    tier = 1
+                else:
+                    tier = 2
+                # Newest first within tier: negate ISO-style date string for desc sort
+                pub = art.get('published_at', '') or '0000'
+                return (tier, pub)
+
+            # Sort by tier ascending, then date descending (reverse within same tier)
+            from itertools import groupby
+            ranked_articles = []
+            temp = sorted(article_details, key=_article_rank)
+            for _tier, group in groupby(temp, key=lambda a: _article_rank(a)[0]):
+                tier_list = list(group)
+                tier_list.sort(key=lambda a: a.get('published_at', '') or '', reverse=True)
+                ranked_articles.extend(tier_list)
+
+            for i, article in enumerate(ranked_articles, 1):
                 preview = article.get('preview', '')
                 preview_section = f"\n- **Preview:** \"{preview}\"" if preview else ""
                 analysis += f"""
@@ -3056,7 +3260,8 @@ def display_portfolio_recommendations(result: dict):
         marker=dict(colors=CHART_COLORS)
     )])
     
-    fig.update_layout(height=400, showlegend=True)
+    fig.update_layout(height=400, showlegend=True,
+                       paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
     st.plotly_chart(fig, use_container_width=True)
     
     # Export

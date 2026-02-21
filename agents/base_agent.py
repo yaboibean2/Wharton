@@ -387,12 +387,44 @@ class BaseAgent(ABC):
         return articles[:max_articles]
 
     def _format_article_references(self, articles: List[Dict]) -> str:
-        """Format article references for inclusion in rationale."""
+        """Format article references for inclusion in rationale, ranked by credibility.
+
+        Ranking criteria (best first):
+        1. Source credibility tier (Bloomberg/Reuters/WSJ > SeekingAlpha/Motley Fool)
+        2. Citation-backed by Perplexity's native grounding
+        3. URL verified via HTTP HEAD check
+        """
         if not articles:
             return ""
 
+        # Credibility tiers — lower number = higher credibility
+        _TIER_1 = {'bloomberg.com', 'reuters.com', 'wsj.com', 'ft.com',
+                    'nytimes.com', 'economist.com'}
+        _TIER_2 = {'cnbc.com', 'barrons.com', 'marketwatch.com',
+                    'finance.yahoo.com', 'yahoo.com', 'investors.com'}
+        _TIER_3 = {'seekingalpha.com', 'fool.com', 'investopedia.com',
+                    'thestreet.com', 'benzinga.com', 'zacks.com'}
+
+        def _credibility_score(article: Dict) -> tuple:
+            """Return a sort key — lower is better (more credible)."""
+            src = (article.get('source', '') or '').lower().replace('www.', '')
+            if src in _TIER_1:
+                tier = 0
+            elif src in _TIER_2:
+                tier = 1
+            elif src in _TIER_3:
+                tier = 2
+            else:
+                tier = 3
+            # Within the same tier, prefer citation-backed, then verified
+            citation = 0 if article.get('citation_backed') else 1
+            verified = 0 if article.get('verified') else 1
+            return (tier, citation, verified)
+
+        ranked = sorted(articles, key=_credibility_score)
+
         refs = "\n\nSources:\n"
-        for i, article in enumerate(articles, 1):
+        for i, article in enumerate(ranked, 1):
             title = article.get('title', 'Article')
             url = article.get('url', '')
             source = article.get('source', 'Unknown')

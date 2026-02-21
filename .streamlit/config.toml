@@ -37,7 +37,7 @@ messageFormat = "%(asctime)s %(message)s"
 
 [theme]
 base = "light"
-primaryColor = "#635bff"
+primaryColor = "#3b5998"
 backgroundColor = "#f8fafc"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#111827"
