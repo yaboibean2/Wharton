@@ -36,8 +36,9 @@ level = "error"
 messageFormat = "%(asctime)s %(message)s"
 
 [theme]
+base = "light"
 primaryColor = "#635bff"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f6f8fa"
-textColor = "#1a1a2e"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#111827"
 font = "sans serif"
