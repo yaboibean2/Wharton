@@ -174,6 +174,28 @@ def simulate(mode='normal'):
         countdown -= rate * dt
         countdown = max(0.0, countdown)
 
+        # Simulate milestone progress percentage (like app.py's mp)
+        # 0-42%: data gathering, 42-98%: agents (each ~11.2%), 98-100%: blend
+        n_data_done = sum(1 for k in step_done_at if k in data_keys)
+        n_agents_done = sum(1 for k in step_done_at if k in agent_keys)
+        if 'blend' in step_done_at:
+            sim_pct = 100
+        elif n_agents_done > 0:
+            sim_pct = 42 + n_agents_done * 11.2
+        elif n_data_done >= 3:
+            sim_pct = 42
+        else:
+            sim_pct = min(42, n_data_done * 14)
+
+        # Snap correction: if countdown is way above estimate, pull it down
+        if est_rem > 0.5 and countdown > est_rem * 2.0:
+            countdown = est_rem * 1.3
+            rate = 1.0
+
+        # Progress floor: never show "finishing up" before agents ~done
+        if sim_pct < 85:
+            countdown = max(countdown, 3.0)
+
         display_remaining = countdown
 
         # Print every second

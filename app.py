@@ -796,6 +796,40 @@ def main():
     if not initialize_system():
         st.stop()
 
+    # ---- Results display path (persisted across reruns) ----
+    # When results are stored in session state (after analysis completed),
+    # re-render them even on widget-triggered reruns (e.g. Google auth button).
+    if '_display_result' in st.session_state:
+        _dr = st.session_state['_display_result']
+
+        # Same CSS and header as the analysis path
+        st.markdown(
+            '<style>'
+            '.block-container{padding-top:2.5rem !important;opacity:1 !important;}'
+            '</style>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
+            <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
+                        width:38px;height:38px;border-radius:10px;display:flex;
+                        align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
+                        letter-spacing:-0.02em;">IA</div>
+            <div>
+                <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
+                    Investment Analysis</div>
+                <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
+                    Multi-Agent Research Platform</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if _dr['mode'] == 'single':
+            display_stock_analysis(_dr['result'])
+        else:
+            display_multiple_stock_analysis(_dr['results'], _dr.get('failed', []))
+        return
+
     # ---- Analysis execution path ----
     # Handle analysis BEFORE rendering any form elements so the entire UI
     # (header, form, tabs, weights, etc.) is replaced by ONLY the progress card.
@@ -1363,6 +1397,17 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             _countdown -= _rate * dt
             _countdown = max(0.0, _countdown)
 
+            # Snap correction: if countdown is way above estimate (e.g. data
+            # completed much faster than expected), pull it down smoothly so we
+            # don't need extreme rates that look glitchy.
+            if est_rem > 0.5 and _countdown > est_rem * 2.0:
+                _countdown = est_rem * 1.3
+                _rate = 1.0
+
+            # Progress floor: never show "finishing up" before agents are ~done
+            if mp < 85:
+                _countdown = max(_countdown, 3.0)
+
             display_remaining = _countdown
 
             # --- Progress bar percentage ---
@@ -1471,6 +1516,11 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             if 'error' in result:
                 st.error(f"{result['error']}")
                 return
+
+            # Persist results so page survives widget-triggered reruns
+            st.session_state['_display_result'] = {
+                'mode': 'single', 'result': result
+            }
 
             # Display results
             display_stock_analysis(result)
@@ -1787,6 +1837,13 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     _countdown_m -= _rate_m * dt
                     _countdown_m = max(0.0, _countdown_m)
 
+                    # Snap correction + progress floor (same as single-stock)
+                    if est_rem_m > 0.5 and _countdown_m > est_rem_m * 2.0:
+                        _countdown_m = est_rem_m * 1.3
+                        _rate_m = 1.0
+                    if mp < 85:
+                        _countdown_m = max(_countdown_m, 3.0)
+
                     display_remaining_m = _countdown_m
 
                     # --- Progress bar percentage ---
@@ -1885,6 +1942,10 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         
         # Display results summary
         if results:
+            # Persist results so page survives widget-triggered reruns
+            st.session_state['_display_result'] = {
+                'mode': 'multi', 'results': results, 'failed': failed_tickers,
+            }
             display_multiple_stock_analysis(results, failed_tickers)
         else:
             st.error("All analyses failed!")
@@ -3204,6 +3265,8 @@ Formula: Blended Score = Weighted Sum / Total Weight
     if st.button("Back to Home Page", type="secondary", use_container_width=True, key="back_home_single"):
         if '_analysis_params' in st.session_state:
             del st.session_state['_analysis_params']
+        if '_display_result' in st.session_state:
+            del st.session_state['_display_result']
         st.rerun()
 
 
@@ -3506,6 +3569,8 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
     if st.button("Back to Home Page", type="secondary", use_container_width=True, key="back_home_multi"):
         if '_analysis_params' in st.session_state:
             del st.session_state['_analysis_params']
+        if '_display_result' in st.session_state:
+            del st.session_state['_display_result']
         st.rerun()
 
 
