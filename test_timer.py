@@ -187,11 +187,6 @@ def simulate(mode='normal'):
         else:
             sim_pct = min(42, n_data_done * 14)
 
-        # Snap correction: if countdown is way above estimate, pull it down
-        if est_rem > 0.5 and countdown > est_rem * 2.0:
-            countdown = est_rem * 1.3
-            rate = 1.0
-
         # Progress floor: never show "finishing up" before agents ~done
         if sim_pct < 85:
             countdown = max(countdown, 3.0)

@@ -1397,14 +1397,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             _countdown -= _rate * dt
             _countdown = max(0.0, _countdown)
 
-            # Snap correction: if countdown is way above estimate (e.g. data
-            # completed much faster than expected), pull it down smoothly so we
-            # don't need extreme rates that look glitchy.
-            if est_rem > 0.5 and _countdown > est_rem * 2.0:
-                _countdown = est_rem * 1.3
-                _rate = 1.0
-
-            # Progress floor: never show "finishing up" before agents are ~done
+            # Progress floor: never show "finishing up" before agents are ~done.
+            # mp tracks orchestrator progress: 0-42% = data, 42-98% = agents.
             if mp < 85:
                 _countdown = max(_countdown, 3.0)
 
@@ -1837,10 +1831,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     _countdown_m -= _rate_m * dt
                     _countdown_m = max(0.0, _countdown_m)
 
-                    # Snap correction + progress floor (same as single-stock)
-                    if est_rem_m > 0.5 and _countdown_m > est_rem_m * 2.0:
-                        _countdown_m = est_rem_m * 1.3
-                        _rate_m = 1.0
+                    # Progress floor (same as single-stock)
                     if mp < 85:
                         _countdown_m = max(_countdown_m, 3.0)
 
@@ -2225,27 +2216,35 @@ _GOOGLE_TOKEN_PATH = os.path.join(os.path.dirname(__file__), 'data', 'google_tok
 
 
 def _get_google_creds():
-    """Return valid Google OAuth2 credentials, or None.
+    """Return valid Google credentials, or None.
 
-    Uses the InstalledAppFlow (opens browser) if no cached token exists.
-    Credentials are stored in session_state *and* on disk so subsequent
-    reruns/sessions reuse them.
+    Uses the service account from google_credentials.json (no user sign-in
+    needed).  Falls back to cached OAuth token if a service account file
+    isn't present.
     """
+    # 1. Cached in session state
     if 'google_creds' in st.session_state:
         creds = st.session_state['google_creds']
-        if creds and not creds.expired:
+        if creds and (not hasattr(creds, 'expired') or not creds.expired):
             return creds
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                from google.auth.transport.requests import Request
-                creds.refresh(Request())
-                st.session_state['google_creds'] = creds
-                _save_google_token(creds)
-                return creds
-            except Exception:
-                pass
 
-    # Try loading from disk
+    # 2. Service account on disk (preferred — no sign-in needed)
+    if os.path.exists(_GOOGLE_CREDS_PATH):
+        try:
+            import json as _json_ga
+            with open(_GOOGLE_CREDS_PATH, 'r') as f:
+                creds_data = _json_ga.load(f)
+
+            if creds_data.get('type') == 'service_account':
+                from google.oauth2.service_account import Credentials as SACredentials
+                creds = SACredentials.from_service_account_file(
+                    _GOOGLE_CREDS_PATH, scopes=_GOOGLE_SCOPES)
+                st.session_state['google_creds'] = creds
+                return creds
+        except Exception:
+            pass
+
+    # 3. Cached OAuth token on disk (legacy)
     if os.path.exists(_GOOGLE_TOKEN_PATH):
         try:
             from google.oauth2.credentials import Credentials
@@ -2257,7 +2256,6 @@ def _get_google_creds():
                 from google.auth.transport.requests import Request
                 creds.refresh(Request())
                 st.session_state['google_creds'] = creds
-                _save_google_token(creds)
                 return creds
         except Exception:
             pass
@@ -2265,36 +2263,19 @@ def _get_google_creds():
     return None
 
 
-def _save_google_token(creds):
-    """Persist OAuth token to disk."""
+def _share_file_anyone(creds, file_id):
+    """Make a Drive file accessible to anyone with the link."""
     try:
-        os.makedirs(os.path.dirname(_GOOGLE_TOKEN_PATH), exist_ok=True)
-        with open(_GOOGLE_TOKEN_PATH, 'w') as f:
-            f.write(creds.to_json())
+        from googleapiclient.discovery import build
+        drive = build('drive', 'v3', credentials=creds)
+        drive.permissions().create(
+            fileId=file_id,
+            body={'type': 'anyone', 'role': 'writer'},
+            fields='id',
+        ).execute()
     except Exception:
-        pass
+        pass  # non-fatal — file still works for service account
 
-
-def _run_google_oauth():
-    """Run the installed-app OAuth flow (opens browser tab)."""
-    creds_path = _GOOGLE_CREDS_PATH
-    # Check for uploaded credentials in session state
-    if 'uploaded_google_creds_path' in st.session_state:
-        creds_path = st.session_state['uploaded_google_creds_path']
-
-    if not os.path.exists(creds_path):
-        return None
-
-    try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        flow = InstalledAppFlow.from_client_secrets_file(creds_path, _GOOGLE_SCOPES)
-        creds = flow.run_local_server(port=0, open_browser=True)
-        st.session_state['google_creds'] = creds
-        _save_google_token(creds)
-        return creds
-    except Exception as e:
-        st.error(f"Google OAuth failed: {e}")
-        return None
 
 
 def _build_report_text(result):
@@ -2398,6 +2379,9 @@ def _export_to_sheets(creds, result, spreadsheet_id=None):
     except Exception:
         pass
 
+    # Make accessible to anyone with the link
+    _share_file_anyone(creds, sh.id)
+
     return sh.id, sh.url
 
 
@@ -2447,6 +2431,8 @@ def _export_to_docs(creds, result, document_id=None):
             }
         })
         service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
+
+        _share_file_anyone(creds, doc_id)
 
         url = f"https://docs.google.com/document/d/{doc_id}/edit"
         return doc_id, url
@@ -2498,6 +2484,8 @@ def _export_multi_to_sheets(creds, results, spreadsheet_id=None):
     except Exception:
         pass
 
+    _share_file_anyone(creds, sh.id)
+
     return sh.id, sh.url
 
 
@@ -2519,31 +2507,11 @@ def _render_google_export(result):
         creds = _get_google_creds()
 
         if creds is None:
-            st.info("Connect your Google account to export results directly to Sheets or Docs.")
-
-            has_creds_file = os.path.exists(_GOOGLE_CREDS_PATH)
-            if not has_creds_file:
-                st.markdown(
-                    "**Setup:** Upload your Google Cloud OAuth `credentials.json` file. "
-                    "[How to get one](https://developers.google.com/workspace/guides/create-credentials#oauth-client-id)"
-                )
-                uploaded = st.file_uploader(
-                    "Upload credentials.json", type=['json'],
-                    key="google_creds_upload"
-                )
-                if uploaded:
-                    with open(_GOOGLE_CREDS_PATH, 'wb') as f:
-                        f.write(uploaded.getvalue())
-                    has_creds_file = True
-                    st.success("Credentials saved.")
-
-            if has_creds_file:
-                if st.button("Connect Google Account", key="google_auth_single"):
-                    with st.spinner("Opening browser for Google sign-in..."):
-                        creds = _run_google_oauth()
-                    if creds:
-                        st.success("Connected to Google!")
-                        st.rerun()
+            st.warning(
+                "Google export requires a `google_credentials.json` service account file "
+                "in the project root. "
+                "[How to create one](https://cloud.google.com/iam/docs/keys-create-delete#creating)"
+            )
             return
 
         # ---- Authenticated: show export options ----
@@ -2614,31 +2582,11 @@ def _render_google_export_multi(results):
         creds = _get_google_creds()
 
         if creds is None:
-            st.info("Connect your Google account to export results directly to Sheets or Docs.")
-
-            has_creds_file = os.path.exists(_GOOGLE_CREDS_PATH)
-            if not has_creds_file:
-                st.markdown(
-                    "**Setup:** Upload your Google Cloud OAuth `credentials.json` file. "
-                    "[How to get one](https://developers.google.com/workspace/guides/create-credentials#oauth-client-id)"
-                )
-                uploaded = st.file_uploader(
-                    "Upload credentials.json", type=['json'],
-                    key="google_creds_upload_multi"
-                )
-                if uploaded:
-                    with open(_GOOGLE_CREDS_PATH, 'wb') as f:
-                        f.write(uploaded.getvalue())
-                    has_creds_file = True
-                    st.success("Credentials saved.")
-
-            if has_creds_file:
-                if st.button("Connect Google Account", key="google_auth_multi"):
-                    with st.spinner("Opening browser for Google sign-in..."):
-                        creds = _run_google_oauth()
-                    if creds:
-                        st.success("Connected to Google!")
-                        st.rerun()
+            st.warning(
+                "Google export requires a `google_credentials.json` service account file "
+                "in the project root. "
+                "[How to create one](https://cloud.google.com/iam/docs/keys-create-delete#creating)"
+            )
             return
 
         # ---- Authenticated ----
