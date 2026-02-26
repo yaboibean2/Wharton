@@ -82,7 +82,7 @@ h3 { font-size: 1rem !important; }
 p, li, span, div { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; }
 
 .block-container {
-    padding-top: 1.25rem !important;
+    padding-top: 3.2rem !important;
     padding-bottom: 2rem !important;
     max-width: 1280px !important;
 }
@@ -802,17 +802,37 @@ def main():
     if '_analysis_params' in st.session_state:
         _ap = st.session_state.pop('_analysis_params')
 
-        # Scroll to top immediately via JS
-        import streamlit.components.v1 as _components
-        _components.html(
-            '<script>'
-            'try{window.parent.document.querySelector("section.main").scrollTo({top:0,behavior:"instant"});}catch(e){}'
-            '</script>',
-            height=0,
+        # CSS: extra top padding + prevent Streamlit running-state dimming
+        st.markdown(
+            '<style>'
+            '.block-container{padding-top:2.5rem !important;opacity:1 !important;}'
+            '</style>',
+            unsafe_allow_html=True,
         )
 
-        # Run analysis directly — no tabs, no header, no form.
-        # Only the progress card (and results after completion) appear.
+        # Branded header so user has a visual anchor
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
+            <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
+                        width:38px;height:38px;border-radius:10px;display:flex;
+                        align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
+                        letter-spacing:-0.02em;">IA</div>
+            <div>
+                <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
+                    Investment Analysis</div>
+                <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
+                    Multi-Agent Research Platform</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Create empty placeholders at positions that match old render elements
+        # (tabs, form, inputs, etc.) so Streamlit diffs them away instead of
+        # leaving them visible as stale/dimmed content.
+        for _ in range(10):
+            st.empty()
+
+        # Run analysis — only the progress card appears below the header
         _execute_analysis(
             _ap['mode'],
             _ap.get('ticker'),
@@ -1163,31 +1183,24 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         thread = threading.Thread(target=_bg, daemon=True)
         thread.start()
 
-        # --- Learned phase durations (initial estimates from step_times.json) ---
+        # --- Simple linear countdown timer ---
+        # est_total = expected total analysis duration from start to finish.
+        # display_remaining = est_total - elapsed  (counts down at 1s/s).
+        # Only recalculated on phase transitions (not every tick).
         _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
         est_data   = _lp.get('data_gather', 45.0)
         est_agents = _lp.get('agents', 25.0)
         est_blend  = _lp.get('blend', 1.0)
+        avg_total  = _lp.get('avg_total', 70.0)
 
-        # Live estimates — these get adjusted as phases complete
-        live_est = {
-            'data':   est_data,
-            'agents': est_agents,
-            'blend':  est_blend,
-        }
-
-        # Initial display starts at the average total time from historical runs
-        avg_total = _lp.get('avg_total', 70.0)
-
+        est_total = avg_total      # current smoothed estimate
+        target_est = avg_total     # target (jumps on phase transitions)
         display_pct = 0.0
-        display_remaining = avg_total
         last_render = 0.0
         last_tick = time.time()
         start_wall = time.time()
         _phase_ts['start'] = start_wall
-        tick_rate = 1.0
 
-        # Track which dynamic adjustments we've applied
         _adjusted_data = False
         _adjusted_agents = False
 
@@ -1200,82 +1213,49 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             msg = _prog['mile_msg']
             mp = _prog['mile_pct']
 
-            # --- Dynamic adjustment: recalculate when a phase completes ---
-
-            # When data gathering finishes, use actual duration to rescale agent estimate
+            # --- Adjust target on phase transitions only ---
             if _phase_ts['data_done'] and not _adjusted_data:
                 _adjusted_data = True
                 actual_data = _phase_ts['data_done'] - start_wall
-                live_est['data'] = actual_data
-                # Scale agent estimate: if data was 0.6x of expected, agents likely faster too
                 ratio = actual_data / est_data if est_data > 0 else 1.0
-                # Clamp ratio to avoid extreme swings (0.4x to 2.0x)
-                ratio = max(0.4, min(2.0, ratio))
-                live_est['agents'] = est_agents * ratio
-                live_est['blend'] = est_blend  # blend is trivial, don't scale
-                # Don't snap display_remaining — the lerp in the smooth
-                # countdown section will converge naturally using updated live_est.
-                new_remaining = live_est['agents'] + live_est['blend']
-                if new_remaining > display_remaining:
-                    # Real estimate is higher — slow the tick rate, don't jump up
-                    tick_rate = max(0.15, display_remaining / new_remaining)
+                ratio = max(0.5, min(1.8, ratio))
+                target_est = actual_data + (est_agents + est_blend) * ratio
 
-            # When agent phase finishes, update live_est for blend
             if _phase_ts['agents_done'] and not _adjusted_agents:
                 _adjusted_agents = True
-                actual_agents = _phase_ts['agents_done'] - _phase_ts['data_done']
-                live_est['agents'] = actual_agents
-                new_remaining = live_est['blend']
-                if new_remaining > display_remaining:
-                    tick_rate = max(0.15, display_remaining / new_remaining)
+                target_est = (_phase_ts['agents_done'] - start_wall) + est_blend
 
-            # --- Phase-aware remaining calculation ---
-            if mp < 42:
-                # In data phase: estimate = remaining fraction of data + agents + blend
-                if live_est['data'] > 0:
-                    frac_done = mp / 42.0
-                else:
-                    frac_done = 0.0
-                phase_remaining = live_est['data'] * (1.0 - frac_done)
-                true_remaining = phase_remaining + live_est['agents'] + live_est['blend']
-            elif mp < 98:
-                # In agent phase
-                frac_done = (mp - 42.0) / 56.0
-                phase_remaining = live_est['agents'] * (1.0 - frac_done)
-                true_remaining = phase_remaining + live_est['blend']
+            # --- Dynamic floor: prevent timer from hitting 0 before phases complete ---
+            # If a phase is still running and elapsed is catching up to est_total,
+            # push target_est upward so the timer slows down instead of reaching 0.
+            if not _phase_ts['data_done']:
+                # Data gathering still running → agents + blend still ahead
+                min_total = elapsed + est_agents + est_blend + 10.0
+            elif not _phase_ts['agents_done']:
+                # Agents still running → blend still ahead
+                min_total = elapsed + est_blend + 5.0
             else:
-                # In blend phase
-                frac_done = (mp - 98.0) / 2.0
-                true_remaining = live_est['blend'] * (1.0 - frac_done)
+                min_total = elapsed + 2.0
+            target_est = max(target_est, min_total)
 
-            true_remaining = max(0.0, true_remaining)
+            # --- Smooth est_total toward target (~5-10s convergence) ---
+            gap = target_est - est_total
+            if abs(gap) > 0.3:
+                est_total += gap * min(0.015, dt * 0.25)
 
-            # Smooth countdown: lerp toward true_remaining (never snap instantly)
-            if true_remaining < display_remaining:
-                gap = display_remaining - true_remaining
-                # Converge over ~1-2 seconds: each 50ms tick closes 15% of the gap
-                decay = min(0.8, dt * 3.0)
-                display_remaining -= gap * decay
-                tick_rate = min(1.0, tick_rate + dt * 0.5)
-            elif true_remaining > display_remaining * 1.1:
-                # True estimate is significantly higher — slow the tick
-                tick_rate = max(0.15, display_remaining / true_remaining)
+            # --- Display remaining = total estimate minus elapsed ---
+            display_remaining = max(0.0, est_total - elapsed)
 
-            # Smoothly decrement the displayed remaining
-            display_remaining = max(0.0, display_remaining - dt * tick_rate)
-
-            # --- Progress bar: time-based ---
-            total_est = elapsed + display_remaining
-            if total_est > 1.0:
-                target = min(99.0, (elapsed / total_est) * 100.0)
+            # --- Progress bar percentage ---
+            if est_total > 1.0:
+                target_pct = min(99.0, (elapsed / est_total) * 100.0)
             else:
-                target = min(99.0, display_pct + 0.1)
+                target_pct = min(99.0, display_pct + 0.1)
 
-            # Smooth interpolation (never go backwards)
-            if target > display_pct:
-                gap = target - display_pct
-                lerp = min(0.8, 0.25 + gap * 0.01)
-                display_pct += gap * lerp
+            if target_pct > display_pct:
+                pct_gap = target_pct - display_pct
+                lerp = min(0.8, 0.25 + pct_gap * 0.01)
+                display_pct += pct_gap * lerp
             display_pct = max(0.0, min(99.0, display_pct))
 
             # Render at ~10 fps
@@ -1562,20 +1542,20 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 thread = threading.Thread(target=_bg_m, daemon=True)
                 thread.start()
 
-                # Dynamic phase-aware estimates (same algorithm as single-stock)
+                # --- Simple linear countdown timer (same as single-stock) ---
                 _lp_m = st.session_state.orchestrator._learned_phases if hasattr(st.session_state.orchestrator, '_learned_phases') else {}
-                est_data_m   = _lp_m.get('data_gather', 50.0)
+                est_data_m   = _lp_m.get('data_gather', 45.0)
                 est_agents_m = _lp_m.get('agents', 25.0)
-                est_blend_m  = _lp_m.get('blend', 0.5)
-                live_est_m = {'data': est_data_m, 'agents': est_agents_m, 'blend': est_blend_m}
+                est_blend_m  = _lp_m.get('blend', 1.0)
+                avg_total_m  = _lp_m.get('avg_total', 70.0)
 
+                est_total_m = avg_total_m      # current smoothed estimate
+                target_est_m = avg_total_m     # target (jumps on phase transitions)
                 display_pct_m = 0.0
-                display_remaining_m = _lp_m.get('avg_total', 75.0)
                 last_render_m = 0.0
                 last_tick_m = time.time()
                 start_wall_m = time.time()
                 _phase_ts_m['start'] = start_wall_m
-                tick_rate_m = 1.0
                 _adj_data_m = False
                 _adj_agents_m = False
 
@@ -1587,56 +1567,45 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     msg = _prog['mile_msg']
                     mp = _prog['mile_pct']
 
-                    # Dynamic adjustment on phase completion
+                    # --- Adjust target on phase transitions only ---
                     if _phase_ts_m['data_done'] and not _adj_data_m:
                         _adj_data_m = True
                         actual_d = _phase_ts_m['data_done'] - start_wall_m
-                        live_est_m['data'] = actual_d
-                        ratio = max(0.4, min(2.0, actual_d / est_data_m if est_data_m > 0 else 1.0))
-                        live_est_m['agents'] = est_agents_m * ratio
-                        new_rem = live_est_m['agents'] + live_est_m['blend']
-                        if new_rem > display_remaining_m:
-                            tick_rate_m = max(0.15, display_remaining_m / new_rem)
+                        ratio = actual_d / est_data_m if est_data_m > 0 else 1.0
+                        ratio = max(0.5, min(1.8, ratio))
+                        target_est_m = actual_d + (est_agents_m + est_blend_m) * ratio
 
                     if _phase_ts_m['agents_done'] and not _adj_agents_m:
                         _adj_agents_m = True
-                        live_est_m['agents'] = _phase_ts_m['agents_done'] - _phase_ts_m['data_done']
-                        new_rem = live_est_m['blend']
-                        if new_rem > display_remaining_m:
-                            tick_rate_m = max(0.15, display_remaining_m / new_rem)
+                        target_est_m = (_phase_ts_m['agents_done'] - start_wall_m) + est_blend_m
 
-                    # Phase-aware remaining
-                    if mp < 42:
-                        frac = mp / 42.0 if live_est_m['data'] > 0 else 0.0
-                        true_remaining = live_est_m['data'] * (1.0 - frac) + live_est_m['agents'] + live_est_m['blend']
-                    elif mp < 98:
-                        frac = (mp - 42.0) / 56.0
-                        true_remaining = live_est_m['agents'] * (1.0 - frac) + live_est_m['blend']
+                    # --- Dynamic floor: prevent timer from hitting 0 before phases complete ---
+                    if not _phase_ts_m['data_done']:
+                        min_total_m = elapsed + est_agents_m + est_blend_m + 10.0
+                    elif not _phase_ts_m['agents_done']:
+                        min_total_m = elapsed + est_blend_m + 5.0
                     else:
-                        frac = (mp - 98.0) / 2.0
-                        true_remaining = live_est_m['blend'] * (1.0 - frac)
-                    true_remaining = max(0.0, true_remaining)
+                        min_total_m = elapsed + 2.0
+                    target_est_m = max(target_est_m, min_total_m)
 
-                    if true_remaining < display_remaining_m:
-                        gap = display_remaining_m - true_remaining
-                        decay = min(0.8, dt * 3.0)
-                        display_remaining_m -= gap * decay
-                        tick_rate_m = min(1.0, tick_rate_m + dt * 0.5)
-                    elif true_remaining > display_remaining_m * 1.1:
-                        tick_rate_m = max(0.15, display_remaining_m / true_remaining)
+                    # --- Smooth est_total toward target (~5-10s convergence) ---
+                    gap_m = target_est_m - est_total_m
+                    if abs(gap_m) > 0.3:
+                        est_total_m += gap_m * min(0.015, dt * 0.25)
 
-                    display_remaining_m = max(0.0, display_remaining_m - dt * tick_rate_m)
+                    # --- Display remaining = total estimate minus elapsed ---
+                    display_remaining_m = max(0.0, est_total_m - elapsed)
 
-                    total_est = elapsed + display_remaining_m
-                    if total_est > 1.0:
-                        target = min(99.0, (elapsed / total_est) * 100.0)
+                    # --- Progress bar percentage ---
+                    if est_total_m > 1.0:
+                        target_pct_m = min(99.0, (elapsed / est_total_m) * 100.0)
                     else:
-                        target = min(99.0, display_pct_m + 0.1)
+                        target_pct_m = min(99.0, display_pct_m + 0.1)
 
-                    if target > display_pct_m:
-                        gap = target - display_pct_m
-                        lerp = min(0.8, 0.25 + gap * 0.01)
-                        display_pct_m += gap * lerp
+                    if target_pct_m > display_pct_m:
+                        pct_gap_m = target_pct_m - display_pct_m
+                        lerp_m = min(0.8, 0.25 + pct_gap_m * 0.01)
+                        display_pct_m += pct_gap_m * lerp_m
                     display_pct_m = max(0.0, min(99.0, display_pct_m))
 
                     if now - last_render_m >= 0.10:
