@@ -25,3 +25,8 @@ matplotlib==3.9.2
 # Utilities
 python-dateutil==2.9.0
 pytz==2024.2
+
+# Google Workspace export (Sheets, Docs, Drive)
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.0.0
+gspread>=6.0.0

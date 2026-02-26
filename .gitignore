@@ -10,6 +10,7 @@
 google_credentials.json
 *credentials*.json
 *service_account*.json
+data/google_token.json
 
 # =============================================================================
 # Python

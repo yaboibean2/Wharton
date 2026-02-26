@@ -29,11 +29,21 @@ logger = logging.getLogger(__name__)
 def _load_learned_phase_durations() -> dict:
     """Load phase durations from data/step_times.json.
 
-    Returns dict with keys 'data_gather', 'agents', 'blend' (medians),
-    'total' (median), and 'avg_total' (mean of total samples).
+    Returns dict with keys for legacy phases ('data_gather', 'agents', 'blend')
+    plus per-step keys ('fundamentals', 'price_history', 'benchmark',
+    'value_agent', 'growth_momentum_agent', 'macro_regime_agent',
+    'risk_agent', 'sentiment_agent') and 'total' / 'avg_total'.
     Falls back to conservative defaults if the file is missing or empty.
     """
-    defaults = {'data_gather': 45.0, 'agents': 25.0, 'blend': 1.0, 'total': 70.0, 'avg_total': 70.0}
+    defaults = {
+        'data_gather': 45.0, 'agents': 25.0, 'blend': 1.0,
+        'total': 70.0, 'avg_total': 70.0,
+        # Per-step defaults (seconds)
+        'fundamentals': 40.0, 'price_history': 5.0, 'benchmark': 0.5,
+        'value_agent': 12.0, 'growth_momentum_agent': 12.0,
+        'macro_regime_agent': 12.0, 'risk_agent': 12.0,
+        'sentiment_agent': 15.0,
+    }
     try:
         path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'step_times.json')
         if not os.path.exists(path):
@@ -52,19 +62,29 @@ def _load_learned_phase_durations() -> dict:
             vals = st.get(key, [])
             return sum(vals) / len(vals) if vals else None
 
+        # Legacy phase keys
         dg = _med('1')
         ag = _med('2')
         bl = _med('3')
         tot = _med('total')
         avg_tot = _avg('total')
 
-        return {
+        result = {
             'data_gather': round(dg, 1) if dg is not None else defaults['data_gather'],
             'agents':      round(ag, 1) if ag is not None else defaults['agents'],
             'blend':       round(bl, 1) if bl is not None else defaults['blend'],
             'total':       round(tot, 1) if tot is not None else defaults['total'],
             'avg_total':   round(avg_tot, 1) if avg_tot is not None else defaults['avg_total'],
         }
+
+        # Per-step keys
+        for step_key in ('fundamentals', 'price_history', 'benchmark',
+                         'value_agent', 'growth_momentum_agent',
+                         'macro_regime_agent', 'risk_agent', 'sentiment_agent'):
+            med_val = _med(step_key)
+            result[step_key] = round(med_val, 2) if med_val is not None else defaults.get(step_key, 10.0)
+
+        return result
     except Exception:
         return defaults
 
@@ -155,6 +175,9 @@ class PortfolioOrchestrator:
 
         analysis_start_time = time.time()
 
+        # Per-step timing tracker — records start/end for every individual step
+        _step_timings = {}
+
         # Reset ETA tracking for this new analysis
         # (prevents stale _eta_previous from previous runs causing counting-up bug)
         _eta_state = {'previous': None}
@@ -214,7 +237,9 @@ class PortfolioOrchestrator:
                 pct = min(pct, 40)
                 update_progress(msg, pct)
 
-            data = self._gather_data(ticker, analysis_date, existing_portfolio, progress_callback=data_progress_cb)
+            data = self._gather_data(ticker, analysis_date, existing_portfolio,
+                                     progress_callback=data_progress_cb,
+                                     step_timings=_step_timings)
         except Exception as e:
             logger.error(f"Error gathering data for {ticker}: {e}")
             import traceback
@@ -290,16 +315,19 @@ class PortfolioOrchestrator:
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_agent = {}
+            _agent_start_times = {}
             for i, (agent_name, agent) in enumerate(self.agents.items()):
                 # Small stagger between agent launches to avoid API burst
                 if i > 0:
                     time.sleep(0.2)
+                _agent_start_times[agent_name] = time.time()
                 future = executor.submit(agent.analyze, ticker, data)
                 future_to_agent[future] = agent_name
 
             completed_count = 0
             for future in as_completed(future_to_agent):
                 agent_name = future_to_agent[future]
+                agent_elapsed = time.time() - _agent_start_times[agent_name]
                 completed_count += 1
                 agent_label = agent_labels_map.get(agent_name, agent_name.replace('_agent', '').title())
 
@@ -327,11 +355,15 @@ class PortfolioOrchestrator:
                     }
                     completion_msg = f"{agent_label} Agent: analysis failed"
 
+                # Record per-agent timing
+                _step_timings[agent_name] = round(agent_elapsed, 3)
+
                 # Progress from 42% to 98% based on completion count
                 pct = PHASE_AGENTS[0] + (completed_count / total_agents) * (PHASE_AGENTS[1] - PHASE_AGENTS[0])
                 update_progress(completion_msg, int(pct))
         
         # 3. Phase 3: Blend scores and finalize (98-100%)
+        blend_start = time.time()
         update_progress(f"Blending agent scores with configured weights...", 98)
         blended_score = self._blend_scores(agent_results)
 
@@ -339,7 +371,17 @@ class PortfolioOrchestrator:
         update_progress(f"Analysis complete: {blended_score:.1f}/100 - {recommendation}", 99)
         final_score = blended_score
 
+        _step_timings['blend'] = round(time.time() - blend_start, 3)
+
         total_time = time.time() - analysis_start_time
+        _step_timings['total'] = round(total_time, 3)
+        _step_timings['data_gather'] = round(data_gather_elapsed, 3)
+        # Agents wall-clock (from end of data gather to end of last agent)
+        if _step_timings.get('value_agent') is not None:
+            # Max of all agent durations (they run in parallel, so wall-clock = max)
+            agent_keys = [k for k in _step_timings if k.endswith('_agent')]
+            _step_timings['agents_wall'] = round(max(_step_timings[k] for k in agent_keys), 3) if agent_keys else 0
+
         update_progress(f"Analysis complete: {final_score:.1f}/100 ({total_time:.0f}s total)", 100)
 
         # Restore original weights if they were changed
@@ -362,7 +404,8 @@ class PortfolioOrchestrator:
             'recommendation': self._generate_recommendation(final_score),
             'rationale': self._generate_comprehensive_rationale_simple(ticker, agent_results, final_score, data),
             'fundamentals': data.get('fundamentals', {}),
-            'price_history': data.get('price_history', {})
+            'price_history': data.get('price_history', {}),
+            'step_timings': _step_timings,
         }
     
     def analyze_stock(
@@ -665,7 +708,8 @@ class PortfolioOrchestrator:
         ticker: str,
         analysis_date: str,
         existing_portfolio: Dict = None,
-        progress_callback=None
+        progress_callback=None,
+        step_timings=None
     ) -> Dict[str, Any]:
         """Gather all necessary data for analysis using parallel API calls for speed."""
         # Calculate date range (1 year lookback) - ensure no future dates
@@ -690,10 +734,12 @@ class PortfolioOrchestrator:
             progress_callback(f"Querying Polygon, Alpha Vantage, Perplexity for {ticker} fundamentals...")
 
         # PARALLEL DATA GATHERING - Run all 3 API calls simultaneously
+        _data_start_times = {}
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {}
 
             # Task 1: Get fundamentals (API calls - slowest, ~30-40s)
+            _data_start_times['fundamentals'] = time.time()
             if hasattr(self.data_provider, 'get_fundamentals_enhanced'):
                 futures['fundamentals'] = executor.submit(
                     self.data_provider.get_fundamentals_enhanced, ticker
@@ -704,6 +750,7 @@ class PortfolioOrchestrator:
                 )
 
             # Task 2: Get price history (Polygon/Alpha Vantage API - medium, ~3-5s)
+            _data_start_times['price_history'] = time.time()
             if hasattr(self.data_provider, 'get_price_history_enhanced'):
                 futures['price_history'] = executor.submit(
                     self.data_provider.get_price_history_enhanced,
@@ -716,6 +763,7 @@ class PortfolioOrchestrator:
                 )
 
             # Task 3: Generate benchmark data (synthetic - fast, <1s)
+            _data_start_times['benchmark'] = time.time()
             futures['benchmark'] = executor.submit(
                 self._create_benchmark_data, benchmark, start_date, end_date
             )
@@ -731,6 +779,7 @@ class PortfolioOrchestrator:
             future_to_name = {v: k for k, v in futures.items()}
             for future in as_completed(futures.values()):
                 name = future_to_name[future]
+                task_elapsed = time.time() - _data_start_times[name]
                 try:
                     result = future.result()
                     if name == 'fundamentals':
@@ -743,18 +792,24 @@ class PortfolioOrchestrator:
                         data['_price_history_raw'] = result
                     elif name == 'benchmark':
                         data['benchmark_history'] = result
-                    logger.info(f"Data task '{name}' completed for {ticker}")
+                    logger.info(f"Data task '{name}' completed for {ticker} in {task_elapsed:.1f}s")
                     completed_tasks.append(name)
+
+                    # Record per-data-task timing
+                    if step_timings is not None:
+                        step_timings[name] = round(task_elapsed, 3)
 
                     if progress_callback:
                         remaining = [task_labels[n] for n in futures if n not in completed_tasks]
                         if remaining:
-                            progress_callback(f"Received {task_labels[name]}. Waiting: {remaining[0]}...")
+                            progress_callback(f"Received {task_labels[name]} ({task_elapsed:.0f}s). Waiting: {remaining[0]}...")
                         else:
                             progress_callback(f"All data received for {ticker}. Processing...")
                 except Exception as e:
                     logger.error(f"Failed to get {name} for {ticker}: {e}")
                     completed_tasks.append(name)
+                    if step_timings is not None:
+                        step_timings[name] = round(task_elapsed, 3)
                     if name == 'fundamentals':
                         data['fundamentals'] = {}
                     elif name == 'price_history':

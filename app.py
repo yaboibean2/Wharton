@@ -1063,7 +1063,13 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         )
 
     def _log_phase_times(phase_times):
-        """Append measured phase durations to data/step_times.json for future calibration."""
+        """Append measured phase/step durations to data/step_times.json for future calibration.
+
+        Accepts both legacy 3-phase keys (data_gather, agents, blend, total)
+        and per-step keys (fundamentals, price_history, benchmark,
+        value_agent, growth_momentum_agent, macro_regime_agent,
+        risk_agent, sentiment_agent, agents_wall).
+        """
         try:
             import json as _json
             _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'step_times.json')
@@ -1074,6 +1080,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 store = {"step_times": {}, "metadata": {}}
 
             st_data = store.setdefault("step_times", {})
+
+            # Legacy phase keys (kept for backward compatibility)
             if phase_times.get('data_gather') is not None:
                 st_data.setdefault("1", []).append(round(phase_times['data_gather'], 3))
             if phase_times.get('agents') is not None:
@@ -1082,6 +1090,17 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 st_data.setdefault("3", []).append(round(phase_times['blend'], 3))
             if phase_times.get('total') is not None:
                 st_data.setdefault("total", []).append(round(phase_times['total'], 3))
+
+            # Per-step keys (new granular timing)
+            per_step_keys = [
+                'fundamentals', 'price_history', 'benchmark',
+                'value_agent', 'growth_momentum_agent',
+                'macro_regime_agent', 'risk_agent', 'sentiment_agent',
+                'agents_wall',
+            ]
+            for key in per_step_keys:
+                if phase_times.get(key) is not None:
+                    st_data.setdefault(key, []).append(round(phase_times[key], 3))
 
             # Cap each list at 100 most recent entries
             for k in st_data:
@@ -1104,17 +1123,19 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             pass  # timing log is best-effort, never block analysis
 
     def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
-        """Run analysis with a dynamically-adjusting countdown timer.
+        """Run analysis with a rate-based countdown timer.
 
-        The timer uses learned phase durations from step_times.json as the
-        initial estimate, then ADAPTS in real-time: when a phase completes
-        faster or slower than expected, the remaining estimate is recalculated
-        using the actual duration as a scaling factor.
+        Uses learned phase durations from step_times.json as the initial
+        estimate.  Every 50 ms tick the countdown *rate* is adjusted by
+        comparing the current displayed remaining time against a phase-aware
+        estimate of the true remaining time.  Step-completion events
+        (~9 recalibration points) trigger rapid rate corrections, while
+        the continuous adjustment prevents drift between events.
 
-        After analysis completes, the measured phase times are appended to
+        After analysis completes, measured phase times are appended to
         step_times.json so future runs start with better estimates.
         """
-        import re as _re
+        import math as _math
 
         _prog = {
             'mile_pct': 0.0,
@@ -1137,7 +1158,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             'blend':     ['blending', 'analysis complete'],
         }
 
-        # Phase transition timestamps (for logging & dynamic adjustment)
+        # Phase transition timestamps (for logging & step rendering)
         _phase_ts = {
             'start': None,
             'data_done': None,   # milestone pct crosses 42
@@ -1145,27 +1166,143 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             'end': None,         # milestone pct crosses 100
         }
 
+        # --- Per-step expected timing (for rate-based recalibration) ---
+        _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
+        _est_data_wall  = _lp.get('data_gather', 45.0)
+        _est_agents_wall = max(
+            _lp.get('value_agent', 12.0),
+            _lp.get('growth_momentum_agent', 12.0),
+            _lp.get('macro_regime_agent', 12.0),
+            _lp.get('risk_agent', 12.0),
+            _lp.get('sentiment_agent', 15.0),
+        )
+        _est_blend = _lp.get('blend', 1.0)
+
+        # Actual step-completion timestamps (elapsed seconds from start)
+        _step_done_at = {}
+
+        # Sets for phase-aware estimation
+        _DATA_KEYS = {'benchmark', 'price_history', 'fundamentals'}
+        _AGENT_KEYS = {'value_agent', 'growth_momentum_agent',
+                       'macro_regime_agent', 'risk_agent', 'sentiment_agent'}
+
+        # Map from orchestrator message keywords → step key
+        _DATA_STEP_KEYWORDS = {
+            'fundamentals': 'fundamentals',
+            'price history': 'price_history',
+            'benchmark': 'benchmark',
+        }
+        _AGENT_STEP_KEYWORDS = {
+            'value': 'value_agent',
+            'growth': 'growth_momentum_agent',
+            'macro regime': 'macro_regime_agent',
+            'macro': 'macro_regime_agent',
+            'risk': 'risk_agent',
+            'sentiment': 'sentiment_agent',
+        }
+
+        def _estimate_remaining(elapsed):
+            """Phase-aware estimate of real seconds remaining.
+
+            Called every tick (~50ms).  Data speed and agent speed are
+            treated independently — cached data does NOT mean faster agents.
+            """
+            d_done = {k: v for k, v in _step_done_at.items() if k in _DATA_KEYS}
+            a_done = {k: v for k, v in _step_done_at.items() if k in _AGENT_KEYS}
+
+            # ---- DATA PHASE (fundamentals not done yet) ----
+            if 'fundamentals' not in d_done:
+                frac = elapsed / _est_data_wall if _est_data_wall > 0 else 1.0
+                if frac < 0.85:
+                    data_rem = _est_data_wall - elapsed
+                elif frac < 1.0:
+                    hedge = 1.0 + (frac - 0.85) / 0.15 * 0.5
+                    data_rem = max(3.0, (_est_data_wall - elapsed) * hedge)
+                else:
+                    overshoot = elapsed - _est_data_wall
+                    grace = _est_data_wall * 0.3 * _math.exp(
+                        -overshoot / (_est_data_wall * 0.4))
+                    data_rem = max(3.0, grace)
+                return data_rem + _est_agents_wall + _est_blend
+
+            # ---- DATA COMPLETE ----
+            data_actual = d_done['fundamentals']
+
+            # ---- AGENT PHASE ----
+            # Agent speed is independent of data speed (different APIs/services).
+            # Do NOT scale agent estimate by data_ratio.
+            agents_elapsed = max(0, elapsed - data_actual)
+
+            if len(a_done) >= 5:
+                return _est_blend
+
+            if len(a_done) > 0:
+                n = len(a_done)
+                frac = n / (n + 1.0)
+                if frac > 0.01:
+                    observed_agent_total = agents_elapsed / frac
+                else:
+                    observed_agent_total = _est_agents_wall
+                trust = n / 5.0
+                blended_total = observed_agent_total * trust + _est_agents_wall * (1 - trust)
+                agent_rem = max(0.5, blended_total - agents_elapsed)
+            else:
+                agent_rem = max(1.0, _est_agents_wall - agents_elapsed)
+
+            return agent_rem + _est_blend
+
         def _on_milestone(pct, message):
             _prog['mile_pct'] = pct
             _prog['mile_msg'] = message
-            # Record phase transition timestamps
             now_ts = time.time()
+            elapsed = now_ts - _phase_ts['start'] if _phase_ts['start'] else 0
+
+            # Phase transition timestamps
             if pct >= 42 and _phase_ts['data_done'] is None:
                 _phase_ts['data_done'] = now_ts
             if pct >= 98 and _phase_ts['agents_done'] is None:
                 _phase_ts['agents_done'] = now_ts
             if pct >= 100 and _phase_ts['end'] is None:
                 _phase_ts['end'] = now_ts
-            # Detect agent completions
+
             msg_lower = message.lower()
-            if 'complete' in msg_lower or 'analyzed' in msg_lower or 'score' in msg_lower or 'failed' in msg_lower:
+
+            # --- Detect data sub-step completions ---
+            if 'received' in msg_lower:
+                for kw, step_key in _DATA_STEP_KEYWORDS.items():
+                    if kw in msg_lower and step_key not in _step_done_at:
+                        _step_done_at[step_key] = elapsed
+                        break
+
+            # Mark all data sub-steps done when data phase completes
+            if pct >= 42:
+                for k in ('fundamentals', 'price_history', 'benchmark'):
+                    if k not in _step_done_at:
+                        _step_done_at[k] = elapsed
+                _completed_steps.add('data')
+
+            # --- Detect agent completions ---
+            if any(w in msg_lower for w in ('complete', 'analyzed', 'score', 'failed')):
+                for kw, step_key in _AGENT_STEP_KEYWORDS.items():
+                    if kw in msg_lower and step_key not in _step_done_at:
+                        _step_done_at[step_key] = elapsed
+                        break
+                # UI step tracking
                 for sk, kws in _STEP_COMPLETE_MAP.items():
                     if any(kw in msg_lower for kw in kws):
                         _completed_steps.add(sk)
-            if pct >= 42:
-                _completed_steps.add('data')
+
+            # Mark all agents done when agent phase completes
+            if pct >= 98:
+                for k in ('value_agent', 'growth_momentum_agent',
+                          'macro_regime_agent', 'risk_agent', 'sentiment_agent'):
+                    if k not in _step_done_at:
+                        _step_done_at[k] = elapsed
+
             if pct >= 100:
                 _completed_steps.add('blend')
+                if 'blend' not in _step_done_at:
+                    _step_done_at['blend'] = elapsed
 
         def _bg():
             try:
@@ -1183,26 +1320,23 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         thread = threading.Thread(target=_bg, daemon=True)
         thread.start()
 
-        # --- Simple linear countdown timer ---
-        # est_total = expected total analysis duration from start to finish.
-        # display_remaining = est_total - elapsed  (counts down at 1s/s).
-        # Only recalculated on phase transitions (not every tick).
-        _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
-        est_data   = _lp.get('data_gather', 45.0)
-        est_agents = _lp.get('agents', 25.0)
-        est_blend  = _lp.get('blend', 1.0)
-        avg_total  = _lp.get('avg_total', 70.0)
+        # --- Rate-based countdown timer ---
+        # Countdown value is decremented by rate*dt every tick.
+        # Rate is adjusted continuously by comparing countdown against
+        # a phase-aware estimate of true remaining time (~9 recalibration
+        # points from step completions, plus continuous between-event drift
+        # correction).
+        import math as _math_loop
+        _total_expected = _est_data_wall + _est_agents_wall + _est_blend
+        avg_total = _lp.get('avg_total', _total_expected)
 
-        est_total = avg_total      # current smoothed estimate
-        target_est = avg_total     # target (jumps on phase transitions)
+        _countdown = avg_total
+        _rate = 1.0
         display_pct = 0.0
         last_render = 0.0
         last_tick = time.time()
         start_wall = time.time()
         _phase_ts['start'] = start_wall
-
-        _adjusted_data = False
-        _adjusted_agents = False
 
         while not _prog['done']:
             now = time.time()
@@ -1213,40 +1347,26 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             msg = _prog['mile_msg']
             mp = _prog['mile_pct']
 
-            # --- Adjust target on phase transitions only ---
-            if _phase_ts['data_done'] and not _adjusted_data:
-                _adjusted_data = True
-                actual_data = _phase_ts['data_done'] - start_wall
-                ratio = actual_data / est_data if est_data > 0 else 1.0
-                ratio = max(0.5, min(1.8, ratio))
-                target_est = actual_data + (est_agents + est_blend) * ratio
+            # --- Continuous rate adjustment (every tick) ---
+            est_rem = _estimate_remaining(elapsed)
 
-            if _phase_ts['agents_done'] and not _adjusted_agents:
-                _adjusted_agents = True
-                target_est = (_phase_ts['agents_done'] - start_wall) + est_blend
-
-            # --- Dynamic floor: prevent timer from hitting 0 before phases complete ---
-            # If a phase is still running and elapsed is catching up to est_total,
-            # push target_est upward so the timer slows down instead of reaching 0.
-            if not _phase_ts['data_done']:
-                # Data gathering still running → agents + blend still ahead
-                min_total = elapsed + est_agents + est_blend + 10.0
-            elif not _phase_ts['agents_done']:
-                # Agents still running → blend still ahead
-                min_total = elapsed + est_blend + 5.0
+            if _countdown > 0.5 and est_rem > 0.5:
+                target_rate = _countdown / est_rem
+                target_rate = max(0.05, min(5.0, target_rate))
+                alpha = min(0.6, 3.0 * dt)
+                _rate += (target_rate - _rate) * alpha
+            elif _countdown <= 0.5:
+                _rate = 0.05
             else:
-                min_total = elapsed + 2.0
-            target_est = max(target_est, min_total)
+                _rate = max(_rate, 2.0)
 
-            # --- Smooth est_total toward target (~5-10s convergence) ---
-            gap = target_est - est_total
-            if abs(gap) > 0.3:
-                est_total += gap * min(0.015, dt * 0.25)
+            _countdown -= _rate * dt
+            _countdown = max(0.0, _countdown)
 
-            # --- Display remaining = total estimate minus elapsed ---
-            display_remaining = max(0.0, est_total - elapsed)
+            display_remaining = _countdown
 
             # --- Progress bar percentage ---
+            est_total = elapsed + display_remaining
             if est_total > 1.0:
                 target_pct = min(99.0, (elapsed / est_total) * 100.0)
             else:
@@ -1275,17 +1395,32 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             raise _prog['error']
 
         # --- Log phase times to step_times.json for future calibration ---
+        # Use per-step timings from the orchestrator result if available
+        result = _prog['result']
+        step_timings = result.get('step_timings', {}) if isinstance(result, dict) else {}
+
         total_time = time.time() - start_wall
         phase_times = {'total': total_time}
+
+        # Legacy phase times from wall-clock transitions
         if _phase_ts['data_done']:
             phase_times['data_gather'] = _phase_ts['data_done'] - start_wall
         if _phase_ts['data_done'] and _phase_ts['agents_done']:
             phase_times['agents'] = _phase_ts['agents_done'] - _phase_ts['data_done']
         if _phase_ts['agents_done'] and _phase_ts['end']:
             phase_times['blend'] = _phase_ts['end'] - _phase_ts['agents_done']
+
+        # Merge in per-step timings from orchestrator (more accurate)
+        for key in ('fundamentals', 'price_history', 'benchmark',
+                    'value_agent', 'growth_momentum_agent',
+                    'macro_regime_agent', 'risk_agent', 'sentiment_agent',
+                    'agents_wall', 'blend'):
+            if key in step_timings:
+                phase_times[key] = step_timings[key]
+
         _log_phase_times(phase_times)
 
-        return _prog['result']
+        return result
 
     # Use average total time from step_times.json for the initial countdown display
     _lp = st.session_state.orchestrator._learned_phases if hasattr(st.session_state, 'orchestrator') and hasattr(st.session_state.orchestrator, '_learned_phases') else {}
@@ -1505,10 +1640,66 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     'agents_done': None, 'end': None,
                 }
 
+                # --- Per-step expected timing (multi-point recalibration) ---
+                _lp_m = st.session_state.orchestrator._learned_phases if hasattr(st.session_state.orchestrator, '_learned_phases') else {}
+                _est_data_wall_m = _lp_m.get('data_gather', 45.0)
+                _est_agents_wall_m = max(
+                    _lp_m.get('value_agent', 12.0),
+                    _lp_m.get('growth_momentum_agent', 12.0),
+                    _lp_m.get('macro_regime_agent', 12.0),
+                    _lp_m.get('risk_agent', 12.0),
+                    _lp_m.get('sentiment_agent', 15.0),
+                )
+                _est_blend_m = _lp_m.get('blend', 1.0)
+                _total_expected_m = _est_data_wall_m + _est_agents_wall_m + _est_blend_m
+                _step_done_at_m = {}
+
+                _DATA_KEYS_M = {'benchmark', 'price_history', 'fundamentals'}
+                _AGENT_KEYS_M = {'value_agent', 'growth_momentum_agent',
+                                 'macro_regime_agent', 'risk_agent', 'sentiment_agent'}
+
+                _DATA_KW_M = {'fundamentals': 'fundamentals', 'price history': 'price_history', 'benchmark': 'benchmark'}
+                _AGENT_KW_M = {'value': 'value_agent', 'growth': 'growth_momentum_agent',
+                               'macro regime': 'macro_regime_agent', 'macro': 'macro_regime_agent',
+                               'risk': 'risk_agent', 'sentiment': 'sentiment_agent'}
+
+                def _estimate_remaining_m(elapsed):
+                    import math as _m
+                    d_done = {k: v for k, v in _step_done_at_m.items() if k in _DATA_KEYS_M}
+                    a_done = {k: v for k, v in _step_done_at_m.items() if k in _AGENT_KEYS_M}
+                    if 'fundamentals' not in d_done:
+                        frac = elapsed / _est_data_wall_m if _est_data_wall_m > 0 else 1.0
+                        if frac < 0.85:
+                            data_rem = _est_data_wall_m - elapsed
+                        elif frac < 1.0:
+                            hedge = 1.0 + (frac - 0.85) / 0.15 * 0.5
+                            data_rem = max(3.0, (_est_data_wall_m - elapsed) * hedge)
+                        else:
+                            overshoot = elapsed - _est_data_wall_m
+                            grace = _est_data_wall_m * 0.3 * _m.exp(-overshoot / (_est_data_wall_m * 0.4))
+                            data_rem = max(3.0, grace)
+                        return data_rem + _est_agents_wall_m + _est_blend_m
+                    data_actual = d_done['fundamentals']
+                    # Agent speed is independent of data speed — do NOT scale by data_ratio
+                    agents_elapsed = max(0, elapsed - data_actual)
+                    if len(a_done) >= 5:
+                        return _est_blend_m
+                    if len(a_done) > 0:
+                        n = len(a_done)
+                        frac = n / (n + 1.0)
+                        observed = agents_elapsed / frac if frac > 0.01 else _est_agents_wall_m
+                        trust = n / 5.0
+                        blended = observed * trust + _est_agents_wall_m * (1 - trust)
+                        agent_rem = max(0.5, blended - agents_elapsed)
+                    else:
+                        agent_rem = max(1.0, _est_agents_wall_m - agents_elapsed)
+                    return agent_rem + _est_blend_m
+
                 def _on_milestone_m(pct, message):
                     _prog['mile_pct'] = pct
                     _prog['mile_msg'] = message
                     now_ts = time.time()
+                    elapsed = now_ts - _phase_ts_m['start'] if _phase_ts_m['start'] else 0
                     if pct >= 42 and _phase_ts_m['data_done'] is None:
                         _phase_ts_m['data_done'] = now_ts
                     if pct >= 98 and _phase_ts_m['agents_done'] is None:
@@ -1516,14 +1707,33 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     if pct >= 100 and _phase_ts_m['end'] is None:
                         _phase_ts_m['end'] = now_ts
                     msg_lower = message.lower()
-                    if 'complete' in msg_lower or 'analyzed' in msg_lower or 'score' in msg_lower or 'failed' in msg_lower:
+                    if 'received' in msg_lower:
+                        for kw, sk in _DATA_KW_M.items():
+                            if kw in msg_lower and sk not in _step_done_at_m:
+                                _step_done_at_m[sk] = elapsed
+                                break
+                    if pct >= 42:
+                        for k in ('fundamentals', 'price_history', 'benchmark'):
+                            if k not in _step_done_at_m:
+                                _step_done_at_m[k] = elapsed
+                        _completed_steps_m.add('data')
+                    if any(w in msg_lower for w in ('complete', 'analyzed', 'score', 'failed')):
+                        for kw, sk in _AGENT_KW_M.items():
+                            if kw in msg_lower and sk not in _step_done_at_m:
+                                _step_done_at_m[sk] = elapsed
+                                break
                         for sk, kws in _STEP_COMPLETE_MAP_M.items():
                             if any(kw in msg_lower for kw in kws):
                                 _completed_steps_m.add(sk)
-                    if pct >= 42:
-                        _completed_steps_m.add('data')
+                    if pct >= 98:
+                        for k in ('value_agent', 'growth_momentum_agent',
+                                  'macro_regime_agent', 'risk_agent', 'sentiment_agent'):
+                            if k not in _step_done_at_m:
+                                _step_done_at_m[k] = elapsed
                     if pct >= 100:
                         _completed_steps_m.add('blend')
+                        if 'blend' not in _step_done_at_m:
+                            _step_done_at_m['blend'] = elapsed
 
                 def _bg_m():
                     try:
@@ -1542,22 +1752,16 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 thread = threading.Thread(target=_bg_m, daemon=True)
                 thread.start()
 
-                # --- Simple linear countdown timer (same as single-stock) ---
-                _lp_m = st.session_state.orchestrator._learned_phases if hasattr(st.session_state.orchestrator, '_learned_phases') else {}
-                est_data_m   = _lp_m.get('data_gather', 45.0)
-                est_agents_m = _lp_m.get('agents', 25.0)
-                est_blend_m  = _lp_m.get('blend', 1.0)
-                avg_total_m  = _lp_m.get('avg_total', 70.0)
+                # --- Rate-based countdown timer (same algorithm as single-stock) ---
+                avg_total_m = _lp_m.get('avg_total', _total_expected_m)
 
-                est_total_m = avg_total_m      # current smoothed estimate
-                target_est_m = avg_total_m     # target (jumps on phase transitions)
+                _countdown_m = avg_total_m
+                _rate_m = 1.0
                 display_pct_m = 0.0
                 last_render_m = 0.0
                 last_tick_m = time.time()
                 start_wall_m = time.time()
                 _phase_ts_m['start'] = start_wall_m
-                _adj_data_m = False
-                _adj_agents_m = False
 
                 while not _prog['done']:
                     now = time.time()
@@ -1567,36 +1771,26 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     msg = _prog['mile_msg']
                     mp = _prog['mile_pct']
 
-                    # --- Adjust target on phase transitions only ---
-                    if _phase_ts_m['data_done'] and not _adj_data_m:
-                        _adj_data_m = True
-                        actual_d = _phase_ts_m['data_done'] - start_wall_m
-                        ratio = actual_d / est_data_m if est_data_m > 0 else 1.0
-                        ratio = max(0.5, min(1.8, ratio))
-                        target_est_m = actual_d + (est_agents_m + est_blend_m) * ratio
+                    # --- Continuous rate adjustment ---
+                    est_rem_m = _estimate_remaining_m(elapsed)
 
-                    if _phase_ts_m['agents_done'] and not _adj_agents_m:
-                        _adj_agents_m = True
-                        target_est_m = (_phase_ts_m['agents_done'] - start_wall_m) + est_blend_m
-
-                    # --- Dynamic floor: prevent timer from hitting 0 before phases complete ---
-                    if not _phase_ts_m['data_done']:
-                        min_total_m = elapsed + est_agents_m + est_blend_m + 10.0
-                    elif not _phase_ts_m['agents_done']:
-                        min_total_m = elapsed + est_blend_m + 5.0
+                    if _countdown_m > 0.5 and est_rem_m > 0.5:
+                        target_rate_m = _countdown_m / est_rem_m
+                        target_rate_m = max(0.05, min(5.0, target_rate_m))
+                        alpha_m = min(0.6, 3.0 * dt)
+                        _rate_m += (target_rate_m - _rate_m) * alpha_m
+                    elif _countdown_m <= 0.5:
+                        _rate_m = 0.05
                     else:
-                        min_total_m = elapsed + 2.0
-                    target_est_m = max(target_est_m, min_total_m)
+                        _rate_m = max(_rate_m, 2.0)
 
-                    # --- Smooth est_total toward target (~5-10s convergence) ---
-                    gap_m = target_est_m - est_total_m
-                    if abs(gap_m) > 0.3:
-                        est_total_m += gap_m * min(0.015, dt * 0.25)
+                    _countdown_m -= _rate_m * dt
+                    _countdown_m = max(0.0, _countdown_m)
 
-                    # --- Display remaining = total estimate minus elapsed ---
-                    display_remaining_m = max(0.0, est_total_m - elapsed)
+                    display_remaining_m = _countdown_m
 
                     # --- Progress bar percentage ---
+                    est_total_m = elapsed + display_remaining_m
                     if est_total_m > 1.0:
                         target_pct_m = min(99.0, (elapsed / est_total_m) * 100.0)
                     else:
@@ -1627,7 +1821,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
                 result = _prog['result']
 
-                # Log phase times for this stock
+                # Log phase times for this stock (with per-step data)
+                step_timings_m = result.get('step_timings', {}) if isinstance(result, dict) else {}
                 _total_m = time.time() - start_wall_m
                 _pt_m = {'total': _total_m}
                 if _phase_ts_m['data_done']:
@@ -1636,6 +1831,13 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     _pt_m['agents'] = _phase_ts_m['agents_done'] - _phase_ts_m['data_done']
                 if _phase_ts_m['agents_done'] and _phase_ts_m['end']:
                     _pt_m['blend'] = _phase_ts_m['end'] - _phase_ts_m['agents_done']
+                # Merge per-step timings from orchestrator
+                for key in ('fundamentals', 'price_history', 'benchmark',
+                            'value_agent', 'growth_momentum_agent',
+                            'macro_regime_agent', 'risk_agent', 'sentiment_agent',
+                            'agents_wall', 'blend'):
+                    if key in step_timings_m:
+                        _pt_m[key] = step_timings_m[key]
                 _log_phase_times(_pt_m)
 
                 # Track time for this stock
@@ -1946,6 +2148,504 @@ def stock_analysis_page():
             'weights': agent_weights,
         }
         st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Google Sheets / Docs export helpers
+# ---------------------------------------------------------------------------
+_GOOGLE_SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/documents',
+    'https://www.googleapis.com/auth/drive',
+]
+
+_GOOGLE_CREDS_PATH = os.path.join(os.path.dirname(__file__), 'google_credentials.json')
+_GOOGLE_TOKEN_PATH = os.path.join(os.path.dirname(__file__), 'data', 'google_token.json')
+
+
+def _get_google_creds():
+    """Return valid Google OAuth2 credentials, or None.
+
+    Uses the InstalledAppFlow (opens browser) if no cached token exists.
+    Credentials are stored in session_state *and* on disk so subsequent
+    reruns/sessions reuse them.
+    """
+    if 'google_creds' in st.session_state:
+        creds = st.session_state['google_creds']
+        if creds and not creds.expired:
+            return creds
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                from google.auth.transport.requests import Request
+                creds.refresh(Request())
+                st.session_state['google_creds'] = creds
+                _save_google_token(creds)
+                return creds
+            except Exception:
+                pass
+
+    # Try loading from disk
+    if os.path.exists(_GOOGLE_TOKEN_PATH):
+        try:
+            from google.oauth2.credentials import Credentials
+            creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
+            if creds and not creds.expired:
+                st.session_state['google_creds'] = creds
+                return creds
+            if creds and creds.expired and creds.refresh_token:
+                from google.auth.transport.requests import Request
+                creds.refresh(Request())
+                st.session_state['google_creds'] = creds
+                _save_google_token(creds)
+                return creds
+        except Exception:
+            pass
+
+    return None
+
+
+def _save_google_token(creds):
+    """Persist OAuth token to disk."""
+    try:
+        os.makedirs(os.path.dirname(_GOOGLE_TOKEN_PATH), exist_ok=True)
+        with open(_GOOGLE_TOKEN_PATH, 'w') as f:
+            f.write(creds.to_json())
+    except Exception:
+        pass
+
+
+def _run_google_oauth():
+    """Run the installed-app OAuth flow (opens browser tab)."""
+    creds_path = _GOOGLE_CREDS_PATH
+    # Check for uploaded credentials in session state
+    if 'uploaded_google_creds_path' in st.session_state:
+        creds_path = st.session_state['uploaded_google_creds_path']
+
+    if not os.path.exists(creds_path):
+        return None
+
+    try:
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        flow = InstalledAppFlow.from_client_secrets_file(creds_path, _GOOGLE_SCOPES)
+        creds = flow.run_local_server(port=0, open_browser=True)
+        st.session_state['google_creds'] = creds
+        _save_google_token(creds)
+        return creds
+    except Exception as e:
+        st.error(f"Google OAuth failed: {e}")
+        return None
+
+
+def _build_report_text(result):
+    """Build a plain-text report from analysis result."""
+    f = result['fundamentals']
+    ticker = result['ticker']
+    lines = []
+    lines.append(f"Investment Analysis: {ticker}")
+    lines.append(f"{f.get('name', 'N/A')}")
+    lines.append(f"Date: {datetime.now().strftime('%B %d, %Y')}")
+    lines.append(f"Sector: {f.get('sector', 'N/A')}")
+    lines.append(f"Price: ${f.get('price', 0):.2f}")
+    lines.append("")
+    lines.append(f"Final Score: {result['final_score']:.1f}/100")
+    lines.append(f"Recommendation: {result.get('recommendation', 'N/A')}")
+    lines.append("")
+    lines.append("Agent Breakdown:")
+    for agent, score in result.get('agent_scores', {}).items():
+        lines.append(f"  {agent.replace('_', ' ').title()}: {score:.1f}/100")
+    lines.append("")
+    lines.append("Key Metrics:")
+    mc = f.get('market_cap', 0)
+    lines.append(f"  Market Cap: ${mc/1e9:.2f}B" if mc else "  Market Cap: N/A")
+    pe = f.get('pe_ratio')
+    lines.append(f"  P/E Ratio: {pe:.1f}" if pe else "  P/E Ratio: N/A")
+    beta = f.get('beta')
+    lines.append(f"  Beta: {beta:.2f}" if beta else "  Beta: N/A")
+    dy = f.get('dividend_yield')
+    if dy:
+        lines.append(f"  Dividend Yield: {dy*100:.2f}%")
+    lines.append("")
+    lines.append("Agent Analysis:")
+    for agent, rationale in result.get('agent_rationales', {}).items():
+        if rationale:
+            lines.append(f"\n{agent.replace('_', ' ').title()}:")
+            lines.append(rationale)
+    return "\n".join(lines)
+
+
+def _export_to_sheets(creds, result, spreadsheet_id=None):
+    """Export analysis to Google Sheets. Returns (spreadsheet_id, url)."""
+    import gspread
+    gc = gspread.authorize(creds)
+    f = result['fundamentals']
+    ticker = result['ticker']
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    if spreadsheet_id:
+        sh = gc.open_by_key(spreadsheet_id)
+        # Add a new worksheet for this analysis
+        ws_title = f"{ticker} {datetime.now().strftime('%m/%d')}"
+        try:
+            ws = sh.add_worksheet(title=ws_title, rows=50, cols=10)
+        except Exception:
+            ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=10)
+    else:
+        sh = gc.create(f"{ticker} Analysis - {timestamp}")
+        ws = sh.sheet1
+        ws.update_title(f"{ticker} Analysis")
+
+    # Header row
+    rows = [
+        [f"{ticker} - Investment Analysis", "", "", f.get('name', '')],
+        [f"Date: {timestamp}", "", "", f"Sector: {f.get('sector', 'N/A')}"],
+        [],
+        ["Final Score", result['final_score'], "", "Recommendation", result.get('recommendation', 'N/A')],
+        [],
+        ["Key Metrics", "", "", ""],
+        ["Price", f"${f.get('price', 0):.2f}"],
+        ["Market Cap", f"${f.get('market_cap', 0)/1e9:.2f}B" if f.get('market_cap') else "N/A"],
+        ["P/E Ratio", f"{f.get('pe_ratio', 0):.1f}" if f.get('pe_ratio') else "N/A"],
+        ["Beta", f"{f.get('beta', 0):.2f}" if f.get('beta') else "N/A"],
+        ["Dividend Yield", f"{f.get('dividend_yield', 0)*100:.2f}%" if f.get('dividend_yield') else "N/A"],
+        [],
+        ["Agent Scores", "", "", ""],
+        ["Agent", "Score"],
+    ]
+    for agent, score in result.get('agent_scores', {}).items():
+        rows.append([agent.replace('_', ' ').title(), round(score, 1)])
+
+    rows.append([])
+    rows.append(["Agent Analysis", "", "", ""])
+    for agent, rationale in result.get('agent_rationales', {}).items():
+        if rationale:
+            rows.append([agent.replace('_', ' ').title()])
+            # Split rationale into chunks for readability
+            for line in str(rationale).split('\n'):
+                if line.strip():
+                    rows.append([line.strip()])
+            rows.append([])
+
+    ws.update(range_name='A1', values=rows)
+
+    # Basic formatting: bold headers
+    try:
+        ws.format('A1:D1', {'textFormat': {'bold': True, 'fontSize': 14}})
+        ws.format('A4:E4', {'textFormat': {'bold': True}})
+        ws.format('A6', {'textFormat': {'bold': True}})
+        ws.format('A13:B13', {'textFormat': {'bold': True}})
+        ws.format('A14:B14', {'textFormat': {'bold': True}})
+    except Exception:
+        pass
+
+    return sh.id, sh.url
+
+
+def _export_to_docs(creds, result, document_id=None):
+    """Export analysis to Google Docs. Returns (doc_id, url)."""
+    from googleapiclient.discovery import build
+    service = build('docs', 'v1', credentials=creds)
+    drive_service = build('drive', 'v3', credentials=creds)
+
+    f = result['fundamentals']
+    ticker = result['ticker']
+    timestamp = datetime.now().strftime('%B %d, %Y')
+
+    if document_id:
+        # Append to existing document
+        doc = service.documents().get(documentId=document_id).execute()
+        end_index = doc['body']['content'][-1]['endIndex'] - 1
+
+        report_text = _build_report_text(result)
+        separator = "\n\n" + "=" * 60 + "\n\n"
+
+        requests = [
+            {'insertText': {'location': {'index': end_index}, 'text': separator + report_text}}
+        ]
+        service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
+        url = f"https://docs.google.com/document/d/{document_id}/edit"
+        return document_id, url
+    else:
+        # Create new document
+        doc = service.documents().create(
+            body={'title': f"{ticker} Investment Analysis - {timestamp}"}
+        ).execute()
+        doc_id = doc['documentId']
+
+        report_text = _build_report_text(result)
+
+        requests = [
+            {'insertText': {'location': {'index': 1}, 'text': report_text}},
+        ]
+        # Apply heading style to first line
+        title_end = len(f"Investment Analysis: {ticker}") + 1
+        requests.append({
+            'updateParagraphStyle': {
+                'range': {'startIndex': 1, 'endIndex': title_end},
+                'paragraphStyle': {'namedStyleType': 'HEADING_1'},
+                'fields': 'namedStyleType',
+            }
+        })
+        service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
+
+        url = f"https://docs.google.com/document/d/{doc_id}/edit"
+        return doc_id, url
+
+
+def _export_multi_to_sheets(creds, results, spreadsheet_id=None):
+    """Export multi-stock comparison to Google Sheets."""
+    import gspread
+    gc = gspread.authorize(creds)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    if spreadsheet_id:
+        sh = gc.open_by_key(spreadsheet_id)
+        ws_title = f"Comparison {datetime.now().strftime('%m/%d')}"
+        try:
+            ws = sh.add_worksheet(title=ws_title, rows=50, cols=15)
+        except Exception:
+            ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=15)
+    else:
+        sh = gc.create(f"Stock Comparison - {timestamp}")
+        ws = sh.sheet1
+        ws.update_title("Comparison")
+
+    # Header
+    headers = ['Ticker', 'Name', 'Final Score', 'Recommendation', 'Price',
+               'Sector', 'Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
+    rows = [headers]
+
+    for r in sorted(results, key=lambda x: x['final_score'], reverse=True):
+        f = r['fundamentals']
+        scores = r.get('agent_scores', {})
+        rows.append([
+            r['ticker'],
+            f.get('name', 'N/A'),
+            round(r['final_score'], 1),
+            r.get('recommendation', 'N/A'),
+            f"${f.get('price', 0):.2f}",
+            f.get('sector', 'N/A'),
+            round(scores.get('value_agent', 0), 1),
+            round(scores.get('growth_momentum_agent', 0), 1),
+            round(scores.get('macro_regime_agent', 0), 1),
+            round(scores.get('risk_agent', 0), 1),
+            round(scores.get('sentiment_agent', 0), 1),
+        ])
+
+    ws.update(range_name='A1', values=rows)
+    try:
+        ws.format('A1:K1', {'textFormat': {'bold': True}})
+    except Exception:
+        pass
+
+    return sh.id, sh.url
+
+
+def _list_drive_files(creds, mime_type):
+    """List recent files of given MIME type from user's Drive."""
+    from googleapiclient.discovery import build
+    service = build('drive', 'v3', credentials=creds)
+    query = f"mimeType='{mime_type}' and trashed=false"
+    results = service.files().list(
+        q=query, pageSize=20, orderBy='modifiedTime desc',
+        fields='files(id, name, modifiedTime)',
+    ).execute()
+    return results.get('files', [])
+
+
+def _render_google_export(result):
+    """Render the Google Sheets/Docs export UI for a single stock."""
+    with st.expander("Export to Google Sheets / Docs", expanded=False):
+        creds = _get_google_creds()
+
+        if creds is None:
+            st.info("Connect your Google account to export results directly to Sheets or Docs.")
+
+            has_creds_file = os.path.exists(_GOOGLE_CREDS_PATH)
+            if not has_creds_file:
+                st.markdown(
+                    "**Setup:** Upload your Google Cloud OAuth `credentials.json` file. "
+                    "[How to get one](https://developers.google.com/workspace/guides/create-credentials#oauth-client-id)"
+                )
+                uploaded = st.file_uploader(
+                    "Upload credentials.json", type=['json'],
+                    key="google_creds_upload"
+                )
+                if uploaded:
+                    with open(_GOOGLE_CREDS_PATH, 'wb') as f:
+                        f.write(uploaded.getvalue())
+                    has_creds_file = True
+                    st.success("Credentials saved.")
+
+            if has_creds_file:
+                if st.button("Connect Google Account", key="google_auth_single"):
+                    with st.spinner("Opening browser for Google sign-in..."):
+                        creds = _run_google_oauth()
+                    if creds:
+                        st.success("Connected to Google!")
+                        st.rerun()
+            return
+
+        # ---- Authenticated: show export options ----
+        ticker = result['ticker']
+
+        col_s, col_d = st.columns(2)
+
+        with col_s:
+            st.markdown("**Google Sheets**")
+            sheets_mode = st.radio(
+                "Destination", ["New Spreadsheet", "Existing Spreadsheet"],
+                key=f"sheets_mode_{ticker}", horizontal=True
+            )
+            sheet_id = None
+            if sheets_mode == "Existing Spreadsheet":
+                try:
+                    files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
+                    if files:
+                        options = {gf['name']: gf['id'] for gf in files}
+                        selected = st.selectbox("Choose spreadsheet", list(options.keys()),
+                                                key=f"sheets_pick_{ticker}")
+                        sheet_id = options[selected]
+                    else:
+                        st.caption("No spreadsheets found. A new one will be created.")
+                except Exception:
+                    st.caption("Could not list files. A new one will be created.")
+
+            if st.button("Export to Sheets", key=f"export_sheets_{ticker}", use_container_width=True):
+                with st.spinner("Exporting to Google Sheets..."):
+                    try:
+                        sid, url = _export_to_sheets(creds, result, spreadsheet_id=sheet_id)
+                        st.success(f"Exported! [Open Spreadsheet]({url})")
+                    except Exception as e:
+                        st.error(f"Export failed: {e}")
+
+        with col_d:
+            st.markdown("**Google Docs**")
+            docs_mode = st.radio(
+                "Destination", ["New Document", "Existing Document"],
+                key=f"docs_mode_{ticker}", horizontal=True
+            )
+            doc_id = None
+            if docs_mode == "Existing Document":
+                try:
+                    files = _list_drive_files(creds, 'application/vnd.google-apps.document')
+                    if files:
+                        options = {gf['name']: gf['id'] for gf in files}
+                        selected = st.selectbox("Choose document", list(options.keys()),
+                                                key=f"docs_pick_{ticker}")
+                        doc_id = options[selected]
+                    else:
+                        st.caption("No documents found. A new one will be created.")
+                except Exception:
+                    st.caption("Could not list files. A new one will be created.")
+
+            if st.button("Export to Docs", key=f"export_docs_{ticker}", use_container_width=True):
+                with st.spinner("Exporting to Google Docs..."):
+                    try:
+                        did, url = _export_to_docs(creds, result, document_id=doc_id)
+                        st.success(f"Exported! [Open Document]({url})")
+                    except Exception as e:
+                        st.error(f"Export failed: {e}")
+
+
+def _render_google_export_multi(results):
+    """Render the Google Sheets/Docs export UI for multi-stock comparison."""
+    with st.expander("Export Comparison to Google Sheets / Docs", expanded=False):
+        creds = _get_google_creds()
+
+        if creds is None:
+            st.info("Connect your Google account to export results directly to Sheets or Docs.")
+
+            has_creds_file = os.path.exists(_GOOGLE_CREDS_PATH)
+            if not has_creds_file:
+                st.markdown(
+                    "**Setup:** Upload your Google Cloud OAuth `credentials.json` file. "
+                    "[How to get one](https://developers.google.com/workspace/guides/create-credentials#oauth-client-id)"
+                )
+                uploaded = st.file_uploader(
+                    "Upload credentials.json", type=['json'],
+                    key="google_creds_upload_multi"
+                )
+                if uploaded:
+                    with open(_GOOGLE_CREDS_PATH, 'wb') as f:
+                        f.write(uploaded.getvalue())
+                    has_creds_file = True
+                    st.success("Credentials saved.")
+
+            if has_creds_file:
+                if st.button("Connect Google Account", key="google_auth_multi"):
+                    with st.spinner("Opening browser for Google sign-in..."):
+                        creds = _run_google_oauth()
+                    if creds:
+                        st.success("Connected to Google!")
+                        st.rerun()
+            return
+
+        # ---- Authenticated ----
+        col_s, col_d = st.columns(2)
+
+        with col_s:
+            st.markdown("**Google Sheets (Comparison Table)**")
+            sheets_mode = st.radio(
+                "Destination", ["New Spreadsheet", "Existing Spreadsheet"],
+                key="sheets_mode_multi", horizontal=True
+            )
+            sheet_id = None
+            if sheets_mode == "Existing Spreadsheet":
+                try:
+                    files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
+                    if files:
+                        options = {gf['name']: gf['id'] for gf in files}
+                        selected = st.selectbox("Choose spreadsheet", list(options.keys()),
+                                                key="sheets_pick_multi")
+                        sheet_id = options[selected]
+                    else:
+                        st.caption("No spreadsheets found.")
+                except Exception:
+                    st.caption("Could not list files.")
+
+            if st.button("Export Comparison to Sheets", key="export_sheets_multi", use_container_width=True):
+                with st.spinner("Exporting comparison to Google Sheets..."):
+                    try:
+                        sid, url = _export_multi_to_sheets(creds, results, spreadsheet_id=sheet_id)
+                        st.success(f"Exported! [Open Spreadsheet]({url})")
+                    except Exception as e:
+                        st.error(f"Export failed: {e}")
+
+        with col_d:
+            st.markdown("**Google Docs (Full Reports)**")
+            docs_mode = st.radio(
+                "Destination", ["New Document", "Existing Document"],
+                key="docs_mode_multi", horizontal=True
+            )
+            doc_id = None
+            if docs_mode == "Existing Document":
+                try:
+                    files = _list_drive_files(creds, 'application/vnd.google-apps.document')
+                    if files:
+                        options = {gf['name']: gf['id'] for gf in files}
+                        selected = st.selectbox("Choose document", list(options.keys()),
+                                                key="docs_pick_multi")
+                        doc_id = options[selected]
+                    else:
+                        st.caption("No documents found.")
+                except Exception:
+                    st.caption("Could not list files.")
+
+            if st.button("Export Reports to Docs", key="export_docs_multi", use_container_width=True):
+                with st.spinner("Exporting reports to Google Docs..."):
+                    try:
+                        first = True
+                        created_doc_id = doc_id
+                        for r in sorted(results, key=lambda x: x['final_score'], reverse=True):
+                            if first and not created_doc_id:
+                                created_doc_id, url = _export_to_docs(creds, r, document_id=None)
+                                first = False
+                            else:
+                                _, url = _export_to_docs(creds, r, document_id=created_doc_id)
+                                first = False
+                        st.success(f"Exported {len(results)} reports! [Open Document]({url})")
+                    except Exception as e:
+                        st.error(f"Export failed: {e}")
 
 
 def display_stock_analysis(result: dict):
@@ -2487,7 +3187,7 @@ Formula: Blended Score = Weighted Sum / Total Weight
                     report += f"### {agent_name}\n{rationale}\n\n"
             
             report += f"\n---\n*Investment Analysis Platform*\n"
-            
+
             st.download_button(
                 label="Download Full Report",
                 data=report,
@@ -2495,7 +3195,17 @@ Formula: Blended Score = Weighted Sum / Total Weight
                 mime="text/markdown",
                 use_container_width=True
             )
-    
+
+    # Google Sheets / Docs export
+    _render_google_export(result)
+
+    # Back to home
+    st.markdown("---")
+    if st.button("Back to Home Page", type="secondary", use_container_width=True, key="back_home_single"):
+        if '_analysis_params' in st.session_state:
+            del st.session_state['_analysis_params']
+        st.rerun()
+
 
 def display_multiple_stock_analysis(results: list, failed_tickers: list):
     """Display analysis results for multiple stocks in a comparison table."""
@@ -2787,6 +3497,16 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
     for idx, (tab, result) in enumerate(zip(tabs, results)):
         with tab:
             display_stock_analysis(result)
+
+    # Google Sheets / Docs export (multi-stock comparison)
+    _render_google_export_multi(results)
+
+    # Back to home
+    st.markdown("---")
+    if st.button("Back to Home Page", type="secondary", use_container_width=True, key="back_home_multi"):
+        if '_analysis_params' in st.session_state:
+            del st.session_state['_analysis_params']
+        st.rerun()
 
 
 def get_gradient_color(score: float) -> str:
