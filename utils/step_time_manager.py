@@ -167,7 +167,7 @@ class StepTimeManager:
             1: "Data Gathering - Fundamentals",
             2: "Data Gathering - Market Data",
             3: "Value Agent Analysis",
-            4: "Growth/Momentum Agent Analysis",
+            4: "Growth Agent Analysis",
             5: "Macro Regime Agent Analysis",
             6: "Risk Agent Analysis",
             7: "Sentiment Agent Analysis",

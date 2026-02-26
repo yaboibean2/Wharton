@@ -345,6 +345,7 @@ pre, code,
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 [data-testid="stStatusWidget"] { visibility: hidden; }
+[data-testid="stDecoration"] { background: none !important; display: none !important; }
 
 /* =================================================================
    DARK-MODE IMMUNITY
@@ -439,6 +440,11 @@ section[data-testid="stSidebar"] > div,
     background-color: var(--surface) !important;
     color: var(--text) !important;
 }
+/* Dropdown arrow icon */
+[data-baseweb="select"] svg {
+    color: var(--text-secondary) !important;
+    fill: var(--text-secondary) !important;
+}
 /* Dropdown menu */
 [data-baseweb="popover"],
 [data-baseweb="popover"] > div,
@@ -521,22 +527,6 @@ section[data-testid="stSidebar"] > div,
     color: var(--text) !important;
 }
 
-/* --- Slider --- */
-[data-testid="stSlider"] label,
-[data-testid="stSlider"] label p {
-    color: var(--text) !important;
-}
-[data-testid="stSlider"] [data-testid="stTickBarMin"],
-[data-testid="stSlider"] [data-testid="stTickBarMax"] {
-    color: var(--text-muted) !important;
-    background: transparent !important;
-    background-color: transparent !important;
-}
-/* Slider current value display */
-[data-testid="stSlider"] [data-testid="stThumbValue"],
-[data-testid="stSlider"] [data-baseweb="slider"] [data-testid="stThumbValue"] {
-    color: var(--primary) !important;
-}
 
 /* --- Multiselect tags --- */
 .stMultiSelect [data-baseweb="tag"] {
@@ -568,22 +558,23 @@ section[data-testid="stSidebar"] > div,
     fill: var(--text-secondary) !important;
 }
 
-/* --- Slider track / thumb --- */
-[data-testid="stSlider"] [role="slider"] {
-    background: var(--primary) !important;
-    border-color: var(--primary) !important;
-}
-[data-testid="stSlider"] [data-baseweb="slider"] div[role="progressbar"] {
-    background: var(--primary) !important;
-}
-[data-testid="stSlider"] [data-baseweb="slider"] > div > div:first-child {
-    background: var(--border) !important;
-}
 
 /* --- Toggle / Switch --- */
 [data-baseweb="toggle"] span { background: var(--border) !important; }
 [data-baseweb="toggle"][aria-checked="true"] span,
 [data-baseweb="toggle"] input:checked + span { background: var(--primary) !important; }
+
+/* --- Slider: force blue accent --- */
+/* Thumb knob */
+[data-baseweb="slider"] [role="slider"] {
+    background-color: #3b5998 !important;
+    border-color: #3b5998 !important;
+}
+/* Thumb value label color */
+[data-baseweb="slider"] [role="slider"] div {
+    color: #3b5998 !important;
+    background-color: transparent !important;
+}
 
 /* --- Number input stepper buttons --- */
 .stNumberInput button {
@@ -801,6 +792,40 @@ def main():
         st.session_state.tier_manager = TierManager()
     # Tier sidebar removed — API keys resolved from .env / Streamlit Secrets
 
+    # Initialize system first (needed for analysis execution path)
+    if not initialize_system():
+        st.stop()
+
+    # ---- Analysis execution path ----
+    # Handle analysis BEFORE rendering any form elements so the entire UI
+    # (header, form, tabs, weights, etc.) is replaced by ONLY the progress card.
+    if '_analysis_params' in st.session_state:
+        _ap = st.session_state.pop('_analysis_params')
+
+        # Scroll to top immediately via JS
+        import streamlit.components.v1 as _components
+        _components.html(
+            '<script>'
+            'try{window.parent.document.querySelector("section.main").scrollTo({top:0,behavior:"instant"});}catch(e){}'
+            '</script>',
+            height=0,
+        )
+
+        # Run analysis directly — no tabs, no header, no form.
+        # Only the progress card (and results after completion) appear.
+        _execute_analysis(
+            _ap['mode'],
+            _ap.get('ticker'),
+            _ap.get('tickers'),
+            _ap['date'],
+            _ap['weights'],
+        )
+
+        # Don't render anything else
+        return
+
+    # ---- Normal rendering path (no analysis running) ----
+
     # Branded header
     st.markdown("""
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
@@ -818,11 +843,6 @@ def main():
     """, unsafe_allow_html=True)
     st.markdown("")
 
-    # Initialize system
-    if not initialize_system():
-        st.stop()
-    
-    
     # Top navigation tabs
     tab_stock, tab_portfolio, tab_config, tab_status = st.tabs([
         "Stock Analysis",
@@ -841,13 +861,875 @@ def main():
         system_status_and_ai_disclosure_page()
 
 
+
+def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weights):
+    """Execute stock analysis with progress display.
+    
+    This is extracted from the button handler so it can be called
+    from the rerun path (form hidden) or directly.
+    """
+    import threading, time, math
+
+    # Create empty slots for progress display
+    progress_slot = st.empty()
+
+    # Agent step definitions for the progress display
+    # Clean inline SVG icons (Lucide-style, 14x14, stroke=currentColor)
+    _SVG = {
+        "data":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>',
+        "value": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+        "growth":'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+        "macro": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+        "risk":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+        "sent":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="10" y1="8" x2="18" y2="8"/><line x1="10" y1="12" x2="18" y2="12"/><line x1="10" y1="16" x2="14" y2="16"/></svg>',
+        "blend": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>',
+        "check": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    }
+
+    # Step ranges must match the orchestrator's exact milestone percentages:
+    # Data: 0-42, then 5 agents IN PARALLEL across 42-98, then blend 98-100
+    _AGENT_STEPS = [
+        {"key": "data",      "label": "Data Gathering",     "svg": "data",  "range": (0, 42),  "parallel": False},
+        {"key": "value",     "label": "Value",              "svg": "value", "range": (42, 98), "parallel": True},
+        {"key": "growth",    "label": "Growth",             "svg": "growth","range": (42, 98), "parallel": True},
+        {"key": "macro",     "label": "Macro Regime",       "svg": "macro", "range": (42, 98), "parallel": True},
+        {"key": "risk",      "label": "Risk",               "svg": "risk",  "range": (42, 98), "parallel": True},
+        {"key": "sentiment", "label": "Sentiment",          "svg": "sent",  "range": (42, 98), "parallel": True},
+        {"key": "blend",     "label": "Score Blending",     "svg": "blend", "range": (98, 100), "parallel": False},
+    ]
+
+    # Slate-blue palette for progress UI
+    _SLATE_600 = "#3b5998"
+    _SLATE_500 = "#5b7bb3"
+    _SLATE_200 = "#dce4f0"
+    _SLATE_100 = "#eef2f9"
+
+    # Determine the ticker label for the progress card header
+    _progress_ticker_label = ''
+    if analysis_mode == 'Single Stock' and ticker:
+        _progress_ticker_label = f' — {ticker}'
+    elif analysis_mode == 'Multiple Stocks' and tickers:
+        _progress_ticker_label = f' — {len(tickers)} stocks'
+
+    def _render_progress(slot, bar_pct, message, remaining_secs=None, step_pct=None, completed_steps=None):
+        """Render a professional analysis progress card with agent steps and countdown."""
+        import re as _re
+        bar_pct = max(0.0, min(100.0, float(bar_pct)))
+        bar_pct_int = int(bar_pct)  # for the HTML width
+        sp = int(step_pct) if step_pct is not None else bar_pct_int
+        sp = max(0, min(100, sp))
+
+        # --- Time remaining label ---
+        if remaining_secs is not None and bar_pct < 100:
+            rs = max(0, int(remaining_secs))
+            if rs >= 60:
+                time_label = f"{rs // 60}m {rs % 60:02d}s remaining"
+            else:
+                time_label = f"{rs}s remaining" if rs > 0 else "finishing up..."
+        elif bar_pct >= 100:
+            time_label = "Complete"
+        else:
+            time_label = "estimating..."
+
+        # Strip ~Xs ETA suffix from message (already shown in timer)
+        clean_msg = _re.sub(r'\s*~\d+(?:m\s+\d+)?s\s*$', '', message)
+
+        # Separate sequential and parallel steps
+        seq_steps = [s for s in _AGENT_STEPS if not s.get("parallel")]
+        par_steps = [s for s in _AGENT_STEPS if s.get("parallel")]
+        # Are we in the parallel agent phase?
+        in_agent_phase = 42 <= sp < 98
+        agent_phase_done = sp >= 98 or (completed_steps and all(
+            s["key"] in completed_steps for s in par_steps))
+
+        def _step_row(step, is_done, is_active):
+            badge_bg, badge_fg, icon_svg, label_color, label_weight, row_bg = (
+                ("#ecfdf5", "#059669", _SVG["check"], "#374151", "400", "transparent") if is_done else
+                (_SLATE_200, _SLATE_600, _SVG[step["svg"]], "#111827", "600", _SLATE_100) if is_active else
+                ("#f3f4f6", "#9ca3af", _SVG[step["svg"]], "#9ca3af", "400", "transparent")
+            )
+            pulse = (
+                f'<span style="width:6px;height:6px;border-radius:50%;'
+                f'background:{_SLATE_600};display:inline-block;margin-left:auto;'
+                f'animation:_prog_pulse 1.4s ease-in-out infinite"></span>'
+            ) if is_active else ""
+            return (
+                f'<div style="display:flex;align-items:center;gap:10px;'
+                f'padding:5px 8px;border-radius:6px;background:{row_bg};'
+                f'transition:background 0.3s ease">'
+                f'<span style="display:flex;align-items:center;justify-content:center;'
+                f'width:26px;height:26px;border-radius:6px;font-size:13px;'
+                f'background:{badge_bg};color:{badge_fg};flex-shrink:0">{icon_svg}</span>'
+                f'<span style="font-size:13px;color:{label_color};'
+                f'font-weight:{label_weight}">{step["label"]}</span>'
+                f'{pulse}'
+                f'</div>'
+            )
+
+        steps_html = ""
+
+        # --- Data step ---
+        data_step = seq_steps[0]  # data
+        data_done = (completed_steps and "data" in completed_steps) or sp >= 42
+        data_active = sp < 42 and not data_done
+        steps_html += _step_row(data_step, data_done, data_active)
+
+        # --- Parallel agents group ---
+        par_label_color = _SLATE_600 if in_agent_phase else ("#059669" if agent_phase_done else "#9ca3af")
+        par_label_weight = "600" if in_agent_phase else "400"
+        par_completed_count = sum(1 for s in par_steps if completed_steps and s["key"] in completed_steps)
+        par_total = len(par_steps)
+        par_counter = f" ({par_completed_count}/{par_total})" if in_agent_phase or (completed_steps and par_completed_count > 0 and not agent_phase_done) else ""
+
+        steps_html += (
+            f'<div style="margin:8px 0 4px 0;padding:6px 8px;border-radius:8px;'
+            f'background:{"#f8faff" if in_agent_phase else "transparent"};'
+            f'border:1px solid {"#dce4f0" if in_agent_phase else "transparent"};'
+            f'transition:all 0.3s ease">'
+            f'<div style="font-size:11px;color:{par_label_color};font-weight:{par_label_weight};'
+            f'margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">'
+            f'⇉ Running in parallel{par_counter}</div>'
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px">'
+        )
+        for pstep in par_steps:
+            p_done = completed_steps is not None and pstep["key"] in completed_steps
+            p_active = in_agent_phase and not p_done and not agent_phase_done
+            steps_html += _step_row(pstep, p_done, p_active)
+        steps_html += '</div></div>'
+
+        # --- Blend step ---
+        blend_step = seq_steps[1]  # blend
+        blend_done = (completed_steps and "blend" in completed_steps) or sp >= 100 or bar_pct >= 100
+        blend_active = sp >= 98 and not blend_done
+        steps_html += _step_row(blend_step, blend_done, blend_active)
+
+        # --- Card assembly ---
+        slot.markdown(
+            f'<style>'
+            f'@keyframes _prog_pulse{{0%,100%{{opacity:.3;transform:scale(.8)}}50%{{opacity:1;transform:scale(1.1)}}}}'
+            f'@keyframes _prog_bar{{from{{background-position:0 0}}to{{background-position:30px 0}}}}'
+            f'</style>'
+            f'<div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;'
+            f'padding:20px 24px;box-shadow:0 1px 4px rgba(0,0,0,0.06);margin:10px 0;'
+            f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif">'
+
+            # Header row
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
+            f'margin-bottom:14px">'
+            f'<span style="font-size:15px;font-weight:700;color:#111827;letter-spacing:-0.01em">'
+            f'Analyzing{_progress_ticker_label}</span>'
+            f'<span style="font-size:13px;color:#6b7280;font-weight:500;'
+            f'font-variant-numeric:tabular-nums">{time_label}</span>'
+            f'</div>'
+
+            # Progress bar (with animated stripe when active)
+            f'<div style="width:100%;background:#f3f4f6;border-radius:99px;'
+            f'overflow:hidden;height:5px;margin-bottom:16px">'
+            f'<div style="width:{bar_pct:.1f}%;height:100%;border-radius:99px;'
+            f'background-color:{_SLATE_600};'
+            f'{"background-image:linear-gradient(-45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);background-size:30px 30px;animation:_prog_bar .8s linear infinite;" if 0 < bar_pct < 100 else ""}'
+            f'{"background-color:#10b981;" if bar_pct >= 100 else ""}'
+            f'transition:width 0.15s linear"></div></div>'
+
+            # Step layout
+            f'<div style="display:flex;flex-direction:column;gap:2px;'
+            f'margin-bottom:14px">{steps_html}</div>'
+
+            # Status message
+            f'<div style="font-size:12px;color:#6b7280;border-top:1px solid #f0f1f3;'
+            f'padding-top:10px;line-height:1.4">{clean_msg}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    def _log_phase_times(phase_times):
+        """Append measured phase durations to data/step_times.json for future calibration."""
+        try:
+            import json as _json
+            _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'step_times.json')
+            if os.path.exists(_path):
+                with open(_path, 'r') as f:
+                    store = _json.load(f)
+            else:
+                store = {"step_times": {}, "metadata": {}}
+
+            st_data = store.setdefault("step_times", {})
+            if phase_times.get('data_gather') is not None:
+                st_data.setdefault("1", []).append(round(phase_times['data_gather'], 3))
+            if phase_times.get('agents') is not None:
+                st_data.setdefault("2", []).append(round(phase_times['agents'], 3))
+            if phase_times.get('blend') is not None:
+                st_data.setdefault("3", []).append(round(phase_times['blend'], 3))
+            if phase_times.get('total') is not None:
+                st_data.setdefault("total", []).append(round(phase_times['total'], 3))
+
+            # Cap each list at 100 most recent entries
+            for k in st_data:
+                if len(st_data[k]) > 100:
+                    st_data[k] = st_data[k][-100:]
+
+            store["metadata"] = {
+                "last_updated": datetime.now().isoformat(),
+                "total_samples": sum(len(v) for v in st_data.values()),
+            }
+
+            os.makedirs(os.path.dirname(_path), exist_ok=True)
+            with open(_path, 'w') as f:
+                _json.dump(store, f, indent=2)
+
+            # Reload learned phases so the NEXT analysis benefits immediately
+            from engine.portfolio_orchestrator import _load_learned_phase_durations
+            PortfolioOrchestrator._learned_phases = _load_learned_phase_durations()
+        except Exception:
+            pass  # timing log is best-effort, never block analysis
+
+    def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
+        """Run analysis with a dynamically-adjusting countdown timer.
+
+        The timer uses learned phase durations from step_times.json as the
+        initial estimate, then ADAPTS in real-time: when a phase completes
+        faster or slower than expected, the remaining estimate is recalculated
+        using the actual duration as a scaling factor.
+
+        After analysis completes, the measured phase times are appended to
+        step_times.json so future runs start with better estimates.
+        """
+        import re as _re
+
+        _prog = {
+            'mile_pct': 0.0,
+            'mile_msg': 'Initializing...',
+            'done': False,
+            'result': None,
+            'error': None,
+        }
+
+        # Track which agent steps have completed (for parallel execution)
+        _completed_steps = set()
+
+        # Map of keywords to detect agent completions from orchestrator messages
+        _STEP_COMPLETE_MAP = {
+            'value':     ['value agent', 'value complete'],
+            'growth':    ['growth agent', 'growth complete'],
+            'macro':     ['macro regime agent', 'macro complete'],
+            'risk':      ['risk agent', 'risk complete'],
+            'sentiment': ['sentiment agent', 'articles analyzed'],
+            'blend':     ['blending', 'analysis complete'],
+        }
+
+        # Phase transition timestamps (for logging & dynamic adjustment)
+        _phase_ts = {
+            'start': None,
+            'data_done': None,   # milestone pct crosses 42
+            'agents_done': None, # milestone pct crosses 98
+            'end': None,         # milestone pct crosses 100
+        }
+
+        def _on_milestone(pct, message):
+            _prog['mile_pct'] = pct
+            _prog['mile_msg'] = message
+            # Record phase transition timestamps
+            now_ts = time.time()
+            if pct >= 42 and _phase_ts['data_done'] is None:
+                _phase_ts['data_done'] = now_ts
+            if pct >= 98 and _phase_ts['agents_done'] is None:
+                _phase_ts['agents_done'] = now_ts
+            if pct >= 100 and _phase_ts['end'] is None:
+                _phase_ts['end'] = now_ts
+            # Detect agent completions
+            msg_lower = message.lower()
+            if 'complete' in msg_lower or 'analyzed' in msg_lower or 'score' in msg_lower or 'failed' in msg_lower:
+                for sk, kws in _STEP_COMPLETE_MAP.items():
+                    if any(kw in msg_lower for kw in kws):
+                        _completed_steps.add(sk)
+            if pct >= 42:
+                _completed_steps.add('data')
+            if pct >= 100:
+                _completed_steps.add('blend')
+
+        def _bg():
+            try:
+                _prog['result'] = orchestrator.analyze_stock(
+                    ticker=tick,
+                    analysis_date=date_s,
+                    agent_weights=weights,
+                    progress_callback=_on_milestone,
+                )
+            except Exception as e:
+                _prog['error'] = e
+            finally:
+                _prog['done'] = True
+
+        thread = threading.Thread(target=_bg, daemon=True)
+        thread.start()
+
+        # --- Learned phase durations (initial estimates from step_times.json) ---
+        _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
+        est_data   = _lp.get('data_gather', 45.0)
+        est_agents = _lp.get('agents', 25.0)
+        est_blend  = _lp.get('blend', 1.0)
+
+        # Live estimates — these get adjusted as phases complete
+        live_est = {
+            'data':   est_data,
+            'agents': est_agents,
+            'blend':  est_blend,
+        }
+
+        # Initial display starts at the average total time from historical runs
+        avg_total = _lp.get('avg_total', 70.0)
+
+        display_pct = 0.0
+        display_remaining = avg_total
+        last_render = 0.0
+        last_tick = time.time()
+        start_wall = time.time()
+        _phase_ts['start'] = start_wall
+        tick_rate = 1.0
+
+        # Track which dynamic adjustments we've applied
+        _adjusted_data = False
+        _adjusted_agents = False
+
+        while not _prog['done']:
+            now = time.time()
+            dt = now - last_tick
+            last_tick = now
+            elapsed = now - start_wall
+
+            msg = _prog['mile_msg']
+            mp = _prog['mile_pct']
+
+            # --- Dynamic adjustment: recalculate when a phase completes ---
+
+            # When data gathering finishes, use actual duration to rescale agent estimate
+            if _phase_ts['data_done'] and not _adjusted_data:
+                _adjusted_data = True
+                actual_data = _phase_ts['data_done'] - start_wall
+                live_est['data'] = actual_data
+                # Scale agent estimate: if data was 0.6x of expected, agents likely faster too
+                ratio = actual_data / est_data if est_data > 0 else 1.0
+                # Clamp ratio to avoid extreme swings (0.4x to 2.0x)
+                ratio = max(0.4, min(2.0, ratio))
+                live_est['agents'] = est_agents * ratio
+                live_est['blend'] = est_blend  # blend is trivial, don't scale
+                # Don't snap display_remaining — the lerp in the smooth
+                # countdown section will converge naturally using updated live_est.
+                new_remaining = live_est['agents'] + live_est['blend']
+                if new_remaining > display_remaining:
+                    # Real estimate is higher — slow the tick rate, don't jump up
+                    tick_rate = max(0.15, display_remaining / new_remaining)
+
+            # When agent phase finishes, update live_est for blend
+            if _phase_ts['agents_done'] and not _adjusted_agents:
+                _adjusted_agents = True
+                actual_agents = _phase_ts['agents_done'] - _phase_ts['data_done']
+                live_est['agents'] = actual_agents
+                new_remaining = live_est['blend']
+                if new_remaining > display_remaining:
+                    tick_rate = max(0.15, display_remaining / new_remaining)
+
+            # --- Phase-aware remaining calculation ---
+            if mp < 42:
+                # In data phase: estimate = remaining fraction of data + agents + blend
+                if live_est['data'] > 0:
+                    frac_done = mp / 42.0
+                else:
+                    frac_done = 0.0
+                phase_remaining = live_est['data'] * (1.0 - frac_done)
+                true_remaining = phase_remaining + live_est['agents'] + live_est['blend']
+            elif mp < 98:
+                # In agent phase
+                frac_done = (mp - 42.0) / 56.0
+                phase_remaining = live_est['agents'] * (1.0 - frac_done)
+                true_remaining = phase_remaining + live_est['blend']
+            else:
+                # In blend phase
+                frac_done = (mp - 98.0) / 2.0
+                true_remaining = live_est['blend'] * (1.0 - frac_done)
+
+            true_remaining = max(0.0, true_remaining)
+
+            # Smooth countdown: lerp toward true_remaining (never snap instantly)
+            if true_remaining < display_remaining:
+                gap = display_remaining - true_remaining
+                # Converge over ~1-2 seconds: each 50ms tick closes 15% of the gap
+                decay = min(0.8, dt * 3.0)
+                display_remaining -= gap * decay
+                tick_rate = min(1.0, tick_rate + dt * 0.5)
+            elif true_remaining > display_remaining * 1.1:
+                # True estimate is significantly higher — slow the tick
+                tick_rate = max(0.15, display_remaining / true_remaining)
+
+            # Smoothly decrement the displayed remaining
+            display_remaining = max(0.0, display_remaining - dt * tick_rate)
+
+            # --- Progress bar: time-based ---
+            total_est = elapsed + display_remaining
+            if total_est > 1.0:
+                target = min(99.0, (elapsed / total_est) * 100.0)
+            else:
+                target = min(99.0, display_pct + 0.1)
+
+            # Smooth interpolation (never go backwards)
+            if target > display_pct:
+                gap = target - display_pct
+                lerp = min(0.8, 0.25 + gap * 0.01)
+                display_pct += gap * lerp
+            display_pct = max(0.0, min(99.0, display_pct))
+
+            # Render at ~10 fps
+            if now - last_render >= 0.10:
+                if mp >= 42:
+                    _completed_steps.add('data')
+
+                _render_progress(slot, display_pct, msg,
+                                 remaining_secs=display_remaining,
+                                 step_pct=mp,
+                                 completed_steps=_completed_steps if _completed_steps else None)
+                last_render = now
+
+            time.sleep(0.05)
+
+        if _prog['error']:
+            raise _prog['error']
+
+        # --- Log phase times to step_times.json for future calibration ---
+        total_time = time.time() - start_wall
+        phase_times = {'total': total_time}
+        if _phase_ts['data_done']:
+            phase_times['data_gather'] = _phase_ts['data_done'] - start_wall
+        if _phase_ts['data_done'] and _phase_ts['agents_done']:
+            phase_times['agents'] = _phase_ts['agents_done'] - _phase_ts['data_done']
+        if _phase_ts['agents_done'] and _phase_ts['end']:
+            phase_times['blend'] = _phase_ts['end'] - _phase_ts['agents_done']
+        _log_phase_times(phase_times)
+
+        return _prog['result']
+
+    # Use average total time from step_times.json for the initial countdown display
+    _lp = st.session_state.orchestrator._learned_phases if hasattr(st.session_state, 'orchestrator') and hasattr(st.session_state.orchestrator, '_learned_phases') else {}
+    _initial_est = _lp.get('avg_total', 70.0)
+
+    _render_progress(progress_slot, 0, "Initializing analysis…",
+                     remaining_secs=_initial_est)
+
+    # Handle single or multiple stock analysis
+    if analysis_mode == "Single Stock":
+        try:
+            _render_progress(progress_slot, 0, "Starting analysis…",
+                             remaining_secs=_initial_est)
+
+            start_time = time.time()
+
+            # Convert analysis_date to string format
+            if isinstance(analysis_date, (datetime, type(datetime.now().date()))):
+                date_str = analysis_date.strftime('%Y-%m-%d') if hasattr(analysis_date, 'strftime') else str(analysis_date)
+            elif isinstance(analysis_date, tuple) and len(analysis_date) > 0:
+                date_str = analysis_date[0].strftime('%Y-%m-%d') if hasattr(analysis_date[0], 'strftime') else str(analysis_date[0])
+            else:
+                date_str = datetime.now().strftime('%Y-%m-%d')
+
+            # Run with smooth progress interpolation (background thread + 10fps polling)
+            orchestrator = st.session_state.orchestrator
+            result = _run_with_smooth_progress(
+                progress_slot, orchestrator, ticker, date_str, agent_weights
+            )
+
+            # Track timing
+            end_time = time.time()
+            analysis_duration = end_time - start_time
+            st.session_state.analysis_times.append(analysis_duration)
+
+            if len(st.session_state.analysis_times) > 50:
+                st.session_state.analysis_times = st.session_state.analysis_times[-50:]
+
+            actual_minutes = int(analysis_duration // 60)
+            actual_seconds = int(analysis_duration % 60)
+            _render_progress(progress_slot, 100,
+                             f"Analysis complete — {actual_minutes}m {actual_seconds:02d}s",
+                             remaining_secs=0)
+
+            time.sleep(0.5)
+            progress_slot.empty()
+
+            if 'error' in result:
+                st.error(f"{result['error']}")
+                return
+
+            # Display results
+            display_stock_analysis(result)
+
+        except Exception as e:
+            # Clear progress indicator on error
+            progress_slot.empty()
+            st.error(f"Analysis failed: {e}")
+    
+    else:
+        # Multiple stocks analysis — use the same progress card as single stock
+        # but with an outer wrapper showing overall batch progress.
+        results = []
+        failed_tickers = []
+        batch_start_time = time.time()
+
+        # Per-stock time estimate from history
+        if st.session_state.analysis_times:
+            avg_time_per_stock = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
+        else:
+            avg_time_per_stock = _lp.get('avg_total', 70.0)
+
+        total_stocks = len(tickers)
+
+        for idx, stock_ticker in enumerate(tickers):
+            stock_start_time = time.time()
+
+            # Compute overall batch remaining estimate
+            completed_count = idx
+            if completed_count > 0:
+                elapsed_batch = time.time() - batch_start_time
+                per_stock_actual = elapsed_batch / completed_count
+                remaining_batch = per_stock_actual * (total_stocks - idx)
+            else:
+                remaining_batch = avg_time_per_stock * total_stocks
+
+            # Update the progress card header to show batch context
+            _progress_ticker_label_stock = f' — {stock_ticker} ({idx + 1}/{total_stocks})'
+
+            # Override the outer _progress_ticker_label for this stock
+            # We need a small wrapper that patches the header for multi-stock
+            _saved_label = _progress_ticker_label
+
+            def _render_multi_progress(slot, bar_pct, message, remaining_secs=None, step_pct=None, completed_steps=None):
+                """Wrapper that renders single-stock progress card + batch header."""
+                import re as _re
+
+                # Build a batch header above the card
+                _completed = idx
+                _elapsed = time.time() - batch_start_time
+                if _completed > 0:
+                    _per_stock = _elapsed / _completed
+                    _rem = _per_stock * (total_stocks - idx)
+                    if bar_pct >= 100:
+                        _rem = _per_stock * (total_stocks - idx - 1)
+                else:
+                    _rem = avg_time_per_stock * (total_stocks - idx)
+
+                _rm = int(_rem // 60)
+                _rs = int(_rem % 60)
+                _batch_time_str = f"{_rm}m {_rs:02d}s" if _rm > 0 else f"{_rs}s"
+
+                # Completed stocks mini-badges
+                _badges = ""
+                for _ci, _ct in enumerate(tickers[:idx]):
+                    _was_ok = any(r.get('ticker') == _ct for r in results)
+                    _bc = "#10b981" if _was_ok else "#ef4444"
+                    _badges += (f'<span style="display:inline-block;padding:2px 8px;'
+                                f'border-radius:4px;font-size:11px;font-weight:600;'
+                                f'background:{_bc}22;color:{_bc};margin-right:4px">{_ct}</span>')
+
+                # Pending stocks
+                for _pi, _pt in enumerate(tickers[idx+1:]):
+                    _badges += (f'<span style="display:inline-block;padding:2px 8px;'
+                                f'border-radius:4px;font-size:11px;font-weight:500;'
+                                f'background:#f3f4f6;color:#9ca3af;margin-right:4px">{_pt}</span>')
+
+                # Overall progress fraction
+                _overall_pct = (idx / total_stocks) * 100
+                if bar_pct >= 100:
+                    _overall_pct = ((idx + 1) / total_stocks) * 100
+
+                # Render batch header
+                slot.markdown(
+                    f'<div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;'
+                    f'padding:20px 24px;box-shadow:0 1px 4px rgba(0,0,0,0.06);margin:10px 0;'
+                    f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif">'
+
+                    # Batch header
+                    f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
+                    f'margin-bottom:6px">'
+                    f'<span style="font-size:15px;font-weight:700;color:#111827;letter-spacing:-0.01em">'
+                    f'Analyzing {stock_ticker} ({idx + 1}/{total_stocks})</span>'
+                    f'<span style="font-size:13px;color:#6b7280;font-weight:500;'
+                    f'font-variant-numeric:tabular-nums">{_batch_time_str} remaining</span>'
+                    f'</div>'
+
+                    # Stock badges
+                    f'<div style="margin-bottom:12px;line-height:1.8">{_badges}</div>'
+
+                    # Overall batch progress bar
+                    f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
+                    f'<span style="font-size:11px;color:#9ca3af;white-space:nowrap">Overall</span>'
+                    f'<div style="flex:1;background:#f3f4f6;border-radius:99px;'
+                    f'overflow:hidden;height:4px">'
+                    f'<div style="width:{_overall_pct:.1f}%;height:100%;border-radius:99px;'
+                    f'background:{"#10b981" if _overall_pct >= 100 else "#3b5998"};'
+                    f'transition:width 0.3s ease"></div></div>'
+                    f'<span style="font-size:11px;color:#6b7280;font-weight:500;'
+                    f'font-variant-numeric:tabular-nums">{int(_overall_pct)}%</span>'
+                    f'</div>'
+
+                    f'<div style="border-top:1px solid #f0f1f3;padding-top:12px"></div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+                # Now render the per-stock progress card using the original _render_progress
+                # but into a second slot below the batch header
+                _render_progress(
+                    _stock_detail_slot, bar_pct, message,
+                    remaining_secs=remaining_secs,
+                    step_pct=step_pct,
+                    completed_steps=completed_steps
+                )
+
+            # Create slots for this stock
+            _batch_header_slot = st.empty()
+            _stock_detail_slot = st.empty()
+
+            # Initial render
+            _render_multi_progress(_batch_header_slot, 0, "Initializing analysis…",
+                                   remaining_secs=avg_time_per_stock)
+
+            try:
+                # Convert analysis_date to string format
+                if isinstance(analysis_date, (datetime, type(datetime.now().date()))):
+                    date_str = analysis_date.strftime('%Y-%m-%d') if hasattr(analysis_date, 'strftime') else str(analysis_date)
+                elif isinstance(analysis_date, tuple) and len(analysis_date) > 0:
+                    date_str = analysis_date[0].strftime('%Y-%m-%d') if hasattr(analysis_date[0], 'strftime') else str(analysis_date[0])
+                else:
+                    date_str = datetime.now().strftime('%Y-%m-%d')
+
+                # Run with smooth progress — dynamic phase-aware timer
+
+                _prog = {
+                    'mile_pct': 0.0,
+                    'mile_msg': 'Initializing...',
+                    'done': False,
+                    'result': None,
+                    'error': None,
+                }
+                _completed_steps_m = set()
+
+                _STEP_COMPLETE_MAP_M = {
+                    'value':     ['value agent', 'value complete'],
+                    'growth':    ['growth agent', 'growth complete'],
+                    'macro':     ['macro regime agent', 'macro complete'],
+                    'risk':      ['risk agent', 'risk complete'],
+                    'sentiment': ['sentiment agent', 'articles analyzed'],
+                    'blend':     ['blending', 'analysis complete'],
+                }
+
+                # Phase transition timestamps for dynamic adjustment & logging
+                _phase_ts_m = {
+                    'start': None, 'data_done': None,
+                    'agents_done': None, 'end': None,
+                }
+
+                def _on_milestone_m(pct, message):
+                    _prog['mile_pct'] = pct
+                    _prog['mile_msg'] = message
+                    now_ts = time.time()
+                    if pct >= 42 and _phase_ts_m['data_done'] is None:
+                        _phase_ts_m['data_done'] = now_ts
+                    if pct >= 98 and _phase_ts_m['agents_done'] is None:
+                        _phase_ts_m['agents_done'] = now_ts
+                    if pct >= 100 and _phase_ts_m['end'] is None:
+                        _phase_ts_m['end'] = now_ts
+                    msg_lower = message.lower()
+                    if 'complete' in msg_lower or 'analyzed' in msg_lower or 'score' in msg_lower or 'failed' in msg_lower:
+                        for sk, kws in _STEP_COMPLETE_MAP_M.items():
+                            if any(kw in msg_lower for kw in kws):
+                                _completed_steps_m.add(sk)
+                    if pct >= 42:
+                        _completed_steps_m.add('data')
+                    if pct >= 100:
+                        _completed_steps_m.add('blend')
+
+                def _bg_m():
+                    try:
+                        orchestrator = st.session_state.orchestrator
+                        _prog['result'] = orchestrator.analyze_stock(
+                            ticker=stock_ticker,
+                            analysis_date=date_str,
+                            agent_weights=agent_weights,
+                            progress_callback=_on_milestone_m,
+                        )
+                    except Exception as e:
+                        _prog['error'] = e
+                    finally:
+                        _prog['done'] = True
+
+                thread = threading.Thread(target=_bg_m, daemon=True)
+                thread.start()
+
+                # Dynamic phase-aware estimates (same algorithm as single-stock)
+                _lp_m = st.session_state.orchestrator._learned_phases if hasattr(st.session_state.orchestrator, '_learned_phases') else {}
+                est_data_m   = _lp_m.get('data_gather', 50.0)
+                est_agents_m = _lp_m.get('agents', 25.0)
+                est_blend_m  = _lp_m.get('blend', 0.5)
+                live_est_m = {'data': est_data_m, 'agents': est_agents_m, 'blend': est_blend_m}
+
+                display_pct_m = 0.0
+                display_remaining_m = _lp_m.get('avg_total', 75.0)
+                last_render_m = 0.0
+                last_tick_m = time.time()
+                start_wall_m = time.time()
+                _phase_ts_m['start'] = start_wall_m
+                tick_rate_m = 1.0
+                _adj_data_m = False
+                _adj_agents_m = False
+
+                while not _prog['done']:
+                    now = time.time()
+                    dt = now - last_tick_m
+                    last_tick_m = now
+                    elapsed = now - start_wall_m
+                    msg = _prog['mile_msg']
+                    mp = _prog['mile_pct']
+
+                    # Dynamic adjustment on phase completion
+                    if _phase_ts_m['data_done'] and not _adj_data_m:
+                        _adj_data_m = True
+                        actual_d = _phase_ts_m['data_done'] - start_wall_m
+                        live_est_m['data'] = actual_d
+                        ratio = max(0.4, min(2.0, actual_d / est_data_m if est_data_m > 0 else 1.0))
+                        live_est_m['agents'] = est_agents_m * ratio
+                        new_rem = live_est_m['agents'] + live_est_m['blend']
+                        if new_rem > display_remaining_m:
+                            tick_rate_m = max(0.15, display_remaining_m / new_rem)
+
+                    if _phase_ts_m['agents_done'] and not _adj_agents_m:
+                        _adj_agents_m = True
+                        live_est_m['agents'] = _phase_ts_m['agents_done'] - _phase_ts_m['data_done']
+                        new_rem = live_est_m['blend']
+                        if new_rem > display_remaining_m:
+                            tick_rate_m = max(0.15, display_remaining_m / new_rem)
+
+                    # Phase-aware remaining
+                    if mp < 42:
+                        frac = mp / 42.0 if live_est_m['data'] > 0 else 0.0
+                        true_remaining = live_est_m['data'] * (1.0 - frac) + live_est_m['agents'] + live_est_m['blend']
+                    elif mp < 98:
+                        frac = (mp - 42.0) / 56.0
+                        true_remaining = live_est_m['agents'] * (1.0 - frac) + live_est_m['blend']
+                    else:
+                        frac = (mp - 98.0) / 2.0
+                        true_remaining = live_est_m['blend'] * (1.0 - frac)
+                    true_remaining = max(0.0, true_remaining)
+
+                    if true_remaining < display_remaining_m:
+                        gap = display_remaining_m - true_remaining
+                        decay = min(0.8, dt * 3.0)
+                        display_remaining_m -= gap * decay
+                        tick_rate_m = min(1.0, tick_rate_m + dt * 0.5)
+                    elif true_remaining > display_remaining_m * 1.1:
+                        tick_rate_m = max(0.15, display_remaining_m / true_remaining)
+
+                    display_remaining_m = max(0.0, display_remaining_m - dt * tick_rate_m)
+
+                    total_est = elapsed + display_remaining_m
+                    if total_est > 1.0:
+                        target = min(99.0, (elapsed / total_est) * 100.0)
+                    else:
+                        target = min(99.0, display_pct_m + 0.1)
+
+                    if target > display_pct_m:
+                        gap = target - display_pct_m
+                        lerp = min(0.8, 0.25 + gap * 0.01)
+                        display_pct_m += gap * lerp
+                    display_pct_m = max(0.0, min(99.0, display_pct_m))
+
+                    if now - last_render_m >= 0.10:
+                        if mp >= 42:
+                            _completed_steps_m.add('data')
+
+                        _render_multi_progress(
+                            _batch_header_slot, display_pct_m, msg,
+                            remaining_secs=display_remaining_m,
+                            step_pct=mp,
+                            completed_steps=_completed_steps_m if _completed_steps_m else None
+                        )
+                        last_render_m = now
+
+                    time.sleep(0.05)
+
+                if _prog['error']:
+                    raise _prog['error']
+
+                result = _prog['result']
+
+                # Log phase times for this stock
+                _total_m = time.time() - start_wall_m
+                _pt_m = {'total': _total_m}
+                if _phase_ts_m['data_done']:
+                    _pt_m['data_gather'] = _phase_ts_m['data_done'] - start_wall_m
+                if _phase_ts_m['data_done'] and _phase_ts_m['agents_done']:
+                    _pt_m['agents'] = _phase_ts_m['agents_done'] - _phase_ts_m['data_done']
+                if _phase_ts_m['agents_done'] and _phase_ts_m['end']:
+                    _pt_m['blend'] = _phase_ts_m['end'] - _phase_ts_m['agents_done']
+                _log_phase_times(_pt_m)
+
+                # Track time for this stock
+                stock_duration = time.time() - stock_start_time
+                st.session_state.analysis_times.append(stock_duration)
+                if len(st.session_state.analysis_times) > 50:
+                    st.session_state.analysis_times = st.session_state.analysis_times[-50:]
+
+                # Update per-stock estimate for next stock
+                avg_time_per_stock = sum(st.session_state.analysis_times[-5:]) / len(st.session_state.analysis_times[-5:])
+
+                # Show completion briefly
+                actual_m = int(stock_duration // 60)
+                actual_s = int(stock_duration % 60)
+                _render_multi_progress(
+                    _batch_header_slot, 100,
+                    f"{stock_ticker} complete — {actual_m}m {actual_s:02d}s",
+                    remaining_secs=0
+                )
+                time.sleep(0.3)
+
+                # Clear this stock's slots
+                _batch_header_slot.empty()
+                _stock_detail_slot.empty()
+
+                if 'error' in result:
+                    failed_tickers.append((stock_ticker, result['error']))
+                else:
+                    results.append(result)
+
+            except Exception as e:
+                _batch_header_slot.empty()
+                _stock_detail_slot.empty()
+                failed_tickers.append((stock_ticker, str(e)))
+
+        # Final batch summary
+        batch_duration = time.time() - batch_start_time
+        bm = int(batch_duration // 60)
+        bs = int(batch_duration % 60)
+        st.success(f"Batch complete — {len(results)}/{total_stocks} stocks analyzed in {bm}m {bs:02d}s")
+        if failed_tickers:
+            for ft, fe in failed_tickers:
+                st.error(f"**{ft}**: {fe}")
+        time.sleep(0.5)
+        
+        # Display results summary
+        if results:
+            display_multiple_stock_analysis(results, failed_tickers)
+        else:
+            st.error("All analyses failed!")
+            for ticker_name, error_msg in failed_tickers:
+                st.error(f"**{ticker_name}**: {error_msg}")
+
+
 def stock_analysis_page():
     """Single or multiple stock analysis page."""
     import threading, math
+
     st.header("Stock Analysis")
     st.write("Evaluate individual securities or analyze multiple stocks at once using multi-agent investment research methodology.")
     st.markdown("---")
-    
+
+
     # Analysis mode selection
     analysis_mode = st.radio(
         "Analysis Mode",
@@ -855,6 +1737,10 @@ def stock_analysis_page():
         horizontal=True,
         help="Choose to analyze one stock or multiple stocks at once"
     )
+
+    if analysis_mode == "Multiple Stocks":
+        st.info("**Note:** Multi-stock analysis takes longer since each stock is analyzed individually. "
+                "Consider starting with a single stock first to test your configuration.")
     
     col1, col2 = st.columns([2, 1])
     
@@ -912,82 +1798,138 @@ def stock_analysis_page():
     # Initialize session state for custom weights
     if 'custom_agent_weights' not in st.session_state:
         st.session_state.custom_agent_weights = {
-            'value': 1.0,
-            'growth_momentum': 1.0,
-            'macro_regime': 1.0,
-            'risk': 1.0,
-            'sentiment': 1.0
+            'value': 0.5,
+            'growth_momentum': 0.5,
+            'macro_regime': 0.5,
+            'risk': 0.5,
+            'sentiment': 0.5
         }
     
     # Handle weight preset selection
     agent_weights = None
     if weight_preset == "custom_weights":
-        with col2:
-            if st.button("Configure Custom Weights"):
-                st.session_state.show_custom_weights = not st.session_state.get('show_custom_weights', False)
-        
-        if st.session_state.get('show_custom_weights', False):
-            st.info("""
-            **Custom Weights Explanation:**
-            
-            These weights control **how much each agent's score influences the final score**.
-            
-            - **Higher weight (2.0)** = Agent's opinion has MORE influence on final score
-            - **Lower weight (0.5)** = Agent's opinion has LESS influence on final score  
-            - **Weight of 1.0** = Standard/equal influence
-            
-            **Example:** If Value Agent = 2.0 and Growth Agent = 0.5:
-            - Final score will be heavily weighted toward value metrics
-            - Growth metrics will have less impact on the final score
-            
-            **Important:** Agents still score independently (0-100). Weights only affect how 
-            those scores are combined into the final score.
-            """)
-            
-            @st.fragment
-            def _weight_slider_fragment():
-                weight_cols = st.columns(5)
-                agents = ['value', 'growth_momentum', 'macro_regime', 'risk', 'sentiment']
-                agent_labels = ['Value', 'Growth/Momentum', 'Macro Regime', 'Risk', 'Sentiment']
-                agent_tips = {
-                    'value':           'P/E, P/B, DCF intrinsic-value metrics',
-                    'growth_momentum': 'Revenue growth, earnings trends, price momentum',
-                    'macro_regime':    'Interest rates, inflation, economic cycle',
-                    'risk':            'Volatility, drawdown, debt-level risk',
-                    'sentiment':       'News tone, analyst ratings, social buzz',
+        st.caption("Adjust sliders to set each agent's influence on the final score. Higher = more influence.")
+
+        # Fix slider track fill color: BaseWeb's InnerTrack uses a linear-gradient
+        # generated by getTrackBackground() via Styletron CSS-in-JS.
+        # Styletron captures insertRule references at init (before our iframe loads),
+        # so a prototype patch alone is insufficient. We combine:
+        #   1. Prototype patch (catches any calls that DO go through the chain)
+        #   2. Continuous RAF scanner (catches everything else, throttled to ~8fps)
+        # Both handle rgb() AND hex color formats.
+        import streamlit.components.v1 as components
+        components.html("""
+        <script>
+        (function() {
+            try { var pw = window.parent; var doc = pw.document; } catch(e) { return; }
+
+            var B_RGB = 'rgb(59, 89, 152)';
+            var B_HEX = '#3b5998';
+
+            function isOrange(r, g, b) {
+                return r > 150 && (r - g > 50 || r - b > 80);
+            }
+
+            function fix(s) {
+                if (!s) return s;
+                s = s.replace(/rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)[^)]*\\)/g,
+                    function(m, r, g, b) { return isOrange(+r, +g, +b) ? B_RGB : m; });
+                s = s.replace(/#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\\b/g,
+                    function(m, rh, gh, bh) {
+                        return isOrange(parseInt(rh,16), parseInt(gh,16), parseInt(bh,16)) ? B_HEX : m;
+                    });
+                return s;
+            }
+
+            function scanRules() {
+                for (var i = 0; i < doc.styleSheets.length; i++) {
+                    try {
+                        var rules = doc.styleSheets[i].cssRules;
+                        if (!rules) continue;
+                        for (var j = 0; j < rules.length; j++) {
+                            var rs = rules[j].style;
+                            if (!rs) continue;
+                            var bg = rs.background;
+                            if (bg) { var f = fix(bg); if (f !== bg) rs.background = f; }
+                            var bc = rs.backgroundColor;
+                            if (bc) { var f2 = fix(bc); if (f2 !== bc) rs.backgroundColor = f2; }
+                        }
+                    } catch(e) {}
                 }
-                for i, (agent, label) in enumerate(zip(agents, agent_labels)):
-                    with weight_cols[i]:
-                        st.session_state.custom_agent_weights[agent] = st.slider(
-                            label,
-                            min_value=0.0,
-                            max_value=2.0,
-                            value=st.session_state.custom_agent_weights[agent],
-                            step=0.1,
-                            key=f"custom_weight_{agent}"
-                        )
-                # Show current weight distribution
-                st.write("**Current Weight Distribution:**")
-                total_weight = sum(st.session_state.custom_agent_weights.values())
-                percentages = {k: (v/total_weight)*100 for k, v in st.session_state.custom_agent_weights.items()}
-                dist_cols = st.columns(5)
-                for i, (agent, pct) in enumerate(percentages.items()):
-                    with dist_cols[i]:
-                        st.metric(agent_labels[i], f"{pct:.1f}%", help=agent_tips[agents[i]])
+            }
 
-            st.write("**Configure Custom Agent Weights:**")
-            _weight_slider_fragment()
+            // Layer 1: patch insertRule prototype (belt)
+            if (!pw.__slPatch4) {
+                pw.__slPatch4 = true;
+                var P = pw.CSSStyleSheet.prototype;
+                var orig = P.insertRule;
+                P.insertRule = function(rule, idx) {
+                    return orig.call(this, fix(rule), idx);
+                };
+            }
 
-            # Lock in weights button
-            st.markdown("---")
-            if st.button("Lock In Custom Weights", type="primary"):
-                st.session_state.locked_custom_weights = st.session_state.custom_agent_weights.copy()
-                st.success("Custom weights locked in! These will be used for analysis.")
-                st.session_state.show_custom_weights = False
-        
-        # Use locked custom weights if available
-        if 'locked_custom_weights' in st.session_state:
-            agent_weights = st.session_state.locked_custom_weights
+            // Layer 2: continuous RAF scanner (suspenders) — only scans when
+            // sliders exist on the page, throttled to every 120ms (~8fps)
+            if (!pw.__slScan4) {
+                pw.__slScan4 = true;
+                var last = 0;
+                (function tick() {
+                    var now = Date.now();
+                    if (now - last >= 120 && doc.querySelector('[data-baseweb="slider"]')) {
+                        scanRules();
+                        last = now;
+                    }
+                    pw.requestAnimationFrame(tick);
+                })();
+            }
+
+            // Always run an immediate scan (handles full-page reruns where
+            // new rules were inserted before this iframe loaded)
+            scanRules();
+        })();
+        </script>
+        """, height=0)
+
+        @st.fragment
+        def _weight_slider_fragment():
+            weight_cols = st.columns(5)
+            agents = ['value', 'growth_momentum', 'macro_regime', 'risk', 'sentiment']
+            agent_labels = ['Value', 'Growth', 'Macro Regime', 'Risk', 'Sentiment']
+            agent_tips = {
+                'value':           'P/E, P/B, DCF intrinsic-value metrics',
+                'growth_momentum': 'Revenue growth, earnings trends, price momentum',
+                'macro_regime':    'Interest rates, inflation, economic cycle',
+                'risk':            'Volatility, drawdown, debt-level risk',
+                'sentiment':       'News tone, analyst ratings, social buzz',
+            }
+            for i, (agent, label) in enumerate(zip(agents, agent_labels)):
+                slider_key = f"custom_weight_{agent}"
+                # Initialize the widget key from our weights dict only on first run
+                if slider_key not in st.session_state:
+                    st.session_state[slider_key] = min(st.session_state.custom_agent_weights[agent], 1.0)
+                with weight_cols[i]:
+                    st.slider(
+                        label,
+                        min_value=0.0,
+                        max_value=1.0,
+                        step=0.05,
+                        key=slider_key,
+                        help=agent_tips[agent]
+                    )
+                # Sync back from widget key to our weights dict
+                st.session_state.custom_agent_weights[agent] = st.session_state[slider_key]
+            # Show current weight distribution
+            total_weight = sum(st.session_state.custom_agent_weights.values())
+            percentages = {k: (v/total_weight)*100 for k, v in st.session_state.custom_agent_weights.items()}
+            dist_cols = st.columns(5)
+            for i, (agent, pct) in enumerate(percentages.items()):
+                with dist_cols[i]:
+                    st.metric(agent_labels[i], f"{pct:.1f}%", help=agent_tips[agents[i]])
+
+        _weight_slider_fragment()
+
+        agent_weights = st.session_state.custom_agent_weights.copy()
+        st.session_state.locked_custom_weights = agent_weights
 
     else:  # equal_weights
         # Always use truly equal weights (1.0 each), overriding orchestrator defaults
@@ -1006,524 +1948,35 @@ def stock_analysis_page():
     
     if st.button("Run Analysis", type="primary"):
         # Validation
+        import re as _re_val
         if analysis_mode == "Single Stock":
             if not ticker:
-                st.error("Please enter a ticker symbol")
+                st.error("Please enter a ticker symbol.")
+                return
+            if not _re_val.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', ticker):
+                st.error(f"**Invalid ticker: '{ticker}'** — Ticker symbols should be 1-5 letters "
+                         f"(e.g., AAPL, MSFT, BRK.B). Please check your input and try again.")
                 return
         else:
             if not tickers:
-                st.error("Please enter at least one ticker symbol")
+                st.error("Please enter at least one ticker symbol.")
                 return
-        
-        # Create empty slots for progress display
-        progress_slot = st.empty()
+            invalid_tickers = [t for t in tickers if not _re_val.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', t)]
+            if invalid_tickers:
+                st.error(f"**Invalid ticker(s): {', '.join(invalid_tickers)}** — "
+                         f"Ticker symbols should be 1-5 letters (e.g., AAPL, MSFT, BRK.B). "
+                         f"Please check your input and try again.")
+                return
 
-        # Agent step definitions for the progress display
-        # Clean inline SVG icons (Lucide-style, 14x14, stroke=currentColor)
-        _SVG = {
-            "data":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>',
-            "value": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
-            "growth":'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
-            "macro": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
-            "risk":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-            "sent":  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="10" y1="8" x2="18" y2="8"/><line x1="10" y1="12" x2="18" y2="12"/><line x1="10" y1="16" x2="14" y2="16"/></svg>',
-            "blend": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>',
-            "check": '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+        # Store analysis parameters and rerun to hide form
+        st.session_state['_analysis_params'] = {
+            'mode': analysis_mode,
+            'ticker': ticker if analysis_mode == "Single Stock" else None,
+            'tickers': tickers if analysis_mode == "Multiple Stocks" else None,
+            'date': analysis_date,
+            'weights': agent_weights,
         }
-
-        # Step ranges must match the orchestrator's exact milestone percentages:
-        # Data: 0-42, then 5 agents evenly across 42-98 (each ~11.2%): 42, 53, 64, 75, 86, 98
-        _AGENT_STEPS = [
-            {"key": "data",      "label": "Data Gathering",     "svg": "data",  "range": (0, 42)},
-            {"key": "value",     "label": "Value Agent",        "svg": "value", "range": (42, 54)},
-            {"key": "growth",    "label": "Growth/Momentum",    "svg": "growth","range": (54, 65)},
-            {"key": "macro",     "label": "Macro Regime",       "svg": "macro", "range": (65, 76)},
-            {"key": "risk",      "label": "Risk Agent",         "svg": "risk",  "range": (76, 87)},
-            {"key": "sentiment", "label": "Sentiment Agent",    "svg": "sent",  "range": (87, 98)},
-            {"key": "blend",     "label": "Score Blending",     "svg": "blend", "range": (98, 100)},
-        ]
-
-        # Expected elapsed seconds at each progress point (for countdown estimation)
-        def _expected_elapsed_at(p):
-            """Piecewise-linear estimate: expected wall-clock seconds at progress p%."""
-            if p <= 0:  return 0.0
-            if p <= 42: return p * (37.0 / 42.0)
-            if p <= 98: return 37.0 + (p - 42.0) * (48.0 / 56.0)
-            return 85.0 + (p - 98.0) * (1.0 / 2.0)
-
-        _EXPECTED_TOTAL = 80.0   # 1 min 20 s fixed starting countdown
-
-        # Slate-blue palette for progress UI
-        _SLATE_600 = "#3b5998"
-        _SLATE_500 = "#5b7bb3"
-        _SLATE_200 = "#dce4f0"
-        _SLATE_100 = "#eef2f9"
-
-        def _render_progress(slot, bar_pct, message, remaining_secs=None, step_pct=None):
-            """Render a professional analysis progress card with agent steps and countdown.
-
-            Args:
-                bar_pct:  0-100 fill percentage for the progress bar (time-based).
-                message:  Status text shown below the card.
-                remaining_secs:  Seconds remaining (drives the timer label).
-                step_pct: Orchestrator milestone % used only for step indicators.
-                          Falls back to bar_pct when not provided.
-            """
-            import re as _re
-            bar_pct = max(0.0, min(100.0, float(bar_pct)))
-            bar_pct_int = int(bar_pct)  # for the HTML width
-            sp = int(step_pct) if step_pct is not None else bar_pct_int
-            sp = max(0, min(100, sp))
-
-            # --- Time remaining label ---
-            if remaining_secs is not None and bar_pct < 100:
-                rs = max(0, int(remaining_secs))
-                if rs >= 60:
-                    time_label = f"{rs // 60}m {rs % 60:02d}s remaining"
-                else:
-                    time_label = f"{rs}s remaining" if rs > 0 else "finishing up..."
-            elif bar_pct >= 100:
-                time_label = "Complete"
-            else:
-                time_label = "estimating..."
-
-            # Strip ~Xs ETA suffix from message (already shown in timer)
-            clean_msg = _re.sub(r'\s*~\d+(?:m\s+\d+)?s\s*$', '', message)
-
-            # --- Determine the active step from message content ---
-            # This ensures the highlighted step always matches the status text
-            _MSG_TO_STEP = {
-                'data':      ['initializ', 'starting', 'fetching data', 'data for',
-                              'data gathered', 'data ready', 'querying polygon',
-                              'received', 'all data', 'multiple sources',
-                              'no fundamental'],
-                'value':     ['value agent', 'evaluating p/e', 'dividend yield', 'intrinsic value'],
-                'growth':    ['growth', 'momentum', 'earnings growth', 'revenue momentum'],
-                'macro':     ['macro', 'regime', 'sector in current'],
-                'risk':      ['risk agent', 'computing volatility', 'beta (', 'drawdown'],
-                'sentiment': ['sentiment agent', 'fetching news', 'articles analyzed',
-                              'analyzing sentiment', 'articles and'],
-                'blend':     ['blending', 'blend', 'analysis complete', 'complete:'],
-            }
-            msg_lower = clean_msg.lower()
-            active_step_key = None
-            for step_key, keywords in _MSG_TO_STEP.items():
-                if any(kw in msg_lower for kw in keywords):
-                    active_step_key = step_key
-                    break
-
-            # --- Build step rows ---
-            steps_html = ""
-            for step in _AGENT_STEPS:
-                lo, hi = step["range"]
-
-                if active_step_key is not None:
-                    # Message-driven: highlight the step that matches the message
-                    is_active = (step["key"] == active_step_key)
-                    # Steps before the active one are done; after are pending
-                    step_idx = next(i for i, s in enumerate(_AGENT_STEPS) if s["key"] == step["key"])
-                    active_idx = next(i for i, s in enumerate(_AGENT_STEPS) if s["key"] == active_step_key)
-                    is_done = step_idx < active_idx
-                else:
-                    # Fallback to %-based if message couldn't be parsed
-                    is_done   = sp >= hi
-                    is_active = lo <= sp < hi
-
-                if is_done:
-                    badge_bg = "#ecfdf5"; badge_fg = "#059669"
-                    icon_svg = _SVG["check"]
-                    label_color = "#374151"; label_weight = "400"; row_bg = "transparent"
-                elif is_active:
-                    badge_bg = _SLATE_200; badge_fg = _SLATE_600
-                    icon_svg = _SVG[step["svg"]]
-                    label_color = "#111827"; label_weight = "600"; row_bg = _SLATE_100
-                else:
-                    badge_bg = "#f3f4f6"; badge_fg = "#9ca3af"
-                    icon_svg = _SVG[step["svg"]]
-                    label_color = "#9ca3af"; label_weight = "400"; row_bg = "transparent"
-
-                # Pulsing indicator for active step
-                pulse = ""
-                if is_active:
-                    pulse = (
-                        f'<span style="width:6px;height:6px;border-radius:50%;'
-                        f'background:{_SLATE_600};display:inline-block;margin-left:auto;'
-                        f'animation:_prog_pulse 1.4s ease-in-out infinite"></span>'
-                    )
-
-                steps_html += (
-                    f'<div style="display:flex;align-items:center;gap:10px;'
-                    f'padding:5px 8px;border-radius:6px;background:{row_bg};'
-                    f'transition:background 0.3s ease">'
-                    f'<span style="display:flex;align-items:center;justify-content:center;'
-                    f'width:26px;height:26px;border-radius:6px;font-size:13px;'
-                    f'background:{badge_bg};color:{badge_fg};flex-shrink:0">{icon_svg}</span>'
-                    f'<span style="font-size:13px;color:{label_color};'
-                    f'font-weight:{label_weight}">{step["label"]}</span>'
-                    f'{pulse}'
-                    f'</div>'
-                )
-
-            # --- Card assembly ---
-            slot.markdown(
-                f'<style>'
-                f'@keyframes _prog_pulse{{0%,100%{{opacity:.3;transform:scale(.8)}}50%{{opacity:1;transform:scale(1.1)}}}}'
-                f'@keyframes _prog_bar{{from{{background-position:0 0}}to{{background-position:30px 0}}}}'
-                f'</style>'
-                f'<div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;'
-                f'padding:20px 24px;box-shadow:0 1px 4px rgba(0,0,0,0.06);margin:10px 0;'
-                f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif">'
-
-                # Header row
-                f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
-                f'margin-bottom:14px">'
-                f'<span style="font-size:15px;font-weight:700;color:#111827;letter-spacing:-0.01em">'
-                f'Analysis Progress</span>'
-                f'<span style="font-size:13px;color:#6b7280;font-weight:500;'
-                f'font-variant-numeric:tabular-nums">{time_label}</span>'
-                f'</div>'
-
-                # Progress bar (with animated stripe when active)
-                f'<div style="width:100%;background:#f3f4f6;border-radius:99px;'
-                f'overflow:hidden;height:5px;margin-bottom:16px">'
-                f'<div style="width:{bar_pct:.1f}%;height:100%;border-radius:99px;'
-                f'background:{"linear-gradient(90deg," + _SLATE_600 + "," + _SLATE_500 + ")" if bar_pct < 100 else "#10b981"};'
-                f'{"background-size:30px 30px;background-image:linear-gradient(-45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);animation:_prog_bar .8s linear infinite;" if 0 < bar_pct < 100 else ""}'
-                f'transition:width 0.15s linear"></div></div>'
-
-                # Step grid (2 columns)
-                f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;'
-                f'margin-bottom:14px">{steps_html}</div>'
-
-                # Status message
-                f'<div style="font-size:12px;color:#6b7280;border-top:1px solid #f0f1f3;'
-                f'padding-top:10px;line-height:1.4">{clean_msg}</div>'
-                f'</div>',
-                unsafe_allow_html=True
-            )
-
-        def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
-            """Run analysis with time-based progress bar driven by the
-            orchestrator's own ~Xs ETA estimates embedded in status messages.
-
-            Timer:   Extracted from '... ~56s' in each milestone message, then
-                     counts down smoothly between milestones.
-            Bar:     Fills based on elapsed / (elapsed + remaining) so it
-                     always advances steadily.
-            Steps:   Driven by the orchestrator's milestone percentage so they
-                     flip at the right moment.
-            """
-            import re as _re
-
-            _prog = {
-                'mile_pct': 0.0,
-                'mile_msg': 'Initializing...',
-                'done': False,
-                'result': None,
-                'error': None,
-            }
-
-            def _on_milestone(pct, message):
-                _prog['mile_pct'] = pct
-                _prog['mile_msg'] = message
-
-            def _bg():
-                try:
-                    _prog['result'] = orchestrator.analyze_stock(
-                        ticker=tick,
-                        analysis_date=date_s,
-                        agent_weights=weights,
-                        progress_callback=_on_milestone,
-                    )
-                except Exception as e:
-                    _prog['error'] = e
-                finally:
-                    _prog['done'] = True
-
-            thread = threading.Thread(target=_bg, daemon=True)
-            thread.start()
-
-            def _parse_eta(msg):
-                """Extract remaining seconds from '... ~56s' or '... ~1m 23s'."""
-                m = _re.search(r'~(\d+)m\s+(\d+)s\s*$', msg)
-                if m:
-                    return int(m.group(1)) * 60 + int(m.group(2))
-                m = _re.search(r'~(\d+)s\s*$', msg)
-                if m:
-                    return int(m.group(1))
-                return None
-
-            # Always start the countdown at 1:20 (80 s)
-            initial_total_est = 80.0
-
-            display_pct = 0.0
-            display_remaining = initial_total_est   # what the user sees (smoothed)
-            last_render = 0.0
-            last_tick = time.time()
-            start_wall = time.time()
-
-            # ETA anchor: when we last received a new ~Xs value
-            eta_anchor_secs = None
-            eta_anchor_time = None
-            last_parsed_msg = None
-            # Tick-rate factor so the countdown can slow down instead of jumping up
-            tick_rate = 1.0          # 1.0 = normal 1 s/s countdown
-
-            while not _prog['done']:
-                now = time.time()
-                dt = now - last_tick
-                last_tick = now
-                elapsed = now - start_wall
-
-                msg = _prog['mile_msg']
-                mp = _prog['mile_pct']
-
-                # --- Extract ~Xs remaining from orchestrator message ---
-                msg_eta = _parse_eta(msg)
-                if msg_eta is not None:
-                    if msg != last_parsed_msg:
-                        # New milestone message → compute true remaining
-                        last_parsed_msg = msg
-                        eta_anchor_secs = msg_eta
-                        eta_anchor_time = now
-                        true_remaining = float(msg_eta)
-
-                        if true_remaining > display_remaining:
-                            # ETA went UP — never jump the display upward.
-                            # Instead slow the tick rate so display_remaining
-                            # glides down gently until the real value catches up.
-                            gap = true_remaining - display_remaining
-                            # The wider the gap, the slower we tick — but never
-                            # fully stall (min rate 0.15 s/s).
-                            tick_rate = max(0.15, display_remaining / true_remaining)
-                        else:
-                            # ETA same or lower — restore normal speed and snap
-                            tick_rate = 1.0
-                            display_remaining = true_remaining
-                    else:
-                        # Same milestone — count down from anchor at current tick_rate
-                        true_remaining = max(0.0, eta_anchor_secs - (now - eta_anchor_time))
-                        # If true remaining has fallen back to (or below) display,
-                        # resync and restore normal speed
-                        if true_remaining <= display_remaining:
-                            display_remaining = true_remaining
-                            tick_rate = min(1.0, tick_rate + dt * 0.5)  # ease back
-                else:
-                    # Very early / no ETA yet — linear countdown
-                    true_remaining = max(0.0, initial_total_est - elapsed)
-                    if true_remaining <= display_remaining:
-                        display_remaining = true_remaining
-                        tick_rate = 1.0
-
-                # Smoothly decrement the displayed remaining by tick_rate
-                display_remaining = max(0.0, display_remaining - dt * tick_rate)
-
-                # --- Progress bar: time-based ---
-                total_est = elapsed + display_remaining
-                if total_est > 1.0:
-                    target = min(99.0, (elapsed / total_est) * 100.0)
-                else:
-                    target = min(99.0, display_pct + 0.1)
-
-                # Smooth interpolation (never go backwards)
-                # Use a fast lerp so the bar visibly moves from the start
-                if target > display_pct:
-                    gap = target - display_pct
-                    # Large gap → faster catch-up; small gap → gentle glide
-                    lerp = min(0.8, 0.25 + gap * 0.01)
-                    display_pct += gap * lerp
-                display_pct = max(0.0, min(99.0, display_pct))
-
-                # Render at ~10 fps
-                if now - last_render >= 0.10:
-                    _render_progress(slot, display_pct, msg,
-                                     remaining_secs=display_remaining,
-                                     step_pct=mp)
-                    last_render = now
-
-                time.sleep(0.05)
-
-            if _prog['error']:
-                raise _prog['error']
-
-            return _prog['result']
-
-        # Always start the countdown at 1:20 (80 s)
-        _initial_est = 80.0
-
-        _render_progress(progress_slot, 0, "Initializing analysis…",
-                         remaining_secs=_initial_est)
-
-        # Handle single or multiple stock analysis
-        if analysis_mode == "Single Stock":
-            try:
-                _render_progress(progress_slot, 0, "Starting analysis…",
-                                 remaining_secs=_initial_est)
-
-                start_time = time.time()
-
-                # Convert analysis_date to string format
-                if isinstance(analysis_date, (datetime, type(datetime.now().date()))):
-                    date_str = analysis_date.strftime('%Y-%m-%d') if hasattr(analysis_date, 'strftime') else str(analysis_date)
-                elif isinstance(analysis_date, tuple) and len(analysis_date) > 0:
-                    date_str = analysis_date[0].strftime('%Y-%m-%d') if hasattr(analysis_date[0], 'strftime') else str(analysis_date[0])
-                else:
-                    date_str = datetime.now().strftime('%Y-%m-%d')
-
-                # Run with smooth progress interpolation (background thread + 10fps polling)
-                orchestrator = st.session_state.orchestrator
-                result = _run_with_smooth_progress(
-                    progress_slot, orchestrator, ticker, date_str, agent_weights
-                )
-
-                # Track timing
-                end_time = time.time()
-                analysis_duration = end_time - start_time
-                st.session_state.analysis_times.append(analysis_duration)
-
-                if len(st.session_state.analysis_times) > 50:
-                    st.session_state.analysis_times = st.session_state.analysis_times[-50:]
-
-                actual_minutes = int(analysis_duration // 60)
-                actual_seconds = int(analysis_duration % 60)
-                _render_progress(progress_slot, 100,
-                                 f"Analysis complete — {actual_minutes}m {actual_seconds:02d}s",
-                                 remaining_secs=0)
-
-                time.sleep(0.5)
-                progress_slot.empty()
-
-                if 'error' in result:
-                    st.error(f"{result['error']}")
-                    return
-
-                # Display results
-                display_stock_analysis(result)
-
-            except Exception as e:
-                # Clear progress indicator on error
-                progress_slot.empty()
-                st.error(f"Analysis failed: {e}")
-        
-        else:
-            # Multiple stocks analysis
-            st.info(f"Analyzing {len(tickers)} stocks: {', '.join(tickers)}")
-            
-            # Create overall progress tracking
-            overall_progress = st.progress(0)
-            overall_status = st.empty()
-            time_estimate_display = st.empty()
-            
-            results = []
-            failed_tickers = []
-            batch_start_time = time.time()
-            
-            # Initial time estimate
-            if st.session_state.analysis_times:
-                avg_time = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
-            else:
-                avg_time = 35  # Default estimate in seconds
-            
-            total_est_seconds = int(avg_time * len(tickers))
-            est_minutes = total_est_seconds // 60
-            est_seconds = total_est_seconds % 60
-            time_estimate_display.info(f"Initial estimate: ~{est_minutes}m {est_seconds}s for {len(tickers)} stocks")
-            
-            for idx, stock_ticker in enumerate(tickers):
-                stock_start_time = time.time()
-
-                # Calculate dynamic time remaining using actual batch performance
-                completed_count = idx  # Number of stocks completed so far
-                if completed_count > 0:
-                    elapsed_time = time.time() - batch_start_time
-                    stocks_per_minute = completed_count / (elapsed_time / 60)
-
-                    remaining_stocks = len(tickers) - idx
-                    est_remaining_minutes = remaining_stocks / stocks_per_minute if stocks_per_minute > 0 else 0
-                    est_minutes = int(est_remaining_minutes)
-                    est_seconds = int((est_remaining_minutes - est_minutes) * 60)
-
-                    overall_status.text(f"Analyzing {stock_ticker} ({idx + 1} of {len(tickers)}) - Est. {est_minutes}m {est_seconds}s remaining (Rate: {stocks_per_minute:.1f} stocks/min)")
-                else:
-                    remaining_stocks = len(tickers) - idx
-                    est_remaining_seconds = int(avg_time * remaining_stocks)
-                    est_minutes = est_remaining_seconds // 60
-                    est_seconds = est_remaining_seconds % 60
-                    overall_status.text(f"Analyzing {stock_ticker} ({idx + 1} of {len(tickers)}) - Est. {est_minutes}m {est_seconds}s remaining")
-
-                # Create a single empty slot for this stock's progress
-                stock_progress_slot = st.empty()
-                _render_progress(stock_progress_slot, 0, "Initializing analysis…",
-                                 remaining_secs=_initial_est)
-
-                try:
-                    # Convert analysis_date to string format
-                    if isinstance(analysis_date, (datetime, type(datetime.now().date()))):
-                        date_str = analysis_date.strftime('%Y-%m-%d') if hasattr(analysis_date, 'strftime') else str(analysis_date)
-                    elif isinstance(analysis_date, tuple) and len(analysis_date) > 0:
-                        date_str = analysis_date[0].strftime('%Y-%m-%d') if hasattr(analysis_date[0], 'strftime') else str(analysis_date[0])
-                    else:
-                        date_str = datetime.now().strftime('%Y-%m-%d')
-
-                    # Run with smooth progress interpolation
-                    orchestrator = st.session_state.orchestrator
-                    result = _run_with_smooth_progress(
-                        stock_progress_slot, orchestrator, stock_ticker, date_str, agent_weights
-                    )
-
-                    # Track time for this stock
-                    stock_end_time = time.time()
-                    stock_duration = stock_end_time - stock_start_time
-                    st.session_state.analysis_times.append(stock_duration)
-
-                    if len(st.session_state.analysis_times) > 50:
-                        st.session_state.analysis_times = st.session_state.analysis_times[-50:]
-
-                    # Clear individual progress indicator
-                    stock_progress_slot.empty()
-
-                    if 'error' in result:
-                        failed_tickers.append((stock_ticker, result['error']))
-                    else:
-                        results.append(result)
-                    
-                    # Update time estimate with actual batch performance
-                    completed = idx + 1
-                    remaining = len(tickers) - completed
-                    if completed > 0 and remaining > 0:
-                        elapsed_total = time.time() - batch_start_time
-                        stocks_per_minute = completed / (elapsed_total / 60)
-                        est_remaining_minutes = remaining / stocks_per_minute if stocks_per_minute > 0 else 0
-                        est_minutes = int(est_remaining_minutes)
-                        est_seconds = int((est_remaining_minutes - est_minutes) * 60)
-                        time_estimate_display.info(f"Updated estimate: ~{est_minutes}m {est_seconds}s remaining ({completed}/{len(tickers)} complete, {stocks_per_minute:.1f} stocks/min)")
-                    
-                except Exception as e:
-                    stock_progress_slot.empty()
-                    failed_tickers.append((stock_ticker, str(e)))
-                
-                # Update overall progress
-                overall_progress.progress((idx + 1) / len(tickers))
-            
-            # Clear overall progress and show final time
-            batch_end_time = time.time()
-            total_duration = batch_end_time - batch_start_time
-            total_minutes = int(total_duration // 60)
-            total_seconds = int(total_duration % 60)
-            overall_status.text(f"Batch analysis complete! (Total time: {total_minutes}m {total_seconds}s)")
-            time_estimate_display.success(f"Analyzed {len(results)} stocks successfully in {total_minutes}m {total_seconds}s")
-            time.sleep(1.5)
-            overall_progress.empty()
-            overall_status.empty()
-            time_estimate_display.empty()
-            
-            # Display results summary
-            if results:
-                display_multiple_stock_analysis(results, failed_tickers)
-            else:
-                st.error("All analyses failed!")
-                for ticker_name, error_msg in failed_tickers:
-                    st.error(f"**{ticker_name}**: {error_msg}")
+        st.rerun()
 
 
 def display_stock_analysis(result: dict):
@@ -1553,6 +2006,44 @@ def display_stock_analysis(result: dict):
             st.info(f"Score: {final_score:.1f}")
         else:
             st.warning(f"Score: {final_score:.1f}")
+    
+    # --- Overall Assessment ---
+    final_score = result['final_score']
+    recommendation = result.get('recommendation', '')
+    if final_score >= 75:
+        _assess_label = 'STRONG BUY'
+        _assess_color = '#059669'
+        _assess_desc = f'Strong score of {final_score:.1f} indicating excellent investment potential with favorable risk/reward profile.'
+    elif final_score >= 65:
+        _assess_label = 'BUY'
+        _assess_color = '#10b981'
+        _assess_desc = f'Solid score of {final_score:.1f} indicating good investment potential with acceptable risk/reward profile.'
+    elif final_score >= 55:
+        _assess_label = 'HOLD'
+        _assess_color = '#f59e0b'
+        _assess_desc = f'Moderate score of {final_score:.1f} suggesting a neutral outlook. Monitor for changes before acting.'
+    elif final_score >= 45:
+        _assess_label = 'UNDERPERFORM'
+        _assess_color = '#f97316'
+        _assess_desc = f'Below-average score of {final_score:.1f} indicating limited upside and elevated risk.'
+    else:
+        _assess_label = 'SELL'
+        _assess_color = '#ef4444'
+        _assess_desc = f'Low score of {final_score:.1f} indicating poor investment potential with unfavorable risk/reward profile.'
+    
+    st.markdown(
+        f'<div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;'
+        f'padding:18px 24px;margin:12px 0 20px 0;box-shadow:0 1px 4px rgba(0,0,0,0.06);'
+        f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif">'
+        f'<div style="font-size:13px;color:#6b7280;font-weight:600;text-transform:uppercase;'
+        f'letter-spacing:0.05em;margin-bottom:8px">Overall Assessment</div>'
+        f'<div style="display:flex;align-items:center;gap:12px">'
+        f'<span style="background:{_assess_color};color:#ffffff;font-weight:700;font-size:14px;'
+        f'padding:4px 14px;border-radius:6px;letter-spacing:0.03em">{_assess_label}</span>'
+        f'<span style="font-size:14px;color:#374151;line-height:1.5">{_assess_desc}</span>'
+        f'</div></div>',
+        unsafe_allow_html=True
+    )
     
     # Show which weights were used for this analysis
     weight_preset = st.session_state.get('weight_preset', 'equal_weights')
@@ -3501,7 +3992,7 @@ def system_status_and_ai_disclosure_page():
         
         This system uses the following APIs/tools:
         - OpenAI o3 for agent reasoning and portfolio selection, Gemini 2.5 Pro for AI-powered ticker discovery and real-time data synthesis. 
-        - yfinance/PolygonIO for market data
+        - Polygon.io for market data
         - Alpha Vantage for fundamental data and macroeconomic indicators
         - NewsAPI for news sentiment analysis 
         
@@ -3533,7 +4024,6 @@ def system_status_and_ai_disclosure_page():
             **Total recommended cost: ~$60/month for rock-solid data access**
             
             ### Current Free Tier Limitations:
-            - yfinance: ~2000 requests/day (rate limited)
             - Alpha Vantage: 5 calls/minute, 500/day
             - NewsAPI: 100 requests/day
             
@@ -3703,7 +4193,7 @@ def configuration_page():
                 1: "Data Gathering - Fundamentals",
                 2: "Data Gathering - Market Data",
                 3: "Value Agent Analysis",
-                4: "Growth/Momentum Agent Analysis",
+                4: "Growth Agent Analysis",
                 5: "Macro Regime Agent Analysis",
                 6: "Risk Agent Analysis",
                 7: "Sentiment Agent Analysis",

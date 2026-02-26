@@ -5,6 +5,8 @@ Defines common interface and OpenAI integration.
 """
 
 import os
+import time as _time
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 from openai import OpenAI
@@ -12,6 +14,12 @@ import logging
 from utils.logger import get_disclosure_logger
 
 logger = logging.getLogger(__name__)
+
+# Shared rate limiter for Perplexity API calls across all agents.
+# Limits concurrent requests to 2 to avoid rate-limit errors when
+# 5 agents run in parallel (each making 1-3 Perplexity calls).
+_PERPLEXITY_SEMAPHORE = threading.Semaphore(2)
+_PERPLEXITY_LAST_CALL = threading.local()
 
 
 class BaseAgent(ABC):
@@ -175,12 +183,19 @@ class BaseAgent(ABC):
         }
 
         try:
-            response = requests.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=15
-            )
+            # Acquire the shared Perplexity rate-limit semaphore (max 2 concurrent)
+            _PERPLEXITY_SEMAPHORE.acquire()
+            try:
+                # Small delay between successive calls on the same thread
+                _time.sleep(0.3)
+                response = requests.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=15
+                )
+            finally:
+                _PERPLEXITY_SEMAPHORE.release()
 
             if response.status_code == 200:
                 result = response.json()

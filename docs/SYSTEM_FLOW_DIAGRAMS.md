@@ -50,7 +50,7 @@ graph TB
 ```
 
 ### Key Features
-- **Data Sources**: YFinance (prices), Perplexity AI (news), Analyst consensus
+- **Data Sources**: Polygon.io (prices), Perplexity AI (news/metrics), Alpha Vantage (fundamentals)
 - **5 AI Agents**: Each specializes in different aspects (value, growth, sentiment, macro, risk)
 - **Smart Weighting**: Agent weights from `config/model.yaml` (automatically adjusted by learning system)
 - **IPS Compliance**: Checks alignment with time horizon, risk tolerance, tax considerations

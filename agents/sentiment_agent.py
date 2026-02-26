@@ -829,12 +829,19 @@ Focus on actionable insights about market sentiment momentum and investor behavi
         }
 
         try:
-            response = requests.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
+            from agents.base_agent import _PERPLEXITY_SEMAPHORE
+            import time as _time
+            _PERPLEXITY_SEMAPHORE.acquire()
+            try:
+                _time.sleep(0.3)
+                response = requests.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+            finally:
+                _PERPLEXITY_SEMAPHORE.release()
 
             if response.status_code != 200:
                 logger.warning(f"Direct Perplexity sentiment failed: HTTP {response.status_code}")
@@ -1032,12 +1039,19 @@ Return ONLY the 5 URLs, one per line, with no other text or formatting."""
         }
 
         try:
-            response = requests.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
+            from agents.base_agent import _PERPLEXITY_SEMAPHORE
+            import time as _time
+            _PERPLEXITY_SEMAPHORE.acquire()
+            try:
+                _time.sleep(0.3)
+                response = requests.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=60
+                )
+            finally:
+                _PERPLEXITY_SEMAPHORE.release()
 
             if response.status_code == 200:
                 result = response.json()

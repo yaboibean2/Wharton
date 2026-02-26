@@ -7,10 +7,13 @@ Handles position sizing and portfolio construction.
 from typing import Dict, List, Any, Tuple
 import pandas as pd
 import numpy as np
+import json
+import os
 import logging
 import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from statistics import median as _median
 
 from agents.value_agent import ValueAgent
 from agents.growth_momentum_agent import GrowthMomentumAgent
@@ -23,11 +26,57 @@ from engine.ai_portfolio_selector import AIPortfolioSelector
 logger = logging.getLogger(__name__)
 
 
+def _load_learned_phase_durations() -> dict:
+    """Load phase durations from data/step_times.json.
+
+    Returns dict with keys 'data_gather', 'agents', 'blend' (medians),
+    'total' (median), and 'avg_total' (mean of total samples).
+    Falls back to conservative defaults if the file is missing or empty.
+    """
+    defaults = {'data_gather': 45.0, 'agents': 25.0, 'blend': 1.0, 'total': 70.0, 'avg_total': 70.0}
+    try:
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'step_times.json')
+        if not os.path.exists(path):
+            return defaults
+        with open(path, 'r') as f:
+            raw = json.load(f)
+        st = raw.get('step_times', {})
+        if not st:
+            return defaults
+
+        def _med(key):
+            vals = st.get(key, [])
+            return _median(vals) if vals else None
+
+        def _avg(key):
+            vals = st.get(key, [])
+            return sum(vals) / len(vals) if vals else None
+
+        dg = _med('1')
+        ag = _med('2')
+        bl = _med('3')
+        tot = _med('total')
+        avg_tot = _avg('total')
+
+        return {
+            'data_gather': round(dg, 1) if dg is not None else defaults['data_gather'],
+            'agents':      round(ag, 1) if ag is not None else defaults['agents'],
+            'blend':       round(bl, 1) if bl is not None else defaults['blend'],
+            'total':       round(tot, 1) if tot is not None else defaults['total'],
+            'avg_total':   round(avg_tot, 1) if avg_tot is not None else defaults['avg_total'],
+        }
+    except Exception:
+        return defaults
+
+
 class PortfolioOrchestrator:
     """
     Main orchestration engine for the multi-agent investment system.
     Coordinates data gathering, agent analysis, score blending, and portfolio construction.
     """
+
+    # Learned phase durations loaded once at import time
+    _learned_phases: dict = _load_learned_phase_durations()
     
     def __init__(
         self,
@@ -97,10 +146,11 @@ class PortfolioOrchestrator:
         """
         logger.info(f"Starting comprehensive analysis for {ticker} as of {analysis_date}")
 
-        # Phase durations based on measured runs (used for smooth progress interpolation)
-        # Phase 1: Data gathering 0-42% (~35s, 42% of total time)
-        # Phase 2: Agent analysis 42-98% (~48s, 56% of total time, 5 agents with article fetching)
-        # Phase 3: Blending/finalization 98-100% (~1s, 2% of total time)
+        # Phase durations loaded from data/step_times.json (learned from timing runs)
+        lp = PortfolioOrchestrator._learned_phases
+        # Phase 1: Data gathering   0-42%  (~{lp['data_gather']}s)
+        # Phase 2: Agent analysis   42-98% (~{lp['agents']}s — agents run in PARALLEL)
+        # Phase 3: Blend/finalize   98-100% (~{lp['blend']}s)
         PHASE_AGENTS = (42, 98)         # 42% to 98%
 
         analysis_start_time = time.time()
@@ -224,72 +274,62 @@ class PortfolioOrchestrator:
         
         update_progress(f"Data ready: ${price} price, {pe_ratio} P/E, {market_cap_str} mkt cap", 42)
 
-        # 2. Phase 2: Run all agents (42-98%)
+        # 2. Phase 2: Run all agents IN PARALLEL (42-98%)
         agent_results = {}
-        agent_count = 0
         total_agents = len(self.agents)
 
         agent_labels_map = {
             'value_agent': 'Value',
-            'growth_momentum_agent': 'Growth/Momentum',
+            'growth_momentum_agent': 'Growth',
             'macro_regime_agent': 'Macro Regime',
             'risk_agent': 'Risk',
             'sentiment_agent': 'Sentiment'
         }
 
-        for agent_name, agent in self.agents.items():
-            agent_count += 1
-            # Calculate progress range for this agent (42-98%, evenly divided)
-            agent_pct_range = PHASE_AGENTS[1] - PHASE_AGENTS[0]  # 56
-            agent_start_pct = PHASE_AGENTS[0] + ((agent_count - 1) / total_agents) * agent_pct_range
-            agent_end_pct = PHASE_AGENTS[0] + (agent_count / total_agents) * agent_pct_range
-            agent_label = agent_labels_map.get(agent_name, agent_name.replace('_agent', '').title())
+        update_progress("Running all 5 agents in parallel...", 43)
 
-            # Descriptive message for this agent
-            if 'value' in agent_name.lower():
-                pe_display = f"{pe_ratio:.1f}" if isinstance(pe_ratio, (int, float)) else str(pe_ratio)
-                agent_msg = f"{agent_label} Agent: Evaluating P/E ({pe_display}), dividend yield, intrinsic value..."
-            elif 'growth' in agent_name.lower():
-                agent_msg = f"{agent_label} Agent: Analyzing earnings growth, revenue momentum, price trends..."
-            elif 'macro' in agent_name.lower():
-                sector = data['fundamentals'].get('sector', 'Unknown')
-                agent_msg = f"{agent_label} Agent: Assessing {sector} sector in current macro regime..."
-            elif 'risk' in agent_name.lower():
-                beta_val = data['fundamentals'].get('beta', 'N/A')
-                beta_display = f"{beta_val:.2f}" if isinstance(beta_val, (int, float)) else str(beta_val)
-                agent_msg = f"{agent_label} Agent: Computing volatility, beta ({beta_display}), drawdown..."
-            elif 'sentiment' in agent_name.lower():
-                agent_msg = f"{agent_label} Agent: Fetching news articles and analyzing sentiment..."
-            else:
-                agent_msg = f"{agent_label} Agent: Running analysis..."
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_agent = {}
+            for i, (agent_name, agent) in enumerate(self.agents.items()):
+                # Small stagger between agent launches to avoid API burst
+                if i > 0:
+                    time.sleep(0.2)
+                future = executor.submit(agent.analyze, ticker, data)
+                future_to_agent[future] = agent_name
 
-            update_progress(agent_msg, int(agent_start_pct))
+            completed_count = 0
+            for future in as_completed(future_to_agent):
+                agent_name = future_to_agent[future]
+                completed_count += 1
+                agent_label = agent_labels_map.get(agent_name, agent_name.replace('_agent', '').title())
 
-            try:
-                result = agent.analyze(ticker, data)
-                agent_results[agent_name] = result
+                try:
+                    result = future.result()
+                    agent_results[agent_name] = result
 
-                # Log results and show completion with score
-                score = result.get('score')
-                if score is None:
-                    score = 50
-                    result['score'] = 50
-                logger.info(f"{agent_name}: {score:.1f} - {result['rationale']}")
+                    score = result.get('score')
+                    if score is None:
+                        score = 50
+                        result['score'] = 50
+                    logger.info(f"{agent_name}: {score:.1f} - {result['rationale']}")
 
-                # Show agent completion
-                if 'sentiment' in agent_name.lower():
-                    num_articles = result.get('details', {}).get('num_articles', 0)
-                    completion_msg = f"{agent_label} Agent: {num_articles} articles analyzed, score {score:.0f}/100"
-                else:
-                    completion_msg = f"{agent_label} Agent complete: {score:.0f}/100"
-                update_progress(completion_msg, int(agent_end_pct))
-            except Exception as e:
-                logger.error(f"Error in {agent_name} for {ticker}: {e}")
-                agent_results[agent_name] = {
-                    'score': 50,
-                    'rationale': f'Analysis failed: {str(e)}',
-                    'details': {}
-                }
+                    if 'sentiment' in agent_name.lower():
+                        num_articles = result.get('details', {}).get('num_articles', 0)
+                        completion_msg = f"{agent_label} Agent: {num_articles} articles analyzed, score {score:.0f}/100"
+                    else:
+                        completion_msg = f"{agent_label} Agent complete: {score:.0f}/100"
+                except Exception as e:
+                    logger.error(f"Error in {agent_name} for {ticker}: {e}")
+                    agent_results[agent_name] = {
+                        'score': 50,
+                        'rationale': f'Analysis failed: {str(e)}',
+                        'details': {}
+                    }
+                    completion_msg = f"{agent_label} Agent: analysis failed"
+
+                # Progress from 42% to 98% based on completion count
+                pct = PHASE_AGENTS[0] + (completed_count / total_agents) * (PHASE_AGENTS[1] - PHASE_AGENTS[0])
+                update_progress(completion_msg, int(pct))
         
         # 3. Phase 3: Blend scores and finalize (98-100%)
         update_progress(f"Blending agent scores with configured weights...", 98)
@@ -360,29 +400,27 @@ class PortfolioOrchestrator:
     @staticmethod
     def _estimate_time_remaining(elapsed: float, progress_pct: float, eta_state=None) -> str:
         """
-        Phase-aware time remaining estimation.
+        Phase-aware time remaining estimation using learned durations.
 
-        Uses known phase boundaries and durations to calculate remaining time
-        based on which phase we're currently in, rather than linear extrapolation.
+        Durations are loaded from data/step_times.json (populated by
+        test_pipeline_timing.py) so estimates stay calibrated to the
+        real environment.  Falls back to conservative defaults when
+        no timing data is available.
 
         Args:
             elapsed: seconds since analysis started
             progress_pct: current progress 0-100
             eta_state: dict with 'previous' key for EMA smoothing
-
-        Phase allocations (calibrated from real test runs):
-          0-42%:  Data gathering (~35s)
-          42-98%: Agent analysis (~48s)
-          98-100%: Finalization (~1s)
         """
         if progress_pct < 3 or elapsed < 1.0:
             return ""
 
-        # Phase definitions: (start_pct, end_pct, default_duration_seconds)
+        lp = PortfolioOrchestrator._learned_phases
+        # Phase definitions: (start_pct, end_pct, learned_duration_seconds)
         phases = [
-            (0, 42, 37),    # Data gathering
-            (42, 98, 45),   # Agent analysis
-            (98, 100, 1),   # Finalization
+            (0,  42, lp['data_gather']),   # Data gathering
+            (42, 98, lp['agents']),         # Agent analysis (parallel)
+            (98, 100, lp['blend']),         # Finalization
         ]
 
         # Find current phase and calculate remaining time
@@ -568,7 +606,7 @@ class PortfolioOrchestrator:
         agent_order = ['value_agent', 'growth_momentum_agent', 'macro_regime_agent', 'risk_agent', 'sentiment_agent']
         agent_labels = {
             'value_agent': 'VALUE ANALYSIS',
-            'growth_momentum_agent': 'GROWTH & MOMENTUM ANALYSIS',
+            'growth_momentum_agent': 'GROWTH ANALYSIS',
             'macro_regime_agent': 'MACROECONOMIC ANALYSIS',
             'risk_agent': 'RISK ASSESSMENT',
             'sentiment_agent': 'MARKET SENTIMENT ANALYSIS'
@@ -635,7 +673,7 @@ class PortfolioOrchestrator:
         start_date = pd.to_datetime(analysis_date) - pd.DateOffset(years=1)
         start_date = start_date.strftime('%Y-%m-%d')
 
-        # Ensure we don't use future dates that break Yahoo Finance
+        # Ensure we don't use future dates that break API calls
         today = datetime.now().date()
         if pd.to_datetime(end_date).date() > today:
             end_date = today.strftime('%Y-%m-%d')
@@ -665,7 +703,7 @@ class PortfolioOrchestrator:
                     self.data_provider.get_fundamentals, ticker
                 )
 
-            # Task 2: Get price history (Yahoo/Polygon API - medium, ~3-5s)
+            # Task 2: Get price history (Polygon/Alpha Vantage API - medium, ~3-5s)
             if hasattr(self.data_provider, 'get_price_history_enhanced'):
                 futures['price_history'] = executor.submit(
                     self.data_provider.get_price_history_enhanced,

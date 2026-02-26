@@ -113,9 +113,9 @@ Track AI usage for Works Cited:
 The system includes **Enhanced Data Provider** with multiple fallbacks to eliminate API rate limiting issues:
 
 ### Automatic Fallback Chain:
-1. **Premium APIs** (if configured) - IEX Cloud, Polygon.io
-2. **Alpha Vantage** with smart retry logic  
-3. **yfinance** with multiple user agents and retry
+1. **Premium APIs** (if configured) - Polygon.io
+2. **Perplexity AI** (real-time analysis)
+3. **Alpha Vantage** with smart retry logic  
 4. **Stale cache** (up to 3 days old)
 5. **Synthetic data** (emergency fallback with warnings)
 
@@ -186,7 +186,7 @@ data/
 This system uses AI/tools for analysis (NOT for writing submissions):
 
 1. **OpenAI GPT-4o-mini** - Agent reasoning and rationale generation
-2. **yfinance** - Market price data
+2. **Polygon.io** - Market price data
 3. **Alpha Vantage** - Fundamental data, macroeconomic indicators, news
 4. **NewsAPI** - News headlines for sentiment analysis
 
@@ -301,7 +301,7 @@ Edit `config/ips.yaml` to add:
 ### "Alpha Vantage API limit reached"
 - Free tier: 5 calls/minute, 500/day
 - Wait a few minutes or upgrade to premium
-- System will fall back to yfinance when possible
+- System will fall back to other sources when possible
 
 ### "No data available for ticker"
 - Check ticker symbol is correct (use AAPL not Apple)

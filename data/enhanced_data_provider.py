@@ -1,11 +1,10 @@
 """
 Enhanced Data Provider with Multiple Fallbacks
 Implements robust data sourcing with premium options and comprehensive fallbacks.
-NO IEX DEPENDENCY - Uses Polygon.io, Perplexity AI, and Yahoo Finance with proper date handling.
+NO IEX DEPENDENCY - Uses Polygon.io, Perplexity AI, and Alpha Vantage with proper date handling.
 """
 
 import os
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from alpha_vantage.fundamentaldata import FundamentalData
@@ -34,8 +33,7 @@ class EnhancedDataProvider:
     1. Polygon.io (premium with upgraded tier)
     2. Perplexity AI (real-time analysis)
     3. Alpha Vantage (free tier)
-    4. yfinance with smart retry
-    5. Synthetic/estimated data as last resort
+    4. Synthetic/estimated data as last resort
     """
     
     def __init__(
@@ -63,7 +61,6 @@ class EnhancedDataProvider:
             'polygon': {'rpm': 200, 'interval': 0.3},  # Upgraded tier - 3 requests every second
             'perplexity': {'rpm': 20, 'interval': 3.0},  # Conservative for real-time queries
             'alpha_vantage': {'rpm': 5, 'interval': 12.0},  # Free tier
-            'yfinance': {'rpm': 60, 'interval': 1.0},  # Conservative
             'newsapi': {'rpm': 10, 'interval': 6.0}  # Free tier
         }
         
@@ -284,17 +281,15 @@ class EnhancedDataProvider:
         
         # Get data from all sources
         perplexity_data = self._get_perplexity_metrics(ticker, is_etf)
-        polygon_data = self._get_polygon_metrics(ticker, is_etf) 
-        yfinance_data = self._get_yfinance_metrics(ticker, is_etf)
+        polygon_data = self._get_polygon_metrics(ticker, is_etf)
         
         # Log what we got from each source
         logger.info(f"Data sources for {ticker}:")
         logger.info(f"  Perplexity: {list(perplexity_data.keys())}")
         logger.info(f"  Polygon: {list(polygon_data.keys())}")
-        logger.info(f"  yfinance: {list(yfinance_data.keys())}")
         
         # Validate and combine the data
-        combined_metrics = self._validate_and_combine_metrics(ticker, perplexity_data, polygon_data, yfinance_data)
+        combined_metrics = self._validate_and_combine_metrics(ticker, perplexity_data, polygon_data)
         
         logger.info(f"Final metrics for {ticker}: {list(combined_metrics.keys())}")
         return combined_metrics
@@ -717,126 +712,28 @@ class EnhancedDataProvider:
             logger.error(f"Polygon metrics failed for {ticker}: {e}")
             return {}
     
-    def _get_yfinance_metrics(self, ticker: str, is_etf: bool = False) -> Dict[str, Any]:
-        """Get financial metrics from yfinance."""
-        try:
-            import yfinance as yf
-            
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            metrics = {}
-            
-            # Basic price and market data
-            if 'currentPrice' in info:
-                metrics['price'] = info['currentPrice']
-            elif 'regularMarketPrice' in info:
-                metrics['price'] = info['regularMarketPrice']
-            
-            if 'marketCap' in info:
-                metrics['market_cap'] = info['marketCap']
-            
-            if 'volume' in info:
-                metrics['volume'] = info['volume']
-            
-            # Financial ratios and metrics
-            if not is_etf:
-                if 'trailingPE' in info and info['trailingPE'] is not None:
-                    metrics['pe_ratio'] = info['trailingPE']
-                elif 'forwardPE' in info and info['forwardPE'] is not None:
-                    metrics['pe_ratio'] = info['forwardPE']
-                
-                if 'trailingEps' in info:
-                    metrics['eps'] = info['trailingEps']
-                
-                if 'beta' in info:
-                    metrics['beta'] = info['beta']
-            
-            # Dividend information - try multiple methods
-            dividend_yield = None
-            
-            # Method 1: Direct dividendYield field
-            if 'dividendYield' in info and info['dividendYield'] is not None and info['dividendYield'] > 0:
-                dividend_yield = info['dividendYield']
-                logger.info(f"yfinance: Got dividend yield from dividendYield field: {dividend_yield*100:.2f}%")
-            
-            # Method 2: Calculate from dividendRate and price
-            elif 'dividendRate' in info and info['dividendRate'] is not None and info['dividendRate'] > 0:
-                price = metrics.get('price')
-                if not price:
-                    price = info.get('currentPrice') or info.get('regularMarketPrice')
-                if price and price > 0:
-                    dividend_yield = info['dividendRate'] / price
-                    logger.info(f"yfinance: Calculated dividend yield from dividendRate: {dividend_yield*100:.2f}%")
-            
-            # Method 3: Get trailing annual dividend from history
-            if dividend_yield is None or dividend_yield == 0:
-                try:
-                    # Get dividend history
-                    dividends = stock.dividends
-                    if dividends is not None and len(dividends) > 0:
-                        # Get last 12 months of dividends
-                        import pandas as pd
-                        one_year_ago = pd.Timestamp.now() - pd.Timedelta(days=365)
-                        recent_dividends = dividends[dividends.index > one_year_ago]
-                        
-                        if len(recent_dividends) > 0:
-                            annual_dividend = recent_dividends.sum()
-                            price = metrics.get('price')
-                            if not price:
-                                price = info.get('currentPrice') or info.get('regularMarketPrice')
-                            
-                            if price and price > 0 and annual_dividend > 0:
-                                dividend_yield = annual_dividend / price
-                                logger.info(f"yfinance: Calculated dividend yield from history: {dividend_yield*100:.2f}% (${annual_dividend:.2f} annual)")
-                except Exception as e:
-                    logger.warning(f"yfinance: Could not calculate dividend from history: {e}")
-            
-            if dividend_yield is not None and dividend_yield > 0:
-                metrics['dividend_yield'] = dividend_yield
-            
-            # 52-week range
-            if 'fiftyTwoWeekLow' in info:
-                metrics['week_52_low'] = info['fiftyTwoWeekLow']
-            if 'fiftyTwoWeekHigh' in info:
-                metrics['week_52_high'] = info['fiftyTwoWeekHigh']
-            
-            # Company info
-            if 'longBusinessSummary' in info:
-                metrics['description'] = info['longBusinessSummary']
-            if 'sector' in info:
-                metrics['sector'] = info['sector']
-            
-            logger.info(f"yfinance: Got {len(metrics)} metrics for {ticker}")
-            return metrics
-            
-        except Exception as e:
-            logger.error(f"yfinance metrics failed for {ticker}: {e}")
-            return {}
-    
-    def _validate_and_combine_metrics(self, ticker: str, perplexity_data: Dict, polygon_data: Dict, yfinance_data: Dict) -> Dict[str, Any]:
+    def _validate_and_combine_metrics(self, ticker: str, perplexity_data: Dict, polygon_data: Dict) -> Dict[str, Any]:
         """Validate and combine metrics from multiple sources using best available data."""
         combined = {}
         
         # Priority order for different metrics
         source_priority = {
-            'price': ['polygon', 'yfinance', 'perplexity'],
-            'pe_ratio': ['yfinance', 'polygon', 'perplexity'], 
-            'beta': ['yfinance', 'polygon', 'perplexity'],
-            'dividend_yield': ['yfinance', 'perplexity', 'polygon'],
-            'eps': ['polygon', 'yfinance', 'perplexity'],
-            'market_cap': ['polygon', 'yfinance', 'perplexity'],
-            'week_52_low': ['yfinance', 'polygon', 'perplexity'],
-            'week_52_high': ['yfinance', 'polygon', 'perplexity'],
-            'volume': ['polygon', 'yfinance', 'perplexity'],
-            'description': ['polygon', 'yfinance', 'perplexity'],
-            'sector': ['yfinance', 'polygon', 'perplexity']
+            'price': ['polygon', 'perplexity'],
+            'pe_ratio': ['polygon', 'perplexity'], 
+            'beta': ['polygon', 'perplexity'],
+            'dividend_yield': ['perplexity', 'polygon'],
+            'eps': ['polygon', 'perplexity'],
+            'market_cap': ['polygon', 'perplexity'],
+            'week_52_low': ['polygon', 'perplexity'],
+            'week_52_high': ['polygon', 'perplexity'],
+            'volume': ['polygon', 'perplexity'],
+            'description': ['polygon', 'perplexity'],
+            'sector': ['polygon', 'perplexity']
         }
         
         sources = {
             'perplexity': perplexity_data,
-            'polygon': polygon_data, 
-            'yfinance': yfinance_data
+            'polygon': polygon_data
         }
         
         # Combine metrics using priority system
@@ -1107,14 +1004,6 @@ class EnhancedDataProvider:
             except Exception as e:
                 logger.warning(f"Alpha Vantage news failed for {ticker}: {e}")
         
-        # Try Yahoo Finance news (more reliable)
-        if len(articles) < limit:
-            try:
-                yf_articles = self._get_yahoo_finance_news(ticker, limit - len(articles))
-                articles.extend(yf_articles)
-            except Exception as e:
-                logger.warning(f"Yahoo Finance news failed for {ticker}: {e}")
-        
         # Try web scraping financial news sites as last resort
         if len(articles) < limit:
             try:
@@ -1367,50 +1256,6 @@ class EnhancedDataProvider:
                 
         except Exception as e:
             logger.warning(f"Alpha Vantage news failed for {ticker}: {e}")
-            
-        return []
-    
-    def _get_yahoo_finance_news(self, ticker: str, limit: int) -> List[Dict]:
-        """Get news from Yahoo Finance as fallback."""
-        try:
-            import yfinance as yf
-            from datetime import datetime
-            
-            stock = yf.Ticker(ticker)
-            news = stock.news
-            
-            articles = []
-            for item in news[:limit]:
-                # Extract and clean the data
-                title = item.get('title', '').strip()
-                summary = item.get('summary', '').strip()
-                
-                # Skip if no meaningful content
-                if not title or len(title) < 10:
-                    continue
-                
-                # Format the publish time
-                pub_time = item.get('providerPublishTime', 0)
-                try:
-                    published_at = datetime.fromtimestamp(pub_time).isoformat()
-                except (ValueError, OSError):
-                    published_at = datetime.now().isoformat()
-                
-                article = {
-                    'title': title,
-                    'summary': summary or title,  # Use title as summary if summary is empty
-                    'source': item.get('publisher', 'Yahoo Finance'),
-                    'url': item.get('link', ''),
-                    'published_at': published_at,
-                    'sentiment': 'neutral'
-                }
-                articles.append(article)
-            
-            logger.info(f"Yahoo Finance: Got {len(articles)} articles for {ticker}")
-            return articles
-            
-        except Exception as e:
-            logger.warning(f"Yahoo Finance news failed for {ticker}: {e}")
             
         return []
     
@@ -2424,10 +2269,9 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
         
         Fallback order:
         1. Polygon.io (premium with upgraded tier)
-        2. yfinance with smart retry and proper date handling
-        3. Alpha Vantage (free tier)
-        4. Cache (even if stale)
-        5. Synthetic data based on market patterns
+        2. Alpha Vantage (free tier)
+        3. Cache (even if stale)
+        4. Synthetic data based on market patterns
         """
         cache_key = f"price_enhanced_{ticker}_{start_date}_{end_date}"
         
@@ -2440,7 +2284,6 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
         # Try each data source in order - NO IEX
         sources = [
             ("polygon", self._get_polygon_prices),
-            ("yfinance", self._get_yfinance_prices_enhanced),
             ("alpha_vantage", self._get_av_prices)
         ]
         
@@ -2521,55 +2364,6 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
         except Exception as e:
             logger.warning(f"Alpha Vantage free endpoint failed: {e}")
             return pd.DataFrame()
-    
-    def _get_yfinance_prices_enhanced(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """Enhanced yfinance with retry logic and exponential backoff."""
-        # Validate dates - don't use future dates
-        start_dt = pd.to_datetime(start_date)
-        end_dt = pd.to_datetime(end_date)
-        today = pd.Timestamp.now()
-
-        # Adjust dates if they're in the future
-        if end_dt > today:
-            end_dt = today
-            logger.info(f"Adjusted end_date from {end_date} to {end_dt.strftime('%Y-%m-%d')} (today)")
-
-        if start_dt > today:
-            start_dt = today - timedelta(days=30)
-            logger.info(f"Adjusted start_date from {start_date} to {start_dt.strftime('%Y-%m-%d')}")
-
-        # Retry with exponential backoff
-        max_retries = 4
-        for attempt in range(max_retries):
-            try:
-                session = requests.Session()
-                session.headers.update({
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-                })
-
-                stock = yf.Ticker(ticker, session=session)
-                df = stock.history(
-                    start=start_dt.strftime('%Y-%m-%d'),
-                    end=end_dt.strftime('%Y-%m-%d')
-                )
-
-                if not df.empty:
-                    df['Returns'] = df['Close'].pct_change()
-                    logger.info(f"Yahoo Finance success for {ticker}: {len(df)} days of data (attempt {attempt + 1})")
-                    return df
-
-                # Empty response - retry with backoff
-                delay = (2 ** attempt) * 0.5 + random.uniform(0, 0.5)
-                logger.warning(f"yfinance returned empty for {ticker}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
-                time.sleep(delay)
-
-            except Exception as e:
-                delay = (2 ** attempt) * 0.5 + random.uniform(0, 0.5)
-                logger.warning(f"yfinance attempt {attempt + 1}/{max_retries} failed for {ticker}: {e}, retrying in {delay:.1f}s")
-                time.sleep(delay)
-
-        logger.error(f"yfinance failed for {ticker} after {max_retries} attempts")
-        return pd.DataFrame()
     
     def _generate_synthetic_prices(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         """Generate synthetic price data based on market patterns (emergency fallback)."""
@@ -2731,19 +2525,6 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
         # For now, we rely on Polygon.io for fundamentals or synthetic data generation
         
         return fundamentals
-    
-    def _get_yfinance_fundamentals(self, ticker: str) -> Dict[str, Any]:
-        """Get fundamentals from yfinance."""
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            if info and len(info) > 5:  # Basic validation
-                return {'yfinance_info': info}
-        except Exception as e:
-            logger.warning(f"yfinance fundamentals failed for {ticker}: {e}")
-        
-        return {}
     
     def _estimate_fundamentals(self, ticker: str) -> Dict[str, Any]:
         """Generate estimated fundamentals (emergency fallback)."""
