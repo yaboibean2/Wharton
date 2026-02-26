@@ -1056,8 +1056,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             f'margin-bottom:14px">{steps_html}</div>'
 
             # Status message
-            f'<div style="font-size:12px;color:#6b7280;border-top:1px solid #f0f1f3;'
-            f'padding-top:10px;line-height:1.4">{clean_msg}</div>'
+            f'<div style="font-size:14px;color:#6b7280;border-top:1px solid #f0f1f3;'
+            f'padding-top:10px;line-height:1.5">{clean_msg}</div>'
             f'</div>',
             unsafe_allow_html=True
         )
