@@ -1864,40 +1864,33 @@ def stock_analysis_page():
         st.info("**Note:** Multi-stock analysis takes longer since each stock is analyzed individually. "
                 "Consider starting with a single stock first to test your configuration.")
     
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        if analysis_mode == "Single Stock":
-            ticker = st.text_input(
-                "Stock Ticker Symbol",
-                value="AAPL",
-                help="Enter a stock ticker symbol (e.g., AAPL, MSFT, GOOGL)"
-            ).upper()
-        else:
-            ticker_input = st.text_area(
-                "Stock Ticker Symbols",
-                value="AAPL MSFT GOOGL",
-                height=100,
-                help="Enter multiple ticker symbols separated by spaces, commas, or line breaks (e.g., AAPL MSFT GOOGL or AAPL, MSFT, GOOGL)"
-            )
-            # Parse tickers - handle spaces, commas, and newlines, remove duplicates
-            import re
-            ticker_list = [t.strip().upper() for t in re.split(r'[,\s\n]+', ticker_input) if t.strip()]
-            # Remove duplicates while preserving order
-            seen = set()
-            tickers = []
-            for t in ticker_list:
-                if t not in seen:
-                    seen.add(t)
-                    tickers.append(t)
-            ticker = None  # Not used in multi mode
-    
-    with col2:
-        analysis_date = st.date_input(
-            "Analysis Date",
-            value=datetime.now(),
-            help="Date for analysis (leave as today for latest data)"
+    if analysis_mode == "Single Stock":
+        ticker = st.text_input(
+            "Stock Ticker Symbol",
+            value="AAPL",
+            help="Enter a stock ticker symbol (e.g., AAPL, MSFT, GOOGL)"
+        ).upper()
+    else:
+        ticker_input = st.text_area(
+            "Stock Ticker Symbols",
+            value="AAPL MSFT GOOGL",
+            height=100,
+            help="Enter multiple ticker symbols separated by spaces, commas, or line breaks (e.g., AAPL MSFT GOOGL or AAPL, MSFT, GOOGL)"
         )
+        # Parse tickers - handle spaces, commas, and newlines, remove duplicates
+        import re
+        ticker_list = [t.strip().upper() for t in re.split(r'[,\s\n]+', ticker_input) if t.strip()]
+        # Remove duplicates while preserving order
+        seen = set()
+        tickers = []
+        for t in ticker_list:
+            if t not in seen:
+                seen.add(t)
+                tickers.append(t)
+        ticker = None  # Not used in multi mode
+
+    # Always use today's date
+    analysis_date = datetime.now()
     
     # Weight preset
     st.markdown("### Agent Weights")
