@@ -1173,19 +1173,14 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             pass  # timing log is best-effort, never block analysis
 
     def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
-        """Run analysis with a rate-based countdown timer.
+        """Run analysis with a simple linear countdown timer.
 
-        Uses learned phase durations from step_times.json as the initial
-        estimate.  Every 50 ms tick the countdown *rate* is adjusted by
-        comparing the current displayed remaining time against a phase-aware
-        estimate of the true remaining time.  Step-completion events
-        (~9 recalibration points) trigger rapid rate corrections, while
-        the continuous adjustment prevents drift between events.
-
-        After analysis completes, measured phase times are appended to
-        step_times.json so future runs start with better estimates.
+        Timer starts at 60s and decrements in real-time.  At phase
+        boundaries (data complete / agents complete) the countdown
+        snaps to match estimated remaining time.  After analysis
+        completes, measured phase times are appended to step_times.json
+        so future runs start with better estimates.
         """
-        import math as _math
 
         _prog = {
             'mile_pct': 0.0,
@@ -1228,11 +1223,6 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         # Actual step-completion timestamps (elapsed seconds from start)
         _step_done_at = {}
 
-        # Sets for phase-aware estimation
-        _DATA_KEYS = {'benchmark', 'price_history', 'fundamentals'}
-        _AGENT_KEYS = {'value_agent', 'growth_momentum_agent',
-                       'macro_regime_agent', 'risk_agent', 'sentiment_agent'}
-
         # Map from orchestrator message keywords → step key
         _DATA_STEP_KEYWORDS = {
             'fundamentals': 'fundamentals',
@@ -1247,58 +1237,6 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             'risk': 'risk_agent',
             'sentiment': 'sentiment_agent',
         }
-
-        def _estimate_remaining(elapsed):
-            """Phase-aware estimate of real seconds remaining.
-
-            Called every tick (~50ms).  Data speed and agent speed are
-            treated independently — cached data does NOT mean faster agents.
-            """
-            d_done = {k: v for k, v in _step_done_at.items() if k in _DATA_KEYS}
-            a_done = {k: v for k, v in _step_done_at.items() if k in _AGENT_KEYS}
-
-            # ---- DATA PHASE (fundamentals not done yet) ----
-            if 'fundamentals' not in d_done:
-                frac = elapsed / _est_data_wall if _est_data_wall > 0 else 1.0
-                if frac < 0.85:
-                    data_rem = _est_data_wall - elapsed
-                elif frac < 1.0:
-                    hedge = 1.0 + (frac - 0.85) / 0.15 * 0.5
-                    data_rem = max(3.0, (_est_data_wall - elapsed) * hedge)
-                else:
-                    overshoot = elapsed - _est_data_wall
-                    grace = _est_data_wall * 0.3 * _math.exp(
-                        -overshoot / (_est_data_wall * 0.4))
-                    data_rem = max(3.0, grace)
-                return data_rem + _est_agents_wall + _est_blend
-
-            # ---- DATA COMPLETE ----
-            data_actual = d_done['fundamentals']
-
-            # ---- AGENT PHASE ----
-            # Agent speed is independent of data speed (different APIs/services).
-            # Do NOT scale agent estimate by data_ratio.
-            agents_elapsed = max(0, elapsed - data_actual)
-
-            if len(a_done) >= 5:
-                return _est_blend
-
-            if len(a_done) > 0:
-                n = len(a_done)
-                # Agents run in PARALLEL — early completions are the fast
-                # agents, not indicative of remaining wall time.  Only
-                # once 4/5 are done can we be confident we're nearly there.
-                straight_rem = max(0.5, _est_agents_wall - agents_elapsed)
-                if n <= 3:
-                    # Still waiting for slow bottleneck agent(s)
-                    agent_rem = straight_rem
-                else:
-                    # 4 done — last agent likely finishing soon
-                    agent_rem = max(0.5, straight_rem * 0.4)
-            else:
-                agent_rem = max(1.0, _est_agents_wall - agents_elapsed)
-
-            return agent_rem + _est_blend
 
         def _on_milestone(pct, message):
             _prog['mile_pct'] = pct
@@ -1369,17 +1307,14 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         thread = threading.Thread(target=_bg, daemon=True)
         thread.start()
 
-        # --- Rate-based countdown timer ---
-        # Countdown value is decremented by rate*dt every tick.
-        # Rate is adjusted continuously by comparing countdown against
-        # a phase-aware estimate of true remaining time (~9 recalibration
-        # points from step completions, plus continuous between-event drift
-        # correction).
-        import math as _math_loop
-        _total_expected = _est_data_wall + _est_agents_wall + _est_blend
-
+        # ─── Simple linear countdown timer ───
+        # Counts down from 60 at exactly 1 second per second.
+        # At phase-boundary milestones, the countdown is snapped
+        # to match the estimated remaining time so it lands near 0
+        # when analysis completes.
         _countdown = 60.0
-        _rate = 1.0
+        _data_snapped = False
+        _agents_snapped = False
         display_pct = 0.0
         last_render = 0.0
         last_tick = time.time()
@@ -1395,41 +1330,32 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             msg = _prog['mile_msg']
             mp = _prog['mile_pct']
 
-            # --- Continuous rate adjustment (every tick) ---
-            est_rem = _estimate_remaining(elapsed)
+            # ── Simple linear countdown ──
+            _countdown -= dt
 
-            if _countdown > 0.5 and est_rem > 0.5:
-                target_rate = _countdown / est_rem
-                target_rate = max(0.05, min(5.0, target_rate))
-                alpha = min(0.6, 3.0 * dt)
-                _rate += (target_rate - _rate) * alpha
-            elif _countdown <= 0.5:
-                _rate = 0.05
-            else:
-                _rate = max(_rate, 2.0)
+            # ── One-time snap when data phase completes (mp >= 42) ──
+            if mp >= 42 and not _data_snapped:
+                _data_snapped = True
+                agents_remaining = _est_agents_wall + _est_blend + 2.0
+                if _countdown > agents_remaining + 3:
+                    _countdown = agents_remaining + 2
+                elif _countdown < agents_remaining * 0.3:
+                    # Data was very slow — timer too low, bump it up gently
+                    _countdown = agents_remaining * 0.6
 
-            _countdown -= _rate * dt
+            # ── One-time snap when agent phase completes (mp >= 98) ──
+            if mp >= 98 and not _agents_snapped:
+                _agents_snapped = True
+                _countdown = min(_countdown, 2.0)
+
+            # ── Floor ──
             _countdown = max(0.0, _countdown)
-
-            # Snap: if countdown has drifted far above the real estimate
-            # (e.g. data phase finished faster than expected), pull it down
-            # quickly instead of letting the rate chase for seconds.
-            if _countdown > est_rem * 2.0 and _countdown > est_rem + 8:
-                _countdown = est_rem * 1.2
-
-            # Soft floor: don't show "finishing up" until agents are nearly done.
-            # 1s floor (not 3s) avoids the long stall at a fixed number.
-            if mp < 95 and _countdown < 1.0:
-                _countdown = 1.0
 
             display_remaining = _countdown
 
-            # --- Progress bar percentage ---
-            est_total = elapsed + display_remaining
-            if est_total > 1.0:
-                target_pct = min(99.0, (elapsed / est_total) * 100.0)
-            else:
-                target_pct = min(99.0, display_pct + 0.1)
+            # ── Progress bar percentage ──
+            est_total = elapsed + max(display_remaining, 0.5)
+            target_pct = min(99.0, (elapsed / est_total) * 100.0)
 
             if target_pct > display_pct:
                 pct_gap = target_pct - display_pct
@@ -1709,50 +1635,12 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 _est_data_wall_m = _lp_m.get('data_gather', 45.0)
                 _est_agents_wall_m = _lp_m.get('agents_wall_p75', _lp_m.get('agents', 20.0))
                 _est_blend_m = _lp_m.get('blend', 1.0)
-                _total_expected_m = _est_data_wall_m + _est_agents_wall_m + _est_blend_m
                 _step_done_at_m = {}
-
-                _DATA_KEYS_M = {'benchmark', 'price_history', 'fundamentals'}
-                _AGENT_KEYS_M = {'value_agent', 'growth_momentum_agent',
-                                 'macro_regime_agent', 'risk_agent', 'sentiment_agent'}
 
                 _DATA_KW_M = {'fundamentals': 'fundamentals', 'price history': 'price_history', 'benchmark': 'benchmark'}
                 _AGENT_KW_M = {'value': 'value_agent', 'growth': 'growth_momentum_agent',
                                'macro regime': 'macro_regime_agent', 'macro': 'macro_regime_agent',
                                'risk': 'risk_agent', 'sentiment': 'sentiment_agent'}
-
-                def _estimate_remaining_m(elapsed):
-                    import math as _m
-                    d_done = {k: v for k, v in _step_done_at_m.items() if k in _DATA_KEYS_M}
-                    a_done = {k: v for k, v in _step_done_at_m.items() if k in _AGENT_KEYS_M}
-                    if 'fundamentals' not in d_done:
-                        frac = elapsed / _est_data_wall_m if _est_data_wall_m > 0 else 1.0
-                        if frac < 0.85:
-                            data_rem = _est_data_wall_m - elapsed
-                        elif frac < 1.0:
-                            hedge = 1.0 + (frac - 0.85) / 0.15 * 0.5
-                            data_rem = max(3.0, (_est_data_wall_m - elapsed) * hedge)
-                        else:
-                            overshoot = elapsed - _est_data_wall_m
-                            grace = _est_data_wall_m * 0.3 * _m.exp(-overshoot / (_est_data_wall_m * 0.4))
-                            data_rem = max(3.0, grace)
-                        return data_rem + _est_agents_wall_m + _est_blend_m
-                    data_actual = d_done['fundamentals']
-                    # Agent speed is independent of data speed — do NOT scale by data_ratio
-                    agents_elapsed = max(0, elapsed - data_actual)
-                    if len(a_done) >= 5:
-                        return _est_blend_m
-                    if len(a_done) > 0:
-                        n = len(a_done)
-                        # Parallel-aware: early completions don't predict bottleneck
-                        straight_rem = max(0.5, _est_agents_wall_m - agents_elapsed)
-                        if n <= 3:
-                            agent_rem = straight_rem
-                        else:
-                            agent_rem = max(0.5, straight_rem * 0.4)
-                    else:
-                        agent_rem = max(1.0, _est_agents_wall_m - agents_elapsed)
-                    return agent_rem + _est_blend_m
 
                 def _on_milestone_m(pct, message):
                     _prog['mile_pct'] = pct
@@ -1811,10 +1699,10 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 thread = threading.Thread(target=_bg_m, daemon=True)
                 thread.start()
 
-                # --- Rate-based countdown timer (same algorithm as single-stock) ---
-
+                # ─── Simple linear countdown timer (same as single-stock) ───
                 _countdown_m = 60.0
-                _rate_m = 1.0
+                _data_snapped_m = False
+                _agents_snapped_m = False
                 display_pct_m = 0.0
                 last_render_m = 0.0
                 last_tick_m = time.time()
@@ -1829,38 +1717,31 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     msg = _prog['mile_msg']
                     mp = _prog['mile_pct']
 
-                    # --- Continuous rate adjustment ---
-                    est_rem_m = _estimate_remaining_m(elapsed)
+                    # ── Simple linear countdown ──
+                    _countdown_m -= dt
 
-                    if _countdown_m > 0.5 and est_rem_m > 0.5:
-                        target_rate_m = _countdown_m / est_rem_m
-                        target_rate_m = max(0.05, min(5.0, target_rate_m))
-                        alpha_m = min(0.6, 3.0 * dt)
-                        _rate_m += (target_rate_m - _rate_m) * alpha_m
-                    elif _countdown_m <= 0.5:
-                        _rate_m = 0.05
-                    else:
-                        _rate_m = max(_rate_m, 2.0)
+                    # ── One-time snap when data phase completes ──
+                    if mp >= 42 and not _data_snapped_m:
+                        _data_snapped_m = True
+                        agents_remaining = _est_agents_wall_m + _est_blend_m + 2.0
+                        if _countdown_m > agents_remaining + 3:
+                            _countdown_m = agents_remaining + 2
+                        elif _countdown_m < agents_remaining * 0.3:
+                            _countdown_m = agents_remaining * 0.6
 
-                    _countdown_m -= _rate_m * dt
+                    # ── One-time snap when agent phase completes ──
+                    if mp >= 98 and not _agents_snapped_m:
+                        _agents_snapped_m = True
+                        _countdown_m = min(_countdown_m, 2.0)
+
+                    # ── Floor ──
                     _countdown_m = max(0.0, _countdown_m)
-
-                    # Snap: if countdown drifted far above real estimate
-                    if _countdown_m > est_rem_m * 2.0 and _countdown_m > est_rem_m + 8:
-                        _countdown_m = est_rem_m * 1.2
-
-                    # Soft floor: don't show 'finishing up' until agents nearly done
-                    if mp < 95 and _countdown_m < 1.0:
-                        _countdown_m = 1.0
 
                     display_remaining_m = _countdown_m
 
-                    # --- Progress bar percentage ---
-                    est_total_m = elapsed + display_remaining_m
-                    if est_total_m > 1.0:
-                        target_pct_m = min(99.0, (elapsed / est_total_m) * 100.0)
-                    else:
-                        target_pct_m = min(99.0, display_pct_m + 0.1)
+                    # ── Progress bar percentage ──
+                    est_total_m = elapsed + max(display_remaining_m, 0.5)
+                    target_pct_m = min(99.0, (elapsed / est_total_m) * 100.0)
 
                     if target_pct_m > display_pct_m:
                         pct_gap_m = target_pct_m - display_pct_m

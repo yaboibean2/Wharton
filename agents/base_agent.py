@@ -444,9 +444,8 @@ class BaseAgent(ABC):
             url = article.get('url', '')
             source = article.get('source', 'Unknown')
             verified = article.get('verified', False)
-            badge = " ✓" if verified else ""
             if url:
-                refs += f"{i}. {title} | {source} | {url}{badge}\n"
+                refs += f"{i}. {title} | {source} | {url}\n"
             else:
                 refs += f"{i}. {title} | {source}\n"
         return refs

@@ -99,3 +99,4 @@ config/premium_apis.env.example
 # =============================================================================
 # Keep .streamlit/config.toml but ignore secrets
 .streamlit/secrets.toml
+data/google_oauth_token.json
