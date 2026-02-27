@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — Total Insights AI Investing Research</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fc;
+            color: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: linear-gradient(135deg, #3b5998 0%, #2c4a8a 100%);
+            color: #fff;
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+        }
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        header p {
+            margin-top: 0.5rem;
+            font-size: 1rem;
+            opacity: 0.88;
+        }
+        main {
+            max-width: 760px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            flex: 1;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(59,89,152,0.08);
+            padding: 2.5rem;
+        }
+        h2 {
+            font-size: 1.3rem;
+            color: #3b5998;
+            margin-top: 2rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.35rem;
+            border-bottom: 2px solid #e8edf5;
+        }
+        h2:first-child { margin-top: 0; }
+        h3 {
+            font-size: 1.05rem;
+            color: #2c4a8a;
+            margin-top: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+        p, li {
+            font-size: 0.97rem;
+            line-height: 1.75;
+            color: #444;
+            margin-bottom: 0.6rem;
+        }
+        ul {
+            padding-left: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.75rem 0 1rem 0;
+            font-size: 0.93rem;
+        }
+        thead th {
+            background: #3b5998;
+            color: #fff;
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+        }
+        tbody td {
+            padding: 0.55rem 0.75rem;
+            border-bottom: 1px solid #e8e8e8;
+            color: #444;
+        }
+        tbody tr:nth-child(even) { background: #f4f6fa; }
+        a { color: #3b5998; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        strong { color: #1a1a2e; }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .back-link::before { content: "← "; }
+        .updated {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 1.5rem;
+        }
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            font-size: 0.85rem;
+            color: #888;
+            border-top: 1px solid #e8e8e8;
+        }
+        footer a { color: #3b5998; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Privacy Policy</h1>
+        <p>Total Insights AI Investing Research</p>
+    </header>
+
+    <main>
+        <a href="index.html" class="back-link">Back to Home</a>
+
+        <div class="card">
+            <p class="updated"><em>Last updated: February 26, 2026</em></p>
+
+            <!-- 1. Introduction -->
+            <h2>1. Introduction</h2>
+            <p>Total Insights AI Investing Research ("the App," "we," "our") is an AI-powered investment analysis platform built with Streamlit. This Privacy Policy explains what information the App collects, how it is used, and the choices available to you.</p>
+            <p>By using the App you agree to the practices described below.</p>
+
+            <!-- 2. Information We Collect -->
+            <h2>2. Information We Collect</h2>
+
+            <h3>2.1 Information You Provide</h3>
+            <table>
+                <thead><tr><th>Data</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Stock tickers &amp; analysis dates</strong></td><td>Used to run the requested investment analysis.</td></tr>
+                    <tr><td><strong>Portfolio names &amp; configurations</strong></td><td>Saved locally so you can reload portfolios between sessions.</td></tr>
+                    <tr><td><strong>Agent weight preferences</strong></td><td>Applied to customize scoring during analysis.</td></tr>
+                    <tr><td><strong>Google account authorization</strong> (optional)</td><td>Used solely to export analysis results to your Google Docs or Google Sheets when you choose to do so.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>2.2 Information Collected Automatically</h3>
+            <table>
+                <thead><tr><th>Data</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Analysis timing metrics</strong></td><td>Stored locally in <code>data/step_times.json</code> to improve progress-bar accuracy. No personal data is included.</td></tr>
+                    <tr><td><strong>Cached market data</strong></td><td>Price, fundamental, and news data is cached locally (in the <code>data/cache/</code> directory) to reduce redundant API calls and improve performance. Caches expire automatically.</td></tr>
+                    <tr><td><strong>Application logs</strong></td><td>Stored locally in <code>logs/</code> for debugging. Logs contain ticker symbols and timestamps — not personal information.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>2.3 Information We Do Not Collect</h3>
+            <ul>
+                <li>We do <strong>not</strong> collect your name, email address, phone number, or any other personal contact information.</li>
+                <li>We do <strong>not</strong> use cookies, trackers, or analytics services (Streamlit's built-in usage stats are disabled).</li>
+                <li>We do <strong>not</strong> store your Google credentials. OAuth tokens are kept only in your local environment and are never transmitted to us.</li>
+                <li>We do <strong>not</strong> collect personal financial or brokerage information.</li>
+                <li>We do <strong>not</strong> sell, rent, or share any user data with third parties.</li>
+            </ul>
+
+            <!-- 3. Third-Party Services -->
+            <h2>3. Third-Party Services</h2>
+            <p>The App communicates with the following external services to perform analysis. Each service receives only the minimum data required (typically a stock ticker and date range):</p>
+            <table>
+                <thead><tr><th>Service</th><th>Data Sent</th><th>Their Privacy Policy</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>OpenAI API</strong></td><td>Prompts containing financial data and ticker symbols</td><td><a href="https://openai.com/privacy">openai.com/privacy</a></td></tr>
+                    <tr><td><strong>Google Gemini API</strong></td><td>Prompts for portfolio ticker discovery</td><td><a href="https://ai.google.dev/terms">ai.google.dev/terms</a></td></tr>
+                    <tr><td><strong>Perplexity AI</strong></td><td>Real-time market queries</td><td><a href="https://www.perplexity.ai/privacy">perplexity.ai/privacy</a></td></tr>
+                    <tr><td><strong>Polygon.io</strong></td><td>Ticker symbols, date ranges</td><td><a href="https://polygon.io/privacy">polygon.io/privacy</a></td></tr>
+                    <tr><td><strong>Alpha Vantage</strong></td><td>Ticker symbols, date ranges</td><td><a href="https://www.alphavantage.co/terms_of_service/">alphavantage.co/terms</a></td></tr>
+                    <tr><td><strong>Yahoo Finance</strong> (via yfinance)</td><td>Ticker symbols, date ranges</td><td><a href="https://legal.yahoo.com/us/en/yahoo/privacy/index.html">yahoo.com/privacy</a></td></tr>
+                    <tr><td><strong>NewsAPI</strong></td><td>Search queries for financial news</td><td><a href="https://newsapi.org/privacy">newsapi.org/privacy</a></td></tr>
+                    <tr><td><strong>Google Docs / Sheets API</strong></td><td>Analysis results you choose to export</td><td><a href="https://policies.google.com/privacy">google.com/privacy</a></td></tr>
+                </tbody>
+            </table>
+            <p>API keys are stored in your local environment (<code>.env</code> or <code>.streamlit/secrets.toml</code>) and are never shared with anyone other than the respective API provider.</p>
+
+            <!-- 4. Data Storage & Retention -->
+            <h2>4. Data Storage &amp; Retention</h2>
+            <p>All data generated by the App is stored <strong>locally on the machine where it runs</strong>:</p>
+            <ul>
+                <li><strong>Portfolio data</strong> → <code>data/saved_portfolios.json</code></li>
+                <li><strong>Performance history</strong> → <code>data/history/</code>, <code>data/performance_analysis/</code></li>
+                <li><strong>Timing data</strong> → <code>data/step_times.json</code></li>
+                <li><strong>Cached API responses</strong> → <code>data/cache/</code> (auto-expires per configured cache durations)</li>
+                <li><strong>Logs</strong> → <code>logs/</code></li>
+            </ul>
+            <p>No data is transmitted to any server we operate. If you deploy the App to a cloud hosting service (e.g., Streamlit Community Cloud), the hosting provider's privacy policy also applies.</p>
+
+            <!-- 5. Google OAuth & Export -->
+            <h2>5. Google OAuth &amp; Export</h2>
+            <p>When you use the "Export to Google Docs" or "Export to Google Sheets" feature:</p>
+            <ul>
+                <li>You authenticate via Google's standard OAuth 2.0 flow.</li>
+                <li>The App requests only the scopes necessary to create/edit documents and spreadsheets.</li>
+                <li>Your OAuth refresh token is stored locally (<code>data/google_oauth_token.json</code>) and is <strong>never</strong> committed to version control or transmitted elsewhere.</li>
+                <li>You can revoke access at any time from your <a href="https://myaccount.google.com/permissions">Google Account permissions page</a>.</li>
+            </ul>
+
+            <!-- 6. Data Security -->
+            <h2>6. Data Security</h2>
+            <ul>
+                <li>API keys and secrets are stored in environment files excluded from version control via <code>.gitignore</code>.</li>
+                <li>GitHub push protection is enabled to prevent accidental secret exposure.</li>
+                <li>The App runs locally by default; network traffic is limited to the third-party API calls listed above.</li>
+                <li>No authentication system or user accounts exist within the App itself.</li>
+            </ul>
+
+            <!-- 7. Children's Privacy -->
+            <h2>7. Children's Privacy</h2>
+            <p>The App is not directed at individuals under the age of 18. We do not knowingly collect data from minors.</p>
+
+            <!-- 8. Your Rights & Choices -->
+            <h2>8. Your Rights &amp; Choices</h2>
+            <table>
+                <thead><tr><th>Action</th><th>How</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Sign out of Google</strong></td><td>Use the sign-out option in the App, which removes your stored token.</td></tr>
+                    <tr><td><strong>Revoke Google access</strong></td><td>Visit <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</td></tr>
+                    <tr><td><strong>Delete cached data</strong></td><td>Remove the <code>data/cache/</code> directory.</td></tr>
+                    <tr><td><strong>Delete all local data</strong></td><td>Remove the entire <code>data/</code> directory.</td></tr>
+                    <tr><td><strong>Stop using third-party APIs</strong></td><td>Remove the corresponding keys from your <code>.env</code> file.</td></tr>
+                </tbody>
+            </table>
+
+            <!-- 9. Changes to This Policy -->
+            <h2>9. Changes to This Policy</h2>
+            <p>We may update this Privacy Policy from time to time. Changes will be reflected by updating the "Last updated" date at the top of this document. Continued use of the App after changes constitutes acceptance.</p>
+
+            <!-- 10. Contact -->
+            <h2>10. Contact</h2>
+            <p>If you have questions about this Privacy Policy, please open an issue on the project's <a href="https://github.com/yaboibean2/Wharton">GitHub repository</a>.</p>
+        </div>
+    </main>
+
+    <footer>
+        &copy; 2025 Total Insights AI Investing Research &nbsp;|&nbsp; <a href="index.html">Home</a> &nbsp;|&nbsp; <a href="https://github.com/yaboibean2/Wharton">GitHub</a>
+    </footer>
+</body>
+</html>
