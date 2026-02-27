@@ -2387,7 +2387,8 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
 
     Returns (full_text, format_requests) where format_requests is a list
     of Google Docs API batchUpdate request dicts for styling (headings, bold,
-    colored scores, hyperlinks).
+    colored scores, hyperlinks).  All body text is set to Times New Roman.
+    Key Metrics and Agent Scores are rendered as inline tables.
     """
     import re as _re_fmt
     f = result['fundamentals']
@@ -2423,44 +2424,54 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
     add(f"Recommendation: {rec}\n", rec_style)
     add("\n")
 
-    # ── Key Metrics ──
+    # ── Key Metrics (as text table) ──
     add("Key Metrics\n", 'heading2')
     metrics = []
     price = f.get('price', 0)
     if price:
-        metrics.append(f"Price: ${price:.2f}")
+        metrics.append(("Price", f"${price:.2f}"))
     mc = f.get('market_cap', 0)
     if mc:
-        metrics.append(f"Market Cap: ${mc/1e9:.2f}B")
+        metrics.append(("Market Cap", f"${mc/1e9:.2f}B"))
     pe = f.get('pe_ratio')
     if pe:
-        metrics.append(f"P/E Ratio: {pe:.1f}")
+        metrics.append(("P/E Ratio", f"{pe:.1f}"))
     beta_val = f.get('beta')
     if beta_val:
-        metrics.append(f"Beta: {beta_val:.2f}")
+        metrics.append(("Beta", f"{beta_val:.2f}"))
     dy = f.get('dividend_yield')
     if dy:
-        metrics.append(f"Dividend Yield: {dy*100:.2f}%")
+        metrics.append(("Dividend Yield", f"{dy*100:.2f}%"))
     ev = f.get('enterprise_value')
     if ev and ev > 0:
-        metrics.append(f"EV: ${ev/1e9:.2f}B")
+        metrics.append(("Enterprise Value", f"${ev/1e9:.2f}B"))
     pb = f.get('pb_ratio')
     if pb:
-        metrics.append(f"P/B Ratio: {pb:.2f}")
-    for m in metrics:
-        label_part = m.split(":")[0] + ":"
-        value_part = m[len(label_part):]
-        add(label_part, 'metric_label')
-        add(value_part + "\n")
+        metrics.append(("P/B Ratio", f"{pb:.2f}"))
+    # Render as two-column aligned text block
+    if metrics:
+        col_w = max(len(m[0]) for m in metrics) + 4
+        add("Metric".ljust(col_w) + "Value\n", 'table_header')
+        add("─" * (col_w + 16) + "\n")
+        for i, (label, value) in enumerate(metrics):
+            add(label.ljust(col_w), 'metric_label')
+            add(f"{value}\n")
     add("\n")
 
-    # ── Agent Scores ──
+    # ── Agent Scores (as text table) ──
     add("Agent Scores\n", 'heading2')
-    for agent_name, agent_score in result.get('agent_scores', {}).items():
-        display_name = agent_name.replace('_', ' ').title()
-        a_style = 'score_good' if agent_score >= 60 else 'score_bad'
-        add(f"  {display_name}: ", 'metric_label')
-        add(f"{agent_score:.1f}/100\n", a_style)
+    agent_scores_list = list(result.get('agent_scores', {}).items())
+    if agent_scores_list:
+        name_w = max(len(n.replace('_', ' ').title()) for n, _ in agent_scores_list) + 4
+        add("Agent".ljust(name_w) + "Score".ljust(14) + "Rating\n", 'table_header')
+        add("─" * (name_w + 24) + "\n")
+        for agent_name, agent_score in agent_scores_list:
+            display_name = agent_name.replace('_', ' ').title()
+            a_style = 'score_good' if agent_score >= 60 else 'score_bad'
+            rating = "Strong" if agent_score >= 75 else ("Good" if agent_score >= 60 else ("Fair" if agent_score >= 40 else "Weak"))
+            add(f"{display_name.ljust(name_w)}", 'metric_label')
+            add(f"{agent_score:.1f}/100".ljust(14), a_style)
+            add(f"{rating}\n")
     add("\n")
 
     # ── Detailed Analysis ──
@@ -2479,6 +2490,8 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
     _RED    = {'red': 0.776, 'green': 0.165, 'blue': 0.165}   # #C62A2A
     _GRAY   = {'red': 0.42,  'green': 0.45,  'blue': 0.49}    # #6B737D
     _BLUE   = {'red': 0.063, 'green': 0.376, 'blue': 0.784}   # #1060C8
+    _NAVY_BG = {'red': 0.11, 'green': 0.22, 'blue': 0.43}
+    _TIMES  = 'Times New Roman'
 
     def _rng(s, e):
         r = {'startIndex': base_index + s, 'endIndex': base_index + e}
@@ -2487,6 +2500,14 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
         return r
 
     fmt = []
+
+    # ── Set entire document text to Times New Roman ──
+    fmt.append({'updateTextStyle': {
+        'range': _rng(0, len(full_text)),
+        'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES}},
+        'fields': 'weightedFontFamily',
+    }})
+
     for s, e, style in _ranges:
         rng = _rng(s, e)
         if style == 'title':
@@ -2495,45 +2516,79 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
                 'paragraphStyle': {'namedStyleType': 'HEADING_1'},
                 'fields': 'namedStyleType',
             }})
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
+                              'fontSize': {'magnitude': 18, 'unit': 'PT'}},
+                'fields': 'weightedFontFamily,fontSize',
+            }})
         elif style == 'subtitle':
             fmt.append({'updateTextStyle': {
                 'range': rng,
                 'textStyle': {'italic': True,
                               'foregroundColor': {'color': {'rgbColor': _GRAY}},
-                              'fontSize': {'magnitude': 11, 'unit': 'PT'}},
-                'fields': 'italic,foregroundColor,fontSize',
+                              'fontSize': {'magnitude': 11, 'unit': 'PT'},
+                              'weightedFontFamily': {'fontFamily': _TIMES}},
+                'fields': 'italic,foregroundColor,fontSize,weightedFontFamily',
             }})
         elif style == 'heading2':
             fmt.append({'updateParagraphStyle': {
                 'range': rng,
-                'paragraphStyle': {'namedStyleType': 'HEADING_2'},
-                'fields': 'namedStyleType',
+                'paragraphStyle': {'namedStyleType': 'HEADING_2',
+                                   'spaceAbove': {'magnitude': 14, 'unit': 'PT'},
+                                   'spaceBelow': {'magnitude': 6, 'unit': 'PT'}},
+                'fields': 'namedStyleType,spaceAbove,spaceBelow',
+            }})
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
+                              'fontSize': {'magnitude': 14, 'unit': 'PT'}},
+                'fields': 'weightedFontFamily,fontSize',
             }})
         elif style == 'heading3':
             fmt.append({'updateParagraphStyle': {
                 'range': rng,
-                'paragraphStyle': {'namedStyleType': 'HEADING_3'},
-                'fields': 'namedStyleType',
+                'paragraphStyle': {'namedStyleType': 'HEADING_3',
+                                   'spaceAbove': {'magnitude': 10, 'unit': 'PT'}},
+                'fields': 'namedStyleType,spaceAbove',
+            }})
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
+                              'fontSize': {'magnitude': 12, 'unit': 'PT'}},
+                'fields': 'weightedFontFamily,fontSize',
+            }})
+        elif style == 'table_header':
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'bold': True,
+                              'foregroundColor': {'color': {'rgbColor': _NAVY_BG}},
+                              'fontSize': {'magnitude': 10, 'unit': 'PT'},
+                              'weightedFontFamily': {'fontFamily': _TIMES}},
+                'fields': 'bold,foregroundColor,fontSize,weightedFontFamily',
             }})
         elif style in ('bold', 'metric_label'):
             fmt.append({'updateTextStyle': {
                 'range': rng,
-                'textStyle': {'bold': True},
-                'fields': 'bold',
+                'textStyle': {'bold': True,
+                              'weightedFontFamily': {'fontFamily': _TIMES}},
+                'fields': 'bold,weightedFontFamily',
             }})
         elif style in ('score_good', 'rec_good'):
             fmt.append({'updateTextStyle': {
                 'range': rng,
                 'textStyle': {'bold': True,
-                              'foregroundColor': {'color': {'rgbColor': _GREEN}}},
-                'fields': 'bold,foregroundColor',
+                              'foregroundColor': {'color': {'rgbColor': _GREEN}},
+                              'weightedFontFamily': {'fontFamily': _TIMES}},
+                'fields': 'bold,foregroundColor,weightedFontFamily',
             }})
         elif style in ('score_bad', 'rec_bad'):
             fmt.append({'updateTextStyle': {
                 'range': rng,
                 'textStyle': {'bold': True,
-                              'foregroundColor': {'color': {'rgbColor': _RED}}},
-                'fields': 'bold,foregroundColor',
+                              'foregroundColor': {'color': {'rgbColor': _RED}},
+                              'weightedFontFamily': {'fontFamily': _TIMES}},
+                'fields': 'bold,foregroundColor,weightedFontFamily',
             }})
 
     # --- Convert URLs in text to clickable hyperlinks ---
@@ -2545,8 +2600,9 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
             'range': rng,
             'textStyle': {'link': {'url': url},
                           'foregroundColor': {'color': {'rgbColor': _BLUE}},
-                          'underline': True},
-            'fields': 'link,foregroundColor,underline',
+                          'underline': True,
+                          'weightedFontFamily': {'fontFamily': _TIMES}},
+            'fields': 'link,foregroundColor,underline,weightedFontFamily',
         }})
 
     return full_text, fmt
@@ -2555,6 +2611,10 @@ def _build_formatted_doc_content(result, base_index=1, tab_id=None):
 def _export_to_sheets(creds, result, spreadsheet_id=None, custom_name=None):
     """Export analysis to Google Sheets. Returns (spreadsheet_id, url)."""
     import gspread
+    from gspread_formatting import (
+        format_cell_range, CellFormat, TextFormat, Color, Border, Borders,
+        set_column_widths, set_row_height,
+    )
     gc = gspread.authorize(creds)
     f = result['fundamentals']
     ticker = result['ticker']
@@ -2562,64 +2622,213 @@ def _export_to_sheets(creds, result, spreadsheet_id=None, custom_name=None):
 
     if spreadsheet_id:
         sh = gc.open_by_key(spreadsheet_id)
-        # Add a new worksheet for this analysis
         ws_title = f"{ticker} {datetime.now().strftime('%m/%d')}"
         try:
-            ws = sh.add_worksheet(title=ws_title, rows=50, cols=10)
+            ws = sh.add_worksheet(title=ws_title, rows=60, cols=10)
         except Exception:
-            ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=10)
+            ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=60, cols=10)
     else:
         title = custom_name if custom_name else f"{ticker} Analysis - {timestamp}"
         sh = gc.create(title)
         ws = sh.sheet1
         ws.update_title(f"{ticker} Analysis")
 
-    # Header row
+    # ── Colour palette ──
+    _WHITE = Color(1, 1, 1)
+    _DARK  = Color(0.15, 0.18, 0.22)
+    _NAVY  = Color(0.11, 0.22, 0.43)       # header bg
+    _LIGHT_BLUE = Color(0.85, 0.91, 0.97)  # alternating row
+    _GREEN = Color(0.07, 0.53, 0.23)
+    _RED   = Color(0.78, 0.17, 0.17)
+    _LIGHT_GRAY = Color(0.94, 0.94, 0.94)
+
+    _thin_border = Border("SOLID", width=1, color=Color(0.8, 0.8, 0.8))
+    _borders_all = Borders(top=_thin_border, bottom=_thin_border, left=_thin_border, right=_thin_border)
+
+    score_val = result['final_score']
+    rec = result.get('recommendation', 'N/A')
+
+    # ── Build rows ──
     rows = [
-        [f"{ticker} - Investment Analysis", "", "", f.get('name', '')],
-        [f"Date: {timestamp}", "", "", f"Sector: {f.get('sector', 'N/A')}"],
+        [f"{ticker} – Investment Analysis", "", "", "", ""],
+        [f.get('name', 'N/A'), "", f"Sector: {f.get('sector', 'N/A')}", "", f"Date: {timestamp}"],
         [],
-        ["Final Score", result['final_score'], "", "Recommendation", result.get('recommendation', 'N/A')],
+        ["SUMMARY", "", "", "", ""],
+        ["Final Score", f"{score_val:.1f} / 100", "", "Recommendation", rec],
         [],
-        ["Key Metrics", "", "", ""],
-        ["Price", f"${f.get('price', 0):.2f}"],
-        ["Market Cap", f"${f.get('market_cap', 0)/1e9:.2f}B" if f.get('market_cap') else "N/A"],
-        ["P/E Ratio", f"{f.get('pe_ratio', 0):.1f}" if f.get('pe_ratio') else "N/A"],
-        ["Beta", f"{f.get('beta', 0):.2f}" if f.get('beta') else "N/A"],
-        ["Dividend Yield", f"{f.get('dividend_yield', 0)*100:.2f}%" if f.get('dividend_yield') else "N/A"],
-        [],
-        ["Agent Scores", "", "", ""],
-        ["Agent", "Score"],
+        ["KEY METRICS", "", "", "", ""],
+        ["Metric", "Value", "", "Metric", "Value"],
     ]
-    for agent, score in result.get('agent_scores', {}).items():
-        rows.append([agent.replace('_', ' ').title(), round(score, 1)])
+
+    # Build two-column metric pairs
+    metric_pairs = []
+    price = f.get('price', 0)
+    if price:
+        metric_pairs.append(("Price", f"${price:.2f}"))
+    mc = f.get('market_cap', 0)
+    if mc:
+        metric_pairs.append(("Market Cap", f"${mc/1e9:.2f}B"))
+    pe = f.get('pe_ratio')
+    if pe:
+        metric_pairs.append(("P/E Ratio", f"{pe:.1f}"))
+    beta_val = f.get('beta')
+    if beta_val:
+        metric_pairs.append(("Beta", f"{beta_val:.2f}"))
+    dy = f.get('dividend_yield')
+    if dy:
+        metric_pairs.append(("Dividend Yield", f"{dy*100:.2f}%"))
+    ev = f.get('enterprise_value')
+    if ev and ev > 0:
+        metric_pairs.append(("Enterprise Value", f"${ev/1e9:.2f}B"))
+    pb = f.get('pb_ratio')
+    if pb:
+        metric_pairs.append(("P/B Ratio", f"{pb:.2f}"))
+
+    # Pair metrics into left/right columns
+    half = (len(metric_pairs) + 1) // 2
+    for i in range(half):
+        left = metric_pairs[i] if i < len(metric_pairs) else ("", "")
+        right = metric_pairs[i + half] if (i + half) < len(metric_pairs) else ("", "")
+        rows.append([left[0], left[1], "", right[0], right[1]])
+    metrics_end_row = len(rows)
 
     rows.append([])
-    rows.append(["Agent Analysis", "", "", ""])
-    for agent, rationale in result.get('agent_rationales', {}).items():
+    agent_header_row = len(rows) + 1
+    rows.append(["AGENT SCORES", "", "", "", ""])
+    rows.append(["Agent", "Score", "Rating", "", ""])
+    agent_start_row = len(rows) + 1
+    for agent_name, agent_score in result.get('agent_scores', {}).items():
+        display_name = agent_name.replace('_', ' ').title()
+        rating = "Strong" if agent_score >= 75 else ("Good" if agent_score >= 60 else ("Fair" if agent_score >= 40 else "Weak"))
+        rows.append([display_name, round(agent_score, 1), rating, "", ""])
+    agent_end_row = len(rows)
+
+    rows.append([])
+    analysis_header_row = len(rows) + 1
+    rows.append(["DETAILED ANALYSIS", "", "", "", ""])
+    for agent_name, rationale in result.get('agent_rationales', {}).items():
         if rationale:
-            rows.append([agent.replace('_', ' ').title()])
-            # Split rationale into chunks for readability
+            rows.append([agent_name.replace('_', ' ').title()])
             for line in str(rationale).split('\n'):
                 if line.strip():
                     rows.append([line.strip()])
             rows.append([])
+    total_rows = len(rows)
 
     ws.update(range_name='A1', values=rows)
 
-    # Basic formatting: bold headers
+    # ── Formatting ──
     try:
-        ws.format('A1:D1', {'textFormat': {'bold': True, 'fontSize': 14}})
-        ws.format('A4:E4', {'textFormat': {'bold': True}})
-        ws.format('A6', {'textFormat': {'bold': True}})
-        ws.format('A13:B13', {'textFormat': {'bold': True}})
-        ws.format('A14:B14', {'textFormat': {'bold': True}})
+        # Column widths
+        set_column_widths(ws, [('A', 180), ('B', 140), ('C', 140), ('D', 180), ('E', 180)])
+
+        # Row 1 – Title bar
+        set_row_height(ws, '1', 42)
+        format_cell_range(ws, 'A1:E1', CellFormat(
+            backgroundColor=_NAVY,
+            textFormat=TextFormat(bold=True, fontSize=16, foregroundColor=_WHITE,
+                                 fontFamily='Arial'),
+            horizontalAlignment='LEFT',
+            verticalAlignment='MIDDLE',
+        ))
+
+        # Row 2 – Subtitle
+        format_cell_range(ws, 'A2:E2', CellFormat(
+            backgroundColor=_LIGHT_GRAY,
+            textFormat=TextFormat(fontSize=10, foregroundColor=_DARK, fontFamily='Arial'),
+            horizontalAlignment='LEFT',
+        ))
+
+        # Section headers (SUMMARY, KEY METRICS, AGENT SCORES, DETAILED ANALYSIS)
+        _section_fmt = CellFormat(
+            backgroundColor=Color(0.22, 0.32, 0.52),
+            textFormat=TextFormat(bold=True, fontSize=12, foregroundColor=_WHITE, fontFamily='Arial'),
+            horizontalAlignment='LEFT',
+            borders=_borders_all,
+        )
+        format_cell_range(ws, 'A4:E4', _section_fmt)
+        format_cell_range(ws, 'A7:E7', _section_fmt)
+        format_cell_range(ws, f'A{agent_header_row}:E{agent_header_row}', _section_fmt)
+        format_cell_range(ws, f'A{analysis_header_row}:E{analysis_header_row}', _section_fmt)
+
+        # Summary row (row 5)
+        format_cell_range(ws, 'A5:E5', CellFormat(
+            textFormat=TextFormat(bold=True, fontSize=11, fontFamily='Arial'),
+            borders=_borders_all,
+            backgroundColor=_LIGHT_BLUE,
+        ))
+        # Color score
+        score_color = _GREEN if score_val >= 60 else _RED
+        format_cell_range(ws, 'B5', CellFormat(
+            textFormat=TextFormat(bold=True, fontSize=11, foregroundColor=score_color, fontFamily='Arial'),
+        ))
+
+        # Metric table header (row 8)
+        format_cell_range(ws, 'A8:E8', CellFormat(
+            textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=_WHITE, fontFamily='Arial'),
+            backgroundColor=Color(0.33, 0.43, 0.60),
+            borders=_borders_all,
+        ))
+        # Metric rows with alternating colours
+        for r_idx in range(9, metrics_end_row + 1):
+            bg = _LIGHT_BLUE if (r_idx % 2 == 1) else _WHITE
+            format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
+                backgroundColor=bg,
+                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+                borders=_borders_all,
+            ))
+            # Bold metric labels
+            format_cell_range(ws, f'A{r_idx}', CellFormat(
+                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+            ))
+            format_cell_range(ws, f'D{r_idx}', CellFormat(
+                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+            ))
+
+        # Agent scores table header
+        agent_hdr = agent_start_row - 1
+        format_cell_range(ws, f'A{agent_hdr}:E{agent_hdr}', CellFormat(
+            textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=_WHITE, fontFamily='Arial'),
+            backgroundColor=Color(0.33, 0.43, 0.60),
+            borders=_borders_all,
+        ))
+        # Agent score rows with conditional coloring
+        for r_idx in range(agent_start_row, agent_end_row + 1):
+            bg = _LIGHT_BLUE if (r_idx % 2 == 1) else _WHITE
+            format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
+                backgroundColor=bg,
+                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+                borders=_borders_all,
+            ))
+            format_cell_range(ws, f'A{r_idx}', CellFormat(
+                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+            ))
+
+        # Color agent scores (column B) green/red based on value
+        for r_idx in range(agent_start_row, agent_end_row + 1):
+            cell_val = ws.acell(f'B{r_idx}').value
+            try:
+                v = float(cell_val)
+                clr = _GREEN if v >= 60 else _RED
+            except (TypeError, ValueError):
+                clr = _DARK
+            format_cell_range(ws, f'B{r_idx}', CellFormat(
+                textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=clr, fontFamily='Arial'),
+            ))
+
+        # Analysis section – bold agent names
+        for r_idx in range(analysis_header_row + 1, total_rows + 1):
+            format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
+                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+            ))
+
+        # Freeze top row
+        ws.freeze(rows=1)
+
     except Exception:
         pass
 
-    # Make accessible to anyone with the link
     _share_file_anyone(creds, sh.id)
-
     return sh.id, sh.url
 
 
@@ -2742,6 +2951,10 @@ def _export_to_docs(creds, result, document_id=None, insert_mode='page_break', c
 def _export_multi_to_sheets(creds, results, spreadsheet_id=None, custom_name=None):
     """Export multi-stock comparison to Google Sheets."""
     import gspread
+    from gspread_formatting import (
+        format_cell_range, CellFormat, TextFormat, Color, Border, Borders,
+        set_column_widths, set_row_height,
+    )
     gc = gspread.authorize(creds)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
 
@@ -2758,12 +2971,22 @@ def _export_multi_to_sheets(creds, results, spreadsheet_id=None, custom_name=Non
         ws = sh.sheet1
         ws.update_title("Comparison")
 
+    # Colour palette
+    _WHITE = Color(1, 1, 1)
+    _NAVY  = Color(0.11, 0.22, 0.43)
+    _LIGHT_BLUE = Color(0.85, 0.91, 0.97)
+    _GREEN = Color(0.07, 0.53, 0.23)
+    _RED   = Color(0.78, 0.17, 0.17)
+    _thin = Border("SOLID", width=1, color=Color(0.8, 0.8, 0.8))
+    _borders_all = Borders(top=_thin, bottom=_thin, left=_thin, right=_thin)
+
     # Header
     headers = ['Ticker', 'Name', 'Final Score', 'Recommendation', 'Price',
                'Sector', 'Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
     rows = [headers]
 
-    for r in sorted(results, key=lambda x: x['final_score'], reverse=True):
+    sorted_results = sorted(results, key=lambda x: x['final_score'], reverse=True)
+    for r in sorted_results:
         f = r['fundamentals']
         scores = r.get('agent_scores', {})
         rows.append([
@@ -2781,8 +3004,58 @@ def _export_multi_to_sheets(creds, results, spreadsheet_id=None, custom_name=Non
         ])
 
     ws.update(range_name='A1', values=rows)
+
+    # ── Formatting ──
     try:
-        ws.format('A1:K1', {'textFormat': {'bold': True}})
+        total_rows = len(rows)
+
+        # Column widths
+        set_column_widths(ws, [
+            ('A', 90), ('B', 200), ('C', 100), ('D', 140), ('E', 100),
+            ('F', 140), ('G', 80), ('H', 80), ('I', 80), ('J', 80), ('K', 90),
+        ])
+
+        # Header row
+        set_row_height(ws, '1', 38)
+        format_cell_range(ws, 'A1:K1', CellFormat(
+            backgroundColor=_NAVY,
+            textFormat=TextFormat(bold=True, fontSize=11, foregroundColor=_WHITE, fontFamily='Arial'),
+            horizontalAlignment='CENTER',
+            verticalAlignment='MIDDLE',
+            borders=_borders_all,
+        ))
+
+        # Data rows with alternating colours
+        for r_idx in range(2, total_rows + 1):
+            bg = _LIGHT_BLUE if (r_idx % 2 == 0) else _WHITE
+            format_cell_range(ws, f'A{r_idx}:K{r_idx}', CellFormat(
+                backgroundColor=bg,
+                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+                borders=_borders_all,
+                verticalAlignment='MIDDLE',
+            ))
+            # Bold ticker
+            format_cell_range(ws, f'A{r_idx}', CellFormat(
+                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+            ))
+
+        # Color final scores (column C) and agent scores (G-K) green/red
+        score_cols = ['C', 'G', 'H', 'I', 'J', 'K']
+        for r_idx in range(2, total_rows + 1):
+            for col in score_cols:
+                cell_val = ws.acell(f'{col}{r_idx}').value
+                try:
+                    v = float(cell_val)
+                    clr = _GREEN if v >= 60 else _RED
+                except (TypeError, ValueError):
+                    continue
+                format_cell_range(ws, f'{col}{r_idx}', CellFormat(
+                    textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=clr, fontFamily='Arial'),
+                ))
+
+        # Freeze header row
+        ws.freeze(rows=1)
+
     except Exception:
         pass
 
