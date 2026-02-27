@@ -26,12 +26,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Google Search Console domain verification (required for OAuth consent screen)
-st.markdown(
-    '<meta name="google-site-verification" content="nOr3GbIFRJUFjRc-0pW0fB-DY87U1mJfOnLATeCkstc" />',
-    unsafe_allow_html=True,
-)
-
 # ---------------------------------------------------------------------------
 # Custom CSS - Modern Investment Platform Theme
 # ---------------------------------------------------------------------------
