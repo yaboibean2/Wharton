@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Total Insights — Multi-Agent Investment Analysis System**
+**Total Insights AI — Multi-Agent Investment Research Platform**
 *Last updated: February 26, 2026*
 
 ---

@@ -20,7 +20,7 @@ import time
 
 # Setup page config
 st.set_page_config(
-    page_title="Total Insights",
+    page_title="Total Insights AI",
     page_icon="TI",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -784,8 +784,55 @@ def initialize_system():
         return False
 
 
+def _render_privacy_policy_page():
+    """Render the privacy policy as a full in-app page.
+    
+    Served at ?page=privacy so the URL lives on the app's own domain,
+    satisfying Google OAuth verification requirements.
+    """
+    st.markdown(
+        '<style>.block-container{padding-top:2.5rem !important;max-width:800px !important;}</style>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("""
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:24px;">
+    <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
+                width:38px;height:38px;border-radius:10px;display:flex;
+                align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
+                letter-spacing:-0.02em;">TI</div>
+    <div>
+        <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
+            Total Insights AI</div>
+        <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
+            Privacy Policy</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Read the markdown file and render it
+    _pp_path = Path(__file__).parent / "PRIVACY_POLICY.md"
+    if _pp_path.exists():
+        st.markdown(_pp_path.read_text(), unsafe_allow_html=False)
+    else:
+        st.error("Privacy policy file not found.")
+
+    st.markdown("---")
+    st.markdown(
+        '<div style="text-align:center;color:#9ca3af;font-size:0.8rem;padding:16px 0;">'
+        '&copy; 2026 Total Insights AI &mdash; Multi-Agent Investment Research Platform'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def main():
     """Main application entry point."""
+
+    # ---- Privacy policy page (must be before OAuth / system init) ----
+    # Served at ?page=privacy so the URL is on the app's own domain.
+    if st.query_params.get("page") == "privacy":
+        _render_privacy_policy_page()
+        return
 
     # ---- Google OAuth callback (must run FIRST, before any display) ----
     # When Google redirects back with ?code=..., exchange it for a token.
@@ -833,7 +880,7 @@ def main():
                         letter-spacing:-0.02em;">IA</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Total Insights</div>
+                    Total Insights AI</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                     Multi-Agent Research Platform</div>
             </div>
@@ -869,7 +916,7 @@ def main():
                         letter-spacing:-0.02em;">TI</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Total Insights</div>
+                    Total Insights AI</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                     Multi-Agent Research Platform</div>
             </div>
@@ -905,13 +952,23 @@ def main():
                     letter-spacing:-0.02em;">TI</div>
         <div>
             <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                Total Insights</div>
+                Total Insights AI</div>
             <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                 Multi-Agent Research Platform</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown("")
+
+    # Purpose description & privacy link (required for Google OAuth verification)
+    st.markdown(
+        '<div style="color:#6b7280;font-size:0.85rem;margin:-4px 0 12px 0;line-height:1.5;">'
+        'Total Insights AI is a multi-agent investment research platform that '
+        'analyzes stocks using AI-powered value, growth, macro, risk, and sentiment '
+        'agents. Results can be exported to Google Docs and Sheets. '
+        '<a href="?page=privacy" target="_self" style="color:#3b5998;">Privacy Policy</a>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     # Top navigation tabs
     tab_stock, tab_portfolio, tab_config, tab_status = st.tabs([
