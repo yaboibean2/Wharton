@@ -20,7 +20,7 @@ import time
 
 # Setup page config
 st.set_page_config(
-    page_title="Total Insights AI",
+    page_title="Total Insights AI Investing Research",
     page_icon="TI",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -802,7 +802,7 @@ def _render_privacy_policy_page():
                 letter-spacing:-0.02em;">TI</div>
     <div>
         <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-            Total Insights AI</div>
+            Total Insights AI Investing Research</div>
         <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
             Privacy Policy</div>
     </div>
@@ -819,7 +819,7 @@ def _render_privacy_policy_page():
     st.markdown("---")
     st.markdown(
         '<div style="text-align:center;color:#9ca3af;font-size:0.8rem;padding:16px 0;">'
-        '&copy; 2026 Total Insights AI &mdash; Multi-Agent Investment Research Platform'
+        '&copy; 2026 Total Insights AI Investing Research'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -880,9 +880,9 @@ def main():
                         letter-spacing:-0.02em;">IA</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Total Insights AI</div>
+                    Total Insights AI Investing Research</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
-                    Multi-Agent Research Platform</div>
+                    Multi-Agent Investment Research Platform</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -916,9 +916,9 @@ def main():
                         letter-spacing:-0.02em;">TI</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Total Insights AI</div>
+                    Total Insights AI Investing Research</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
-                    Multi-Agent Research Platform</div>
+                    Multi-Agent Investment Research Platform</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -952,9 +952,9 @@ def main():
                     letter-spacing:-0.02em;">TI</div>
         <div>
             <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                Total Insights AI</div>
+                Total Insights AI Investing Research</div>
             <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
-                Multi-Agent Research Platform</div>
+                Multi-Agent Investment Research Platform</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -962,9 +962,9 @@ def main():
     # Purpose description & privacy link (required for Google OAuth verification)
     st.markdown(
         '<div style="color:#6b7280;font-size:0.85rem;margin:-4px 0 12px 0;line-height:1.5;">'
-        'Total Insights AI is a multi-agent investment research platform that '
-        'analyzes stocks using AI-powered value, growth, macro, risk, and sentiment '
-        'agents. Results can be exported to Google Docs and Sheets. '
+        'Total Insights AI Investing Research is a multi-agent investment research '
+        'platform that analyzes stocks using AI-powered value, growth, macro, risk, '
+        'and sentiment agents. Results can be exported to Google Docs and Sheets. '
         '<a href="?page=privacy" target="_self" style="color:#3b5998;">Privacy Policy</a>'
         '</div>',
         unsafe_allow_html=True,
