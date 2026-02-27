@@ -20,8 +20,8 @@ import time
 
 # Setup page config
 st.set_page_config(
-    page_title="Investment Analysis Platform",
-    page_icon="IA",
+    page_title="Total Insights",
+    page_icon="TI",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -787,6 +787,11 @@ def initialize_system():
 def main():
     """Main application entry point."""
 
+    # ---- Google OAuth callback (must run FIRST, before any display) ----
+    # When Google redirects back with ?code=..., exchange it for a token.
+    # This is at the top so it works even if session_state was lost.
+    _handle_google_oauth_callback()
+
     # Initialize tier manager early (before system init) so sidebar shows
     if 'tier_manager' not in st.session_state:
         st.session_state.tier_manager = TierManager()
@@ -802,13 +807,24 @@ def main():
     if '_display_result' in st.session_state:
         _dr = st.session_state['_display_result']
 
-        # Same CSS and header as the analysis path
+        # Same CSS and header as the analysis path — combined with back button
+        # for fastest possible rendering (single HTML block before any widgets)
         st.markdown(
             '<style>'
             '.block-container{padding-top:2.5rem !important;opacity:1 !important;}'
             '</style>',
             unsafe_allow_html=True,
         )
+
+        # Back to Home at top of results page (render before anything else)
+        if st.button("← Back to Home Page", type="secondary", key="back_home_top"):
+            if '_analysis_params' in st.session_state:
+                del st.session_state['_analysis_params']
+            if '_display_result' in st.session_state:
+                del st.session_state['_display_result']
+            _cleanup_display_result_backup()
+            st.rerun()
+
         st.markdown("""
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
             <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
@@ -817,7 +833,7 @@ def main():
                         letter-spacing:-0.02em;">IA</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Investment Analysis</div>
+                    Total Insights</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                     Multi-Agent Research Platform</div>
             </div>
@@ -850,10 +866,10 @@ def main():
             <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
                         width:38px;height:38px;border-radius:10px;display:flex;
                         align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
-                        letter-spacing:-0.02em;">IA</div>
+                        letter-spacing:-0.02em;">TI</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Investment Analysis</div>
+                    Total Insights</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                     Multi-Agent Research Platform</div>
             </div>
@@ -886,10 +902,10 @@ def main():
         <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
                     width:38px;height:38px;border-radius:10px;display:flex;
                     align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
-                    letter-spacing:-0.02em;">IA</div>
+                    letter-spacing:-0.02em;">TI</div>
         <div>
             <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                Investment Analysis</div>
+                Total Insights</div>
             <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                 Multi-Agent Research Platform</div>
         </div>
@@ -1203,13 +1219,10 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         # --- Per-step expected timing (for rate-based recalibration) ---
         _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
         _est_data_wall  = _lp.get('data_gather', 45.0)
-        _est_agents_wall = max(
-            _lp.get('value_agent', 12.0),
-            _lp.get('growth_momentum_agent', 12.0),
-            _lp.get('macro_regime_agent', 12.0),
-            _lp.get('risk_agent', 12.0),
-            _lp.get('sentiment_agent', 15.0),
-        )
+        # Use 75th-percentile of actual parallel wall time (bottleneck agent).
+        # This is more accurate than max(individual medians) because agent
+        # durations are highly variable and the bottleneck is what matters.
+        _est_agents_wall = _lp.get('agents_wall_p75', _lp.get('agents', 20.0))
         _est_blend = _lp.get('blend', 1.0)
 
         # Actual step-completion timestamps (elapsed seconds from start)
@@ -1272,14 +1285,16 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
             if len(a_done) > 0:
                 n = len(a_done)
-                frac = n / (n + 1.0)
-                if frac > 0.01:
-                    observed_agent_total = agents_elapsed / frac
+                # Agents run in PARALLEL — early completions are the fast
+                # agents, not indicative of remaining wall time.  Only
+                # once 4/5 are done can we be confident we're nearly there.
+                straight_rem = max(0.5, _est_agents_wall - agents_elapsed)
+                if n <= 3:
+                    # Still waiting for slow bottleneck agent(s)
+                    agent_rem = straight_rem
                 else:
-                    observed_agent_total = _est_agents_wall
-                trust = n / 5.0
-                blended_total = observed_agent_total * trust + _est_agents_wall * (1 - trust)
-                agent_rem = max(0.5, blended_total - agents_elapsed)
+                    # 4 done — last agent likely finishing soon
+                    agent_rem = max(0.5, straight_rem * 0.4)
             else:
                 agent_rem = max(1.0, _est_agents_wall - agents_elapsed)
 
@@ -1362,9 +1377,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         # correction).
         import math as _math_loop
         _total_expected = _est_data_wall + _est_agents_wall + _est_blend
-        avg_total = _lp.get('avg_total', _total_expected)
 
-        _countdown = avg_total
+        _countdown = 60.0
         _rate = 1.0
         display_pct = 0.0
         last_render = 0.0
@@ -1397,10 +1411,16 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             _countdown -= _rate * dt
             _countdown = max(0.0, _countdown)
 
-            # Progress floor: never show "finishing up" before agents are ~done.
-            # mp tracks orchestrator progress: 0-42% = data, 42-98% = agents.
-            if mp < 85:
-                _countdown = max(_countdown, 3.0)
+            # Snap: if countdown has drifted far above the real estimate
+            # (e.g. data phase finished faster than expected), pull it down
+            # quickly instead of letting the rate chase for seconds.
+            if _countdown > est_rem * 2.0 and _countdown > est_rem + 8:
+                _countdown = est_rem * 1.2
+
+            # Soft floor: don't show "finishing up" until agents are nearly done.
+            # 1s floor (not 3s) avoids the long stall at a fixed number.
+            if mp < 95 and _countdown < 1.0:
+                _countdown = 1.0
 
             display_remaining = _countdown
 
@@ -1463,7 +1483,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
     # Use average total time from step_times.json for the initial countdown display
     _lp = st.session_state.orchestrator._learned_phases if hasattr(st.session_state, 'orchestrator') and hasattr(st.session_state.orchestrator, '_learned_phases') else {}
-    _initial_est = _lp.get('avg_total', 70.0)
+    _initial_est = 60.0
 
     _render_progress(progress_slot, 0, "Initializing analysis…",
                      remaining_secs=_initial_est)
@@ -1687,13 +1707,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 # --- Per-step expected timing (multi-point recalibration) ---
                 _lp_m = st.session_state.orchestrator._learned_phases if hasattr(st.session_state.orchestrator, '_learned_phases') else {}
                 _est_data_wall_m = _lp_m.get('data_gather', 45.0)
-                _est_agents_wall_m = max(
-                    _lp_m.get('value_agent', 12.0),
-                    _lp_m.get('growth_momentum_agent', 12.0),
-                    _lp_m.get('macro_regime_agent', 12.0),
-                    _lp_m.get('risk_agent', 12.0),
-                    _lp_m.get('sentiment_agent', 15.0),
-                )
+                _est_agents_wall_m = _lp_m.get('agents_wall_p75', _lp_m.get('agents', 20.0))
                 _est_blend_m = _lp_m.get('blend', 1.0)
                 _total_expected_m = _est_data_wall_m + _est_agents_wall_m + _est_blend_m
                 _step_done_at_m = {}
@@ -1730,11 +1744,12 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                         return _est_blend_m
                     if len(a_done) > 0:
                         n = len(a_done)
-                        frac = n / (n + 1.0)
-                        observed = agents_elapsed / frac if frac > 0.01 else _est_agents_wall_m
-                        trust = n / 5.0
-                        blended = observed * trust + _est_agents_wall_m * (1 - trust)
-                        agent_rem = max(0.5, blended - agents_elapsed)
+                        # Parallel-aware: early completions don't predict bottleneck
+                        straight_rem = max(0.5, _est_agents_wall_m - agents_elapsed)
+                        if n <= 3:
+                            agent_rem = straight_rem
+                        else:
+                            agent_rem = max(0.5, straight_rem * 0.4)
                     else:
                         agent_rem = max(1.0, _est_agents_wall_m - agents_elapsed)
                     return agent_rem + _est_blend_m
@@ -1797,9 +1812,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 thread.start()
 
                 # --- Rate-based countdown timer (same algorithm as single-stock) ---
-                avg_total_m = _lp_m.get('avg_total', _total_expected_m)
 
-                _countdown_m = avg_total_m
+                _countdown_m = 60.0
                 _rate_m = 1.0
                 display_pct_m = 0.0
                 last_render_m = 0.0
@@ -1831,9 +1845,13 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     _countdown_m -= _rate_m * dt
                     _countdown_m = max(0.0, _countdown_m)
 
-                    # Progress floor (same as single-stock)
-                    if mp < 85:
-                        _countdown_m = max(_countdown_m, 3.0)
+                    # Snap: if countdown drifted far above real estimate
+                    if _countdown_m > est_rem_m * 2.0 and _countdown_m > est_rem_m + 8:
+                        _countdown_m = est_rem_m * 1.2
+
+                    # Soft floor: don't show 'finishing up' until agents nearly done
+                    if mp < 95 and _countdown_m < 1.0:
+                        _countdown_m = 1.0
 
                     display_remaining_m = _countdown_m
 
@@ -2203,64 +2221,232 @@ def stock_analysis_page():
 
 
 # ---------------------------------------------------------------------------
-# Google Sheets / Docs export helpers
+# Google Sheets / Docs export helpers  (OAuth 2.0 via authlib)
 # ---------------------------------------------------------------------------
+from authlib.integrations.requests_client import OAuth2Session as _OAuth2Session
+
 _GOOGLE_SCOPES = [
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/documents',
     'https://www.googleapis.com/auth/drive',
 ]
 
-_GOOGLE_CREDS_PATH = os.path.join(os.path.dirname(__file__), 'google_credentials.json')
-_GOOGLE_TOKEN_PATH = os.path.join(os.path.dirname(__file__), 'data', 'google_token.json')
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+# Paths for persisting state across the OAuth redirect (session may be lost)
+_OAUTH_TOKEN_PATH = os.path.join(os.path.dirname(__file__), 'data', 'google_oauth_token.json')
+_OAUTH_DISPLAY_RESULT_PATH = os.path.join(os.path.dirname(__file__), 'data', '_display_result_backup.json')
+
+
+def _save_display_result_to_disk():
+    """Persist _display_result to disk so it survives an OAuth redirect."""
+    dr = st.session_state.get('_display_result')
+    if not dr:
+        return
+    try:
+        with open(_OAUTH_DISPLAY_RESULT_PATH, 'w') as f:
+            json.dump(dr, f, default=str)
+    except Exception:
+        pass
+
+
+def _restore_display_result_from_disk():
+    """Restore _display_result from disk if session was lost after OAuth redirect."""
+    if '_display_result' in st.session_state:
+        return  # already have it
+    if not os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
+        return
+    try:
+        with open(_OAUTH_DISPLAY_RESULT_PATH, 'r') as f:
+            dr = json.load(f)
+        st.session_state['_display_result'] = dr
+    except Exception:
+        pass
+
+
+def _cleanup_display_result_backup():
+    """Remove the backup file after it's no longer needed."""
+    try:
+        if os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
+            os.remove(_OAUTH_DISPLAY_RESULT_PATH)
+    except Exception:
+        pass
+
+
+def _save_oauth_token_to_disk(token, user_info=None):
+    """Persist OAuth token to disk so it survives session loss."""
+    try:
+        data = {'token': token}
+        if user_info:
+            data['user'] = user_info
+        with open(_OAUTH_TOKEN_PATH, 'w') as f:
+            json.dump(data, f, default=str)
+    except Exception:
+        pass
+
+
+def _load_oauth_token_from_disk():
+    """Load a previously saved OAuth token from disk into session_state."""
+    if 'google_token' in st.session_state:
+        return  # already loaded
+    if not os.path.exists(_OAUTH_TOKEN_PATH):
+        return
+    try:
+        with open(_OAUTH_TOKEN_PATH, 'r') as f:
+            data = json.load(f)
+        st.session_state['google_token'] = data['token']
+        if 'user' in data:
+            st.session_state['google_user'] = data['user']
+    except Exception:
+        pass
+
+
+def _google_oauth_cfg():
+    """Return (client_id, client_secret, redirect_uri) from secrets, or Nones."""
+    try:
+        g = st.secrets["google"]
+        cid = g["client_id"]
+        csecret = g["client_secret"]
+        redirect = g.get("redirect_uri", "http://localhost:8501")
+        if cid.startswith("YOUR_"):
+            return None, None, None
+        return cid, csecret, redirect
+    except Exception:
+        return None, None, None
+
+
+def _handle_google_oauth_callback():
+    """If the URL contains a Google OAuth `code` param, exchange it for a token.
+
+    Called at the top of main() so it runs before any display logic.
+    Restores analysis results from disk if the session was lost during redirect.
+    """
+    code = st.query_params.get("code")
+    if not code:
+        # No callback — but try to load a previously saved token from disk
+        _load_oauth_token_from_disk()
+        return
+    if "google_token" in st.session_state:
+        # Already exchanged — just clear leftover params
+        st.query_params.clear()
+        return
+
+    cid, csecret, redirect = _google_oauth_cfg()
+    if not cid:
+        return
+
+    try:
+        session = _OAuth2Session(
+            cid, csecret,
+            redirect_uri=redirect,
+        )
+        token = session.fetch_token(
+            _GOOGLE_TOKEN_URL,
+            code=code,
+        )
+        st.session_state["google_token"] = token
+
+        # Fetch basic user info for display
+        user_info = session.get(
+            "https://www.googleapis.com/oauth2/v1/userinfo"
+        ).json()
+        st.session_state["google_user"] = user_info
+
+        # Persist token to disk (survives session loss)
+        _save_oauth_token_to_disk(token, user_info)
+
+        # Restore analysis results if session was lost during the redirect
+        _restore_display_result_from_disk()
+
+        # Clear the code from the URL so it doesn't get reused
+        st.query_params.clear()
+        st.rerun()
+    except Exception as exc:
+        # Still try to restore results even if auth fails
+        _restore_display_result_from_disk()
+        st.query_params.clear()
+        st.warning(f"Google sign-in failed: {exc}")
 
 
 def _get_google_creds():
-    """Return valid Google credentials, or None.
+    """Return google.oauth2.credentials.Credentials built from the OAuth2 token, or None."""
+    token_data = st.session_state.get("google_token")
+    if not token_data:
+        return None
 
-    Uses the service account from google_credentials.json (no user sign-in
-    needed).  Falls back to cached OAuth token if a service account file
-    isn't present.
+    try:
+        from google.oauth2.credentials import Credentials
+        cid, csecret, _ = _google_oauth_cfg()
+        creds = Credentials(
+            token=token_data["access_token"],
+            refresh_token=token_data.get("refresh_token"),
+            token_uri=_GOOGLE_TOKEN_URL,
+            client_id=cid,
+            client_secret=csecret,
+            scopes=_GOOGLE_SCOPES,
+        )
+        return creds
+    except Exception:
+        return None
+
+
+def _render_google_sign_in(key_suffix=""):
+    """Show a 'Sign in with Google' button if the user is not yet authenticated.
+
+    Returns True if the user IS signed in, False otherwise.
     """
-    # 1. Cached in session state
-    if 'google_creds' in st.session_state:
-        creds = st.session_state['google_creds']
-        if creds and (not hasattr(creds, 'expired') or not creds.expired):
-            return creds
+    if "google_token" in st.session_state:
+        user = st.session_state.get("google_user", {})
+        name = user.get("name", "Google User")
+        email = user.get("email", "")
+        st.caption(f"Signed in as **{name}** ({email})")
+        if st.button("Sign out of Google", key=f"google_sign_out_{key_suffix}"):
+            for k in ("google_token", "google_user"):
+                st.session_state.pop(k, None)
+            # Remove persisted token from disk too
+            try:
+                if os.path.exists(_OAUTH_TOKEN_PATH):
+                    os.remove(_OAUTH_TOKEN_PATH)
+            except Exception:
+                pass
+            _cleanup_display_result_backup()
+            st.rerun()
+        return True
 
-    # 2. Service account on disk (preferred — no sign-in needed)
-    if os.path.exists(_GOOGLE_CREDS_PATH):
-        try:
-            import json as _json_ga
-            with open(_GOOGLE_CREDS_PATH, 'r') as f:
-                creds_data = _json_ga.load(f)
+    cid, csecret, redirect = _google_oauth_cfg()
+    if not cid:
+        st.warning(
+            "Google export requires OAuth 2.0 credentials.  "
+            "Add `[google]` client_id / client_secret to `.streamlit/secrets.toml`.  "
+            "[Setup guide](https://console.cloud.google.com/apis/credentials)"
+        )
+        return False
 
-            if creds_data.get('type') == 'service_account':
-                from google.oauth2.service_account import Credentials as SACredentials
-                creds = SACredentials.from_service_account_file(
-                    _GOOGLE_CREDS_PATH, scopes=_GOOGLE_SCOPES)
-                st.session_state['google_creds'] = creds
-                return creds
-        except Exception:
-            pass
+    # Save analysis results to disk BEFORE the user navigates away,
+    # so we can restore them if the session is lost during the redirect.
+    _save_display_result_to_disk()
 
-    # 3. Cached OAuth token on disk (legacy)
-    if os.path.exists(_GOOGLE_TOKEN_PATH):
-        try:
-            from google.oauth2.credentials import Credentials
-            creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
-            if creds and not creds.expired:
-                st.session_state['google_creds'] = creds
-                return creds
-            if creds and creds.expired and creds.refresh_token:
-                from google.auth.transport.requests import Request
-                creds.refresh(Request())
-                st.session_state['google_creds'] = creds
-                return creds
-        except Exception:
-            pass
+    session = _OAuth2Session(
+        cid, csecret,
+        scope=" ".join(_GOOGLE_SCOPES),
+        redirect_uri=redirect,
+    )
+    auth_url, _ = session.create_authorization_url(
+        _GOOGLE_AUTH_URL,
+        access_type="offline",
+        prompt="consent",
+    )
 
-    return None
+    st.markdown(f'<a href="{auth_url}" target="_self" style="'
+                f'display:inline-block;padding:8px 20px;background:#4285F4;'
+                f'color:white;border-radius:4px;text-decoration:none;'
+                f'font-weight:500;">Sign in with Google</a>',
+                unsafe_allow_html=True)
+    return False
 
 
 def _share_file_anyone(creds, file_id):
@@ -2279,7 +2465,7 @@ def _share_file_anyone(creds, file_id):
 
 
 def _build_report_text(result):
-    """Build a plain-text report from analysis result."""
+    """Build a plain-text report from analysis result (fallback / Sheets use)."""
     f = result['fundamentals']
     ticker = result['ticker']
     lines = []
@@ -2315,7 +2501,177 @@ def _build_report_text(result):
     return "\n".join(lines)
 
 
-def _export_to_sheets(creds, result, spreadsheet_id=None):
+def _build_formatted_doc_content(result, base_index=1, tab_id=None):
+    """Build text and Google Docs API formatting requests for a richly formatted report.
+
+    Returns (full_text, format_requests) where format_requests is a list
+    of Google Docs API batchUpdate request dicts for styling (headings, bold,
+    colored scores, hyperlinks).
+    """
+    import re as _re_fmt
+    f = result['fundamentals']
+    ticker = result['ticker']
+    timestamp = datetime.now().strftime('%B %d, %Y')
+    score = result['final_score']
+    rec = result.get('recommendation', 'N/A')
+
+    # --- Accumulate text with position tracking ---
+    _offset = [0]  # mutable counter
+    _ranges = []    # (start_offset, end_offset, style)
+    _parts = []
+
+    def add(text, style='normal'):
+        _parts.append(text)
+        s = _offset[0]
+        _offset[0] += len(text)
+        if style != 'normal':
+            _ranges.append((s, _offset[0], style))
+
+    # ── Title ──
+    add(f"Investment Analysis: {ticker}\n", 'title')
+    add(f"{f.get('name', 'N/A')}  •  {f.get('sector', 'N/A')}  •  {timestamp}\n", 'subtitle')
+    add("\n")
+
+    # ── Summary ──
+    add("Summary\n", 'heading2')
+    score_style = 'score_good' if score >= 60 else 'score_bad'
+    add(f"Final Score: {score:.1f}/100", score_style)
+    add("   |   ")
+    rec_style = 'rec_good' if rec and any(w in rec.lower() for w in ('buy', 'outperform', 'overweight', 'accumulate')) else (
+        'rec_bad' if rec and any(w in rec.lower() for w in ('sell', 'underperform', 'underweight', 'reduce')) else 'bold')
+    add(f"Recommendation: {rec}\n", rec_style)
+    add("\n")
+
+    # ── Key Metrics ──
+    add("Key Metrics\n", 'heading2')
+    metrics = []
+    price = f.get('price', 0)
+    if price:
+        metrics.append(f"Price: ${price:.2f}")
+    mc = f.get('market_cap', 0)
+    if mc:
+        metrics.append(f"Market Cap: ${mc/1e9:.2f}B")
+    pe = f.get('pe_ratio')
+    if pe:
+        metrics.append(f"P/E Ratio: {pe:.1f}")
+    beta_val = f.get('beta')
+    if beta_val:
+        metrics.append(f"Beta: {beta_val:.2f}")
+    dy = f.get('dividend_yield')
+    if dy:
+        metrics.append(f"Dividend Yield: {dy*100:.2f}%")
+    ev = f.get('enterprise_value')
+    if ev and ev > 0:
+        metrics.append(f"EV: ${ev/1e9:.2f}B")
+    pb = f.get('pb_ratio')
+    if pb:
+        metrics.append(f"P/B Ratio: {pb:.2f}")
+    for m in metrics:
+        label_part = m.split(":")[0] + ":"
+        value_part = m[len(label_part):]
+        add(label_part, 'metric_label')
+        add(value_part + "\n")
+    add("\n")
+
+    # ── Agent Scores ──
+    add("Agent Scores\n", 'heading2')
+    for agent_name, agent_score in result.get('agent_scores', {}).items():
+        display_name = agent_name.replace('_', ' ').title()
+        a_style = 'score_good' if agent_score >= 60 else 'score_bad'
+        add(f"  {display_name}: ", 'metric_label')
+        add(f"{agent_score:.1f}/100\n", a_style)
+    add("\n")
+
+    # ── Detailed Analysis ──
+    add("Detailed Analysis\n", 'heading2')
+    for agent_name, rationale in result.get('agent_rationales', {}).items():
+        if rationale:
+            display_name = agent_name.replace('_', ' ').title()
+            add(f"{display_name}\n", 'heading3')
+            rat_text = str(rationale).strip()
+            add(f"{rat_text}\n\n")
+
+    full_text = "".join(_parts)
+
+    # --- Generate formatting requests ---
+    _GREEN  = {'red': 0.067, 'green': 0.533, 'blue': 0.227}   # #119938
+    _RED    = {'red': 0.776, 'green': 0.165, 'blue': 0.165}   # #C62A2A
+    _GRAY   = {'red': 0.42,  'green': 0.45,  'blue': 0.49}    # #6B737D
+    _BLUE   = {'red': 0.063, 'green': 0.376, 'blue': 0.784}   # #1060C8
+
+    def _rng(s, e):
+        r = {'startIndex': base_index + s, 'endIndex': base_index + e}
+        if tab_id:
+            r['tabId'] = tab_id
+        return r
+
+    fmt = []
+    for s, e, style in _ranges:
+        rng = _rng(s, e)
+        if style == 'title':
+            fmt.append({'updateParagraphStyle': {
+                'range': rng,
+                'paragraphStyle': {'namedStyleType': 'HEADING_1'},
+                'fields': 'namedStyleType',
+            }})
+        elif style == 'subtitle':
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'italic': True,
+                              'foregroundColor': {'color': {'rgbColor': _GRAY}},
+                              'fontSize': {'magnitude': 11, 'unit': 'PT'}},
+                'fields': 'italic,foregroundColor,fontSize',
+            }})
+        elif style == 'heading2':
+            fmt.append({'updateParagraphStyle': {
+                'range': rng,
+                'paragraphStyle': {'namedStyleType': 'HEADING_2'},
+                'fields': 'namedStyleType',
+            }})
+        elif style == 'heading3':
+            fmt.append({'updateParagraphStyle': {
+                'range': rng,
+                'paragraphStyle': {'namedStyleType': 'HEADING_3'},
+                'fields': 'namedStyleType',
+            }})
+        elif style in ('bold', 'metric_label'):
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'bold': True},
+                'fields': 'bold',
+            }})
+        elif style in ('score_good', 'rec_good'):
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'bold': True,
+                              'foregroundColor': {'color': {'rgbColor': _GREEN}}},
+                'fields': 'bold,foregroundColor',
+            }})
+        elif style in ('score_bad', 'rec_bad'):
+            fmt.append({'updateTextStyle': {
+                'range': rng,
+                'textStyle': {'bold': True,
+                              'foregroundColor': {'color': {'rgbColor': _RED}}},
+                'fields': 'bold,foregroundColor',
+            }})
+
+    # --- Convert URLs in text to clickable hyperlinks ---
+    _url_re = _re_fmt.compile(r'https?://[^\s\)\]\}>,"]+')
+    for m in _url_re.finditer(full_text):
+        url = m.group().rstrip('.')  # strip trailing period if any
+        rng = _rng(m.start(), m.start() + len(url))
+        fmt.append({'updateTextStyle': {
+            'range': rng,
+            'textStyle': {'link': {'url': url},
+                          'foregroundColor': {'color': {'rgbColor': _BLUE}},
+                          'underline': True},
+            'fields': 'link,foregroundColor,underline',
+        }})
+
+    return full_text, fmt
+
+
+def _export_to_sheets(creds, result, spreadsheet_id=None, custom_name=None):
     """Export analysis to Google Sheets. Returns (spreadsheet_id, url)."""
     import gspread
     gc = gspread.authorize(creds)
@@ -2332,7 +2688,8 @@ def _export_to_sheets(creds, result, spreadsheet_id=None):
         except Exception:
             ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=10)
     else:
-        sh = gc.create(f"{ticker} Analysis - {timestamp}")
+        title = custom_name if custom_name else f"{ticker} Analysis - {timestamp}"
+        sh = gc.create(title)
         ws = sh.sheet1
         ws.update_title(f"{ticker} Analysis")
 
@@ -2385,52 +2742,115 @@ def _export_to_sheets(creds, result, spreadsheet_id=None):
     return sh.id, sh.url
 
 
-def _export_to_docs(creds, result, document_id=None):
-    """Export analysis to Google Docs. Returns (doc_id, url)."""
+def _export_to_docs(creds, result, document_id=None, insert_mode='page_break', custom_name=None):
+    """Export analysis to Google Docs with rich formatting. Returns (doc_id, url).
+
+    insert_mode: 'page_break' inserts a page break then the report (new page).
+                 'append' appends to the bottom of the document with a separator.
+                 'doc_tab' creates a new document tab within the same document.
+    """
     from googleapiclient.discovery import build
     service = build('docs', 'v1', credentials=creds)
     drive_service = build('drive', 'v3', credentials=creds)
 
-    f = result['fundamentals']
     ticker = result['ticker']
     timestamp = datetime.now().strftime('%B %d, %Y')
 
     if document_id:
-        # Append to existing document
+        if insert_mode == 'doc_tab':
+            # ── Create a new document tab via addDocumentTab ──
+            tab_title = f"{ticker} Analysis - {datetime.now().strftime('%m/%d')}"
+            try:
+                resp = service.documents().batchUpdate(
+                    documentId=document_id,
+                    body={'requests': [{'addDocumentTab': {
+                        'tabProperties': {'title': tab_title}
+                    }}]}
+                ).execute()
+                new_tab_id = resp['replies'][0]['addDocumentTab']['tabProperties']['tabId']
+
+                # Build formatted text + formatting requests targeting the new tab
+                report_text, fmt_requests = _build_formatted_doc_content(
+                    result, base_index=1, tab_id=new_tab_id)
+
+                # Insert text then apply formatting
+                all_requests = [{'insertText': {
+                    'location': {'index': 1, 'tabId': new_tab_id},
+                    'text': report_text,
+                }}]
+                all_requests.extend(fmt_requests)
+                service.documents().batchUpdate(
+                    documentId=document_id, body={'requests': all_requests}
+                ).execute()
+
+            except Exception as tab_err:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Document tab creation failed ({tab_err}), falling back to page break."
+                )
+                return _export_to_docs(creds, result, document_id=document_id,
+                                       insert_mode='page_break', custom_name=custom_name)
+
+            url = f"https://docs.google.com/document/d/{document_id}/edit"
+            return document_id, url
+
+        # ── Export to existing document (page_break or append) ──
         doc = service.documents().get(documentId=document_id).execute()
         end_index = doc['body']['content'][-1]['endIndex'] - 1
 
-        report_text = _build_report_text(result)
-        separator = "\n\n" + "=" * 60 + "\n\n"
+        if insert_mode == 'page_break':
+            # Phase 1: insert the page break
+            service.documents().batchUpdate(documentId=document_id, body={'requests': [
+                {'insertText': {'location': {'index': end_index}, 'text': '\n'}},
+                {'insertPageBreak': {'location': {'index': end_index + 1}}},
+            ]}).execute()
 
-        requests = [
-            {'insertText': {'location': {'index': end_index}, 'text': separator + report_text}}
-        ]
-        service.documents().batchUpdate(documentId=document_id, body={'requests': requests}).execute()
+            # Re-fetch to get the new insertion point
+            doc = service.documents().get(documentId=document_id).execute()
+            new_end = doc['body']['content'][-1]['endIndex'] - 1
+
+            # Phase 2: insert formatted text + styling
+            report_text, fmt_requests = _build_formatted_doc_content(
+                result, base_index=new_end)
+            all_requests = [{'insertText': {
+                'location': {'index': new_end}, 'text': report_text
+            }}]
+            all_requests.extend(fmt_requests)
+            service.documents().batchUpdate(
+                documentId=document_id, body={'requests': all_requests}
+            ).execute()
+        else:
+            # Append with separator
+            separator = "\n\n" + "=" * 60 + "\n\n"
+            base = end_index + len(separator)
+            report_text, fmt_requests = _build_formatted_doc_content(
+                result, base_index=base)
+            all_requests = [{'insertText': {
+                'location': {'index': end_index},
+                'text': separator + report_text
+            }}]
+            all_requests.extend(fmt_requests)
+            service.documents().batchUpdate(
+                documentId=document_id, body={'requests': all_requests}
+            ).execute()
+
         url = f"https://docs.google.com/document/d/{document_id}/edit"
         return document_id, url
     else:
-        # Create new document
-        doc = service.documents().create(
-            body={'title': f"{ticker} Investment Analysis - {timestamp}"}
-        ).execute()
+        # ── Create new document ──
+        title = custom_name if custom_name else f"{ticker} Investment Analysis - {timestamp}"
+        doc = service.documents().create(body={'title': title}).execute()
         doc_id = doc['documentId']
 
-        report_text = _build_report_text(result)
-
-        requests = [
-            {'insertText': {'location': {'index': 1}, 'text': report_text}},
-        ]
-        # Apply heading style to first line
-        title_end = len(f"Investment Analysis: {ticker}") + 1
-        requests.append({
-            'updateParagraphStyle': {
-                'range': {'startIndex': 1, 'endIndex': title_end},
-                'paragraphStyle': {'namedStyleType': 'HEADING_1'},
-                'fields': 'namedStyleType',
-            }
-        })
-        service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
+        report_text, fmt_requests = _build_formatted_doc_content(
+            result, base_index=1)
+        all_requests = [{'insertText': {
+            'location': {'index': 1}, 'text': report_text
+        }}]
+        all_requests.extend(fmt_requests)
+        service.documents().batchUpdate(
+            documentId=doc_id, body={'requests': all_requests}
+        ).execute()
 
         _share_file_anyone(creds, doc_id)
 
@@ -2438,7 +2858,7 @@ def _export_to_docs(creds, result, document_id=None):
         return doc_id, url
 
 
-def _export_multi_to_sheets(creds, results, spreadsheet_id=None):
+def _export_multi_to_sheets(creds, results, spreadsheet_id=None, custom_name=None):
     """Export multi-stock comparison to Google Sheets."""
     import gspread
     gc = gspread.authorize(creds)
@@ -2452,7 +2872,8 @@ def _export_multi_to_sheets(creds, results, spreadsheet_id=None):
         except Exception:
             ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=15)
     else:
-        sh = gc.create(f"Stock Comparison - {timestamp}")
+        title = custom_name if custom_name else f"Stock Comparison - {timestamp}"
+        sh = gc.create(title)
         ws = sh.sheet1
         ws.update_title("Comparison")
 
@@ -2503,20 +2924,23 @@ def _list_drive_files(creds, mime_type):
 
 def _render_google_export(result):
     """Render the Google Sheets/Docs export UI for a single stock."""
-    with st.expander("Export to Google Sheets / Docs", expanded=False):
-        creds = _get_google_creds()
+    ticker = result['ticker']
+    exp_key = f"_gexp_open_{ticker}"
+    is_expanded = st.session_state.get(exp_key, False)
+    with st.expander("Export to Google Sheets / Docs", expanded=is_expanded):
+        # Track that the user opened the expander (persists across reruns)
+        if not is_expanded:
+            st.session_state[exp_key] = True
 
+        if not _render_google_sign_in(key_suffix=ticker):
+            return
+
+        creds = _get_google_creds()
         if creds is None:
-            st.warning(
-                "Google export requires a `google_credentials.json` service account file "
-                "in the project root. "
-                "[How to create one](https://cloud.google.com/iam/docs/keys-create-delete#creating)"
-            )
+            st.error("Could not build credentials from token.")
             return
 
         # ---- Authenticated: show export options ----
-        ticker = result['ticker']
-
         col_s, col_d = st.columns(2)
 
         with col_s:
@@ -2526,6 +2950,7 @@ def _render_google_export(result):
                 key=f"sheets_mode_{ticker}", horizontal=True
             )
             sheet_id = None
+            sheets_custom_name = None
             if sheets_mode == "Existing Spreadsheet":
                 try:
                     files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
@@ -2538,11 +2963,18 @@ def _render_google_export(result):
                         st.caption("No spreadsheets found. A new one will be created.")
                 except Exception:
                     st.caption("Could not list files. A new one will be created.")
+            else:
+                default_name = f"{ticker} Analysis - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                sheets_custom_name = st.text_input(
+                    "Spreadsheet name", value=default_name,
+                    key=f"sheets_name_{ticker}"
+                )
 
             if st.button("Export to Sheets", key=f"export_sheets_{ticker}", use_container_width=True):
                 with st.spinner("Exporting to Google Sheets..."):
                     try:
-                        sid, url = _export_to_sheets(creds, result, spreadsheet_id=sheet_id)
+                        sid, url = _export_to_sheets(creds, result, spreadsheet_id=sheet_id,
+                                                     custom_name=sheets_custom_name)
                         st.success(f"Exported! [Open Spreadsheet]({url})")
                     except Exception as e:
                         st.error(f"Export failed: {e}")
@@ -2554,6 +2986,8 @@ def _render_google_export(result):
                 key=f"docs_mode_{ticker}", horizontal=True
             )
             doc_id = None
+            docs_insert_mode = 'page_break'
+            docs_custom_name = None
             if docs_mode == "Existing Document":
                 try:
                     files = _list_drive_files(creds, 'application/vnd.google-apps.document')
@@ -2567,10 +3001,33 @@ def _render_google_export(result):
                 except Exception:
                     st.caption("Could not list files. A new one will be created.")
 
+                docs_insert_mode = st.radio(
+                    "Insert method",
+                    ["New document tab", "New page (page break)", "Append to bottom"],
+                    key=f"docs_insert_{ticker}", horizontal=True,
+                    help="New document tab: creates a separate tab in the same doc. "
+                         "Page break: adds content on a new page. "
+                         "Append: adds to the bottom of the current content."
+                )
+                if 'tab' in docs_insert_mode.lower():
+                    docs_insert_mode = 'doc_tab'
+                elif 'New page' in docs_insert_mode:
+                    docs_insert_mode = 'page_break'
+                else:
+                    docs_insert_mode = 'append'
+            else:
+                default_doc_name = f"{ticker} Investment Analysis - {datetime.now().strftime('%B %d, %Y')}"
+                docs_custom_name = st.text_input(
+                    "Document name", value=default_doc_name,
+                    key=f"docs_name_{ticker}"
+                )
+
             if st.button("Export to Docs", key=f"export_docs_{ticker}", use_container_width=True):
                 with st.spinner("Exporting to Google Docs..."):
                     try:
-                        did, url = _export_to_docs(creds, result, document_id=doc_id)
+                        did, url = _export_to_docs(creds, result, document_id=doc_id,
+                                                   insert_mode=docs_insert_mode,
+                                                   custom_name=docs_custom_name)
                         st.success(f"Exported! [Open Document]({url})")
                     except Exception as e:
                         st.error(f"Export failed: {e}")
@@ -2578,15 +3035,18 @@ def _render_google_export(result):
 
 def _render_google_export_multi(results):
     """Render the Google Sheets/Docs export UI for multi-stock comparison."""
-    with st.expander("Export Comparison to Google Sheets / Docs", expanded=False):
-        creds = _get_google_creds()
+    exp_key = "_gexp_open_multi"
+    is_expanded = st.session_state.get(exp_key, False)
+    with st.expander("Export Comparison to Google Sheets / Docs", expanded=is_expanded):
+        if not is_expanded:
+            st.session_state[exp_key] = True
 
+        if not _render_google_sign_in(key_suffix="multi"):
+            return
+
+        creds = _get_google_creds()
         if creds is None:
-            st.warning(
-                "Google export requires a `google_credentials.json` service account file "
-                "in the project root. "
-                "[How to create one](https://cloud.google.com/iam/docs/keys-create-delete#creating)"
-            )
+            st.error("Could not build credentials from token.")
             return
 
         # ---- Authenticated ----
@@ -2599,6 +3059,7 @@ def _render_google_export_multi(results):
                 key="sheets_mode_multi", horizontal=True
             )
             sheet_id = None
+            sheets_custom_name = None
             if sheets_mode == "Existing Spreadsheet":
                 try:
                     files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
@@ -2611,11 +3072,19 @@ def _render_google_export_multi(results):
                         st.caption("No spreadsheets found.")
                 except Exception:
                     st.caption("Could not list files.")
+            else:
+                tickers_str = ", ".join(r['ticker'] for r in results[:5])
+                default_name = f"Stock Comparison ({tickers_str}) - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                sheets_custom_name = st.text_input(
+                    "Spreadsheet name", value=default_name,
+                    key="sheets_name_multi"
+                )
 
             if st.button("Export Comparison to Sheets", key="export_sheets_multi", use_container_width=True):
                 with st.spinner("Exporting comparison to Google Sheets..."):
                     try:
-                        sid, url = _export_multi_to_sheets(creds, results, spreadsheet_id=sheet_id)
+                        sid, url = _export_multi_to_sheets(creds, results, spreadsheet_id=sheet_id,
+                                                           custom_name=sheets_custom_name)
                         st.success(f"Exported! [Open Spreadsheet]({url})")
                     except Exception as e:
                         st.error(f"Export failed: {e}")
@@ -2627,6 +3096,8 @@ def _render_google_export_multi(results):
                 key="docs_mode_multi", horizontal=True
             )
             doc_id = None
+            docs_insert_mode_multi = 'page_break'
+            docs_custom_name = None
             if docs_mode == "Existing Document":
                 try:
                     files = _list_drive_files(creds, 'application/vnd.google-apps.document')
@@ -2640,17 +3111,42 @@ def _render_google_export_multi(results):
                 except Exception:
                     st.caption("Could not list files.")
 
+                docs_insert_mode_multi = st.radio(
+                    "Insert method",
+                    ["New document tab", "New page (page break)", "Append to bottom"],
+                    key="docs_insert_multi", horizontal=True,
+                    help="New document tab: creates a separate tab in the same doc. "
+                         "Page break: adds content on a new page. "
+                         "Append: adds to the bottom of the current content."
+                )
+                if 'tab' in docs_insert_mode_multi.lower():
+                    docs_insert_mode_multi = 'doc_tab'
+                elif 'New page' in docs_insert_mode_multi:
+                    docs_insert_mode_multi = 'page_break'
+                else:
+                    docs_insert_mode_multi = 'append'
+            else:
+                tickers_str = ", ".join(r['ticker'] for r in results[:5])
+                default_doc_name = f"Investment Analysis ({tickers_str}) - {datetime.now().strftime('%B %d, %Y')}"
+                docs_custom_name = st.text_input(
+                    "Document name", value=default_doc_name,
+                    key="docs_name_multi"
+                )
+
             if st.button("Export Reports to Docs", key="export_docs_multi", use_container_width=True):
                 with st.spinner("Exporting reports to Google Docs..."):
                     try:
                         first = True
                         created_doc_id = doc_id
+                        _ins_mode = docs_insert_mode_multi
                         for r in sorted(results, key=lambda x: x['final_score'], reverse=True):
                             if first and not created_doc_id:
-                                created_doc_id, url = _export_to_docs(creds, r, document_id=None)
+                                created_doc_id, url = _export_to_docs(creds, r, document_id=None,
+                                                                       custom_name=docs_custom_name)
                                 first = False
                             else:
-                                _, url = _export_to_docs(creds, r, document_id=created_doc_id)
+                                _, url = _export_to_docs(creds, r, document_id=created_doc_id,
+                                                         insert_mode=_ins_mode)
                                 first = False
                         st.success(f"Exported {len(results)} reports! [Open Document]({url})")
                     except Exception as e:
@@ -2667,14 +3163,6 @@ def display_stock_analysis(result: dict):
         st.title(f"{result['ticker']} - Investment Analysis")
         if 'name' in result['fundamentals']:
             st.caption(result['fundamentals']['name'])
-        # Display analysis date in MM/DD/YYYY format
-        if 'analysis_date' in result:
-            try:
-                date_obj = datetime.strptime(result['analysis_date'], '%Y-%m-%d')
-                formatted_date = date_obj.strftime('%m/%d/%Y')
-                st.caption(f"Analysis Date: {formatted_date}")
-            except:
-                st.caption(f"Analysis Date: {result['analysis_date']}")
     with col2:
         # Score badge
         final_score = result['final_score']
@@ -3061,150 +3549,6 @@ Formula: Blended Score = Weighted Sum / Total Weight
     # Display enhanced agent rationales with collaboration
     display_enhanced_agent_rationales(result)
     
-    # Comprehensive rationale
-    st.markdown("---")
-    st.markdown("### Investment Rationale")
-    
-    with st.expander("View Full Report", expanded=False):
-        # Get the comprehensive rationale from the result
-        comprehensive_rationale = result.get('rationale', '')
-        
-        if comprehensive_rationale:
-            # Display in a code block for better formatting
-            st.text(comprehensive_rationale)
-            
-            # Add download button for the rationale
-            st.download_button(
-                label="Download Complete Rationale (TXT)",
-                data=comprehensive_rationale,
-                file_name=f"{result['ticker']}_comprehensive_analysis_{datetime.now().strftime('%Y%m%d')}.txt",
-                mime="text/plain",
-                help="Download the complete investment analysis report"
-            )
-        else:
-            st.warning("Comprehensive rationale not available")
-        
-        # Add a summary section
-        st.write("---")
-        st.write("**Key Takeaways:**")
-        
-        # Extract some key points
-        agent_scores = result.get('agent_scores', {})
-        final_score = result.get('final_score', 0)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Strengths:**")
-            strengths = [f"• {k.replace('_agent', '').replace('_', ' ').title()}: {v:.1f}/100" 
-                        for k, v in agent_scores.items() if v >= 70]
-            if strengths:
-                for strength in strengths:
-                    st.success(strength)
-            else:
-                st.info("No exceptional strengths identified")
-        
-        with col2:
-            st.write("**Concerns:**")
-            concerns = [f"• {k.replace('_agent', '').replace('_', ' ').title()}: {v:.1f}/100" 
-                       for k, v in agent_scores.items() if v < 50]
-            if concerns:
-                for concern in concerns:
-                    st.error(concern)
-            else:
-                st.success("No major concerns identified")
-        
-        # Overall assessment
-        st.write("---")
-        st.write("**Overall Assessment:**")
-        
-        if final_score >= 80:
-            st.success(f"**STRONG BUY** - Excellent score of {final_score:.1f} with compelling fundamentals and strong multi-factor support.")
-        elif final_score >= 70:
-            st.success(f"**BUY** - Strong score of {final_score:.1f} indicating good investment potential with favorable risk/reward profile.")
-        elif final_score >= 60:
-            st.info(f"**HOLD** - Moderate score of {final_score:.1f}. Suitable for holding if already owned, but not a priority for new positions.")
-        elif final_score >= 40:
-            st.warning(f"**WEAK HOLD** - Below-average score of {final_score:.1f}. Consider for portfolio review or reduction.")
-        else:
-            st.error(f"**SELL** - Low score of {final_score:.1f} with significant concerns. Consider alternatives.")
-
-    # Export functionality
-    with st.expander("Export Analysis", expanded=False):
-        agent_scores = result['agent_scores']
-        export_data = {
-            'Ticker': [result['ticker']],
-            'Name': [result['fundamentals'].get('name', 'N/A')],
-            'Final Score': [result['final_score']],
-            'Sector': [result['fundamentals'].get('sector', 'N/A')],
-            'Price': [result['fundamentals'].get('price', 0)],
-            **{f"{agent.replace('_', ' ').title()}_Score": [score] for agent, score in agent_scores.items()}
-        }
-        
-        df = pd.DataFrame(export_data)
-        csv = df.to_csv(index=False)
-        current_timestamp = datetime.now().strftime('%Y%m%d')
-        
-        col_exp1, col_exp2 = st.columns(2)
-        
-        with col_exp1:
-            st.download_button(
-                label="Download CSV Report",
-                data=csv,
-                file_name=f"{result['ticker']}_analysis_{current_timestamp}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_exp2:
-            # Generate detailed markdown report
-            ticker = result['ticker']
-            report = f"""# Investment Analysis: {ticker}
-## {result['fundamentals'].get('name', 'N/A')}
-
-**Date:** {datetime.now().strftime('%B %d, %Y')}
-**Sector:** {result['fundamentals'].get('sector', 'N/A')}
-**Price:** ${result['fundamentals'].get('price', 0):.2f}
-
----
-
-## Score: {result['final_score']:.1f}/100
-**Recommendation:** {result.get('recommendation', 'N/A')}
-
----
-
-## Agent Breakdown
-"""
-            for agent, score in agent_scores.items():
-                agent_name = agent.replace('_', ' ').title()
-                report += f"- **{agent_name}:** {score:.1f}/100\n"
-            
-            report += f"\n---\n\n## Key Metrics\n"
-            report += f"- **Market Cap:** ${result['fundamentals'].get('market_cap', 0)/1e9:.2f}B\n"
-            pe_val = result['fundamentals'].get('pe_ratio')
-            report += f"- **P/E Ratio:** {pe_val:.1f}\n" if pe_val else "- **P/E Ratio:** N/A\n"
-            beta_val = result['fundamentals'].get('beta')
-            report += f"- **Beta:** {beta_val:.2f}\n" if beta_val else "- **Beta:** N/A\n"
-            
-            if result['fundamentals'].get('dividend_yield'):
-                report += f"- **Dividend Yield:** {result['fundamentals']['dividend_yield']*100:.2f}%\n"
-            
-            report += f"\n---\n\n## Agent Analysis\n"
-            for agent, rationale in result.get('agent_rationales', {}).items():
-                if rationale:
-                    agent_name = agent.replace('_', ' ').title()
-                    report += f"### {agent_name}\n{rationale}\n\n"
-            
-            report += f"\n---\n*Investment Analysis Platform*\n"
-
-            st.download_button(
-                label="Download Full Report",
-                data=report,
-                file_name=f"{ticker}_report_{current_timestamp}.md",
-                mime="text/markdown",
-                use_container_width=True
-            )
-
     # Google Sheets / Docs export
     _render_google_export(result)
 
@@ -3215,6 +3559,7 @@ Formula: Blended Score = Weighted Sum / Total Weight
             del st.session_state['_analysis_params']
         if '_display_result' in st.session_state:
             del st.session_state['_display_result']
+        _cleanup_display_result_backup()
         st.rerun()
 
 
@@ -3519,6 +3864,7 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
             del st.session_state['_analysis_params']
         if '_display_result' in st.session_state:
             del st.session_state['_display_result']
+        _cleanup_display_result_backup()
         st.rerun()
 
 

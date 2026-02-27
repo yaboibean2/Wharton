@@ -13,7 +13,7 @@ import logging
 import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from statistics import median as _median
+from statistics import median as _median, quantiles as _quantiles
 
 from agents.value_agent import ValueAgent
 from agents.growth_momentum_agent import GrowthMomentumAgent
@@ -62,6 +62,16 @@ def _load_learned_phase_durations() -> dict:
             vals = st.get(key, [])
             return sum(vals) / len(vals) if vals else None
 
+        def _p75(key):
+            """75th percentile — conservative estimate for variable durations."""
+            vals = st.get(key, [])
+            if not vals:
+                return None
+            if len(vals) < 4:
+                return max(vals)
+            qs = _quantiles(sorted(vals), n=4)
+            return qs[2]  # 75th percentile
+
         # Legacy phase keys
         dg = _med('1')
         ag = _med('2')
@@ -69,12 +79,18 @@ def _load_learned_phase_durations() -> dict:
         tot = _med('total')
         avg_tot = _avg('total')
 
+        # agents_wall: 75th percentile of actual parallel wall time
+        # This is the bottleneck duration and is highly variable,
+        # so 75th percentile avoids systematic underestimation.
+        aw_p75 = _p75('agents_wall')
+
         result = {
             'data_gather': round(dg, 1) if dg is not None else defaults['data_gather'],
             'agents':      round(ag, 1) if ag is not None else defaults['agents'],
             'blend':       round(bl, 1) if bl is not None else defaults['blend'],
             'total':       round(tot, 1) if tot is not None else defaults['total'],
             'avg_total':   round(avg_tot, 1) if avg_tot is not None else defaults['avg_total'],
+            'agents_wall_p75': round(aw_p75, 1) if aw_p75 is not None else defaults['agents'],
         }
 
         # Per-step keys
