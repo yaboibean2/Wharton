@@ -1,52 +1,124 @@
 # Privacy Policy
 
-**Last Updated: February 26, 2026**
+**Total Insights — Multi-Agent Investment Analysis System**
+*Last updated: February 26, 2026*
 
-## Overview
+---
 
-This Privacy Policy describes how the Wharton Portfolio Analysis System ("the App") handles user information when you use our investment analysis tool.
+## 1. Introduction
 
-## Information We Collect
+Total Insights ("the App," "we," "our") is an AI-powered investment analysis platform built with Streamlit. This Privacy Policy explains what information the App collects, how it is used, and the choices available to you.
 
-### Google Account Information
-When you sign in with Google to use the export features (Google Sheets/Docs), we access:
-- Your **name** and **email address** (for display purposes only)
-- **Google Drive, Sheets, and Docs** permissions (to create and share exported reports)
+By using the App you agree to the practices described below.
 
-### Data We Do NOT Collect
-- We do not store your Google account credentials on our servers
-- We do not collect personal financial or brokerage information
-- We do not track browsing activity outside of the App
-- We do not sell, rent, or share any user data with third parties
+---
 
-## How We Use Your Information
+## 2. Information We Collect
 
-- **Google name/email**: Displayed within the App so you can confirm which account is signed in
-- **Google API access**: Used solely to export analysis reports to your Google Drive as Sheets or Docs when you explicitly request it
+### 2.1 Information You Provide
 
-## Data Storage
+| Data | Purpose |
+|------|---------|
+| **Stock tickers & analysis dates** | Used to run the requested investment analysis. |
+| **Portfolio names & configurations** | Saved locally so you can reload portfolios between sessions. |
+| **Agent weight preferences** | Applied to customize scoring during analysis. |
+| **Google account authorization** (optional) | Used solely to export analysis results to your Google Docs or Google Sheets when you choose to do so. |
 
-- OAuth tokens are stored locally in your browser session and on disk only for session persistence. They are deleted when you sign out.
-- Analysis results are processed in-memory and are not permanently stored on any external server.
+### 2.2 Information Collected Automatically
 
-## Third-Party Services
+| Data | Purpose |
+|------|---------|
+| **Analysis timing metrics** | Stored locally in `data/step_times.json` to improve progress-bar accuracy. No personal data is included. |
+| **Cached market data** | Price, fundamental, and news data is cached locally (in the `data/cache/` directory) to reduce redundant API calls and improve performance. Caches expire automatically. |
+| **Application logs** | Stored locally in `logs/` for debugging. Logs contain ticker symbols and timestamps — not personal information. |
 
-The App uses the following third-party APIs for analysis data only (no personal data is shared with them):
-- OpenAI / GPT
-- Perplexity AI
-- Alpha Vantage
-- Polygon.io
-- NewsAPI
+### 2.3 Information We Do **Not** Collect
 
-## Your Rights
+- We do **not** collect your name, email address, phone number, or any other personal contact information.
+- We do **not** use cookies, trackers, or analytics services (Streamlit's built-in usage stats are disabled).
+- We do **not** store your Google credentials. OAuth tokens are kept only in your local environment and are never transmitted to us.
+- We do **not** collect personal financial or brokerage information.
+- We do **not** sell, rent, or share any user data with third parties.
 
-- You can **sign out** of Google at any time within the App, which removes your stored token
-- You can **revoke access** to the App from your [Google Account permissions page](https://myaccount.google.com/permissions)
+---
 
-## Changes to This Policy
+## 3. Third-Party Services
 
-We may update this Privacy Policy from time to time. Any changes will be reflected by the "Last Updated" date above.
+The App communicates with the following external services to perform analysis. Each service receives only the minimum data required (typically a stock ticker and date range):
 
-## Contact
+| Service | Data Sent | Their Privacy Policy |
+|---------|-----------|----------------------|
+| **OpenAI API** | Prompts containing financial data and ticker symbols | [openai.com/privacy](https://openai.com/privacy) |
+| **Google Gemini API** | Prompts for portfolio ticker discovery | [ai.google.dev/terms](https://ai.google.dev/terms) |
+| **Perplexity AI** | Real-time market queries | [perplexity.ai/privacy](https://www.perplexity.ai/privacy) |
+| **Polygon.io** | Ticker symbols, date ranges | [polygon.io/privacy](https://polygon.io/privacy) |
+| **Alpha Vantage** | Ticker symbols, date ranges | [alphavantage.co/terms](https://www.alphavantage.co/terms_of_service/) |
+| **Yahoo Finance** (via yfinance) | Ticker symbols, date ranges | [yahoo.com/privacy](https://legal.yahoo.com/us/en/yahoo/privacy/index.html) |
+| **NewsAPI** | Search queries for financial news | [newsapi.org/privacy](https://newsapi.org/privacy) |
+| **Google Docs / Sheets API** | Analysis results you choose to export | [google.com/privacy](https://policies.google.com/privacy) |
 
-If you have questions about this Privacy Policy, please open an issue on the project's GitHub repository.
+API keys are stored in your local environment (`.env` or `.streamlit/secrets.toml`) and are never shared with anyone other than the respective API provider.
+
+---
+
+## 4. Data Storage & Retention
+
+All data generated by the App is stored **locally on the machine where it runs**:
+
+- **Portfolio data** → `data/saved_portfolios.json`
+- **Performance history** → `data/history/`, `data/performance_analysis/`
+- **Timing data** → `data/step_times.json`
+- **Cached API responses** → `data/cache/` (auto-expires per configured cache durations)
+- **Logs** → `logs/`
+
+No data is transmitted to any server we operate. If you deploy the App to a cloud hosting service (e.g., Streamlit Community Cloud), the hosting provider's privacy policy also applies.
+
+---
+
+## 5. Google OAuth & Export
+
+When you use the "Export to Google Docs" or "Export to Google Sheets" feature:
+
+1. You authenticate via Google's standard OAuth 2.0 flow.
+2. The App requests only the scopes necessary to create/edit documents and spreadsheets.
+3. Your OAuth refresh token is stored locally (`data/google_oauth_token.json`) and is **never** committed to version control or transmitted elsewhere.
+4. You can revoke access at any time from your [Google Account permissions page](https://myaccount.google.com/permissions).
+
+---
+
+## 6. Data Security
+
+- API keys and secrets are stored in environment files excluded from version control via `.gitignore`.
+- GitHub push protection is enabled to prevent accidental secret exposure.
+- The App runs locally by default; network traffic is limited to the third-party API calls listed above.
+- No authentication system or user accounts exist within the App itself.
+
+---
+
+## 7. Children's Privacy
+
+The App is not directed at individuals under the age of 18. We do not knowingly collect data from minors.
+
+---
+
+## 8. Your Rights & Choices
+
+| Action | How |
+|--------|-----|
+| **Sign out of Google** | Use the sign-out option in the App, which removes your stored token. |
+| **Revoke Google access** | Visit [myaccount.google.com/permissions](https://myaccount.google.com/permissions). |
+| **Delete cached data** | Remove the `data/cache/` directory. |
+| **Delete all local data** | Remove the entire `data/` directory. |
+| **Stop using third-party APIs** | Remove the corresponding keys from your `.env` file. |
+
+---
+
+## 9. Changes to This Policy
+
+We may update this Privacy Policy from time to time. Changes will be reflected by updating the "Last updated" date at the top of this document. Continued use of the App after changes constitutes acceptance.
+
+---
+
+## 10. Contact
+
+If you have questions about this Privacy Policy, please open an issue on the project's [GitHub repository](https://github.com/yaboibean2/wharton-investment-analysis).
