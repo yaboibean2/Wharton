@@ -1368,6 +1368,11 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 _prog['done'] = True
 
         thread = threading.Thread(target=_bg, daemon=True)
+        try:
+            from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+            add_script_run_ctx(thread, get_script_run_ctx())
+        except Exception:
+            pass
         thread.start()
 
         # ─── Simple linear countdown timer ───
@@ -1764,6 +1769,11 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                         _prog['done'] = True
 
                 thread = threading.Thread(target=_bg_m, daemon=True)
+                try:
+                    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+                    add_script_run_ctx(thread, get_script_run_ctx())
+                except Exception:
+                    pass
                 thread.start()
 
                 # ─── Simple linear countdown timer (same as single-stock) ───
