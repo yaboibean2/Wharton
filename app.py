@@ -700,15 +700,6 @@ logging.getLogger('asyncio').setLevel(logging.ERROR)
 import logging
 logger = logging.getLogger(__name__)
 
-# Initialize session state
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = False
-    st.session_state.data_provider = None
-    st.session_state.orchestrator = None
-    st.session_state.config_loader = None
-
-
-
 
 def initialize_system():
     """Initialize the system components."""
@@ -843,6 +834,13 @@ def main():
     if 'tier_manager' not in st.session_state:
         st.session_state.tier_manager = TierManager()
     # Tier sidebar removed — API keys resolved from .env / Streamlit Secrets
+
+    # Initialize session state keys (must be inside main() so a valid session exists)
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = False
+        st.session_state.data_provider = None
+        st.session_state.orchestrator = None
+        st.session_state.config_loader = None
 
     # Initialize system first (needed for analysis execution path)
     if not initialize_system():
