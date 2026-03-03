@@ -936,6 +936,8 @@ def main():
             _ap.get('tickers'),
             _ap['date'],
             _ap['weights'],
+            regime_modulation=_ap.get('regime_modulation', False),
+            regime_sensitivity=_ap.get('regime_sensitivity', 'moderate'),
         )
 
         # Don't render anything else
@@ -989,7 +991,8 @@ def main():
 
 
 
-def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weights):
+def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weights,
+                      regime_modulation=False, regime_sensitivity="moderate"):
     """Execute stock analysis with progress display.
     
     This is extracted from the button handler so it can be called
@@ -1229,7 +1232,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         except Exception:
             pass  # timing log is best-effort, never block analysis
 
-    def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None):
+    def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None,
+                                  regime_modulation=False, regime_sensitivity="moderate"):
         """Run analysis with a simple linear countdown timer.
 
         Timer starts at 60s and decrements in real-time.  At phase
@@ -1355,6 +1359,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     analysis_date=date_s,
                     agent_weights=weights,
                     progress_callback=_on_milestone,
+                    regime_modulation=regime_modulation,
+                    regime_sensitivity=regime_sensitivity,
                 )
             except Exception as e:
                 _prog['error'] = e
@@ -1490,7 +1496,9 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             # Run with smooth progress interpolation (background thread + 10fps polling)
             orchestrator = st.session_state.orchestrator
             result = _run_with_smooth_progress(
-                progress_slot, orchestrator, ticker, date_str, agent_weights
+                progress_slot, orchestrator, ticker, date_str, agent_weights,
+                regime_modulation=regime_modulation,
+                regime_sensitivity=regime_sensitivity,
             )
 
             # Track timing
@@ -1747,6 +1755,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                             analysis_date=date_str,
                             agent_weights=agent_weights,
                             progress_callback=_on_milestone_m,
+                            regime_modulation=regime_modulation,
+                            regime_sensitivity=regime_sensitivity,
                         )
                     except Exception as e:
                         _prog['error'] = e
@@ -1956,10 +1966,11 @@ def stock_analysis_page():
     with col1:
         weight_preset = st.selectbox(
             "Choose Weight Configuration:",
-            options=["equal_weights", "custom_weights"],
+            options=["equal_weights", "theory_based", "custom_weights"],
             format_func=lambda x: {
                 "equal_weights": "Equal Weights",
-                "custom_weights": "Custom Weights"
+                "theory_based": "Theory Based",
+                "custom_weights": "Custom Weights",
             }[x],
             help="Select how agent weights should be configured for this analysis"
         )
@@ -2102,6 +2113,113 @@ def stock_analysis_page():
 
         agent_weights = st.session_state.custom_agent_weights.copy()
         st.session_state.locked_custom_weights = agent_weights
+        st.session_state.regime_modulation_enabled = False
+
+    elif weight_preset == "theory_based":
+        # ── Theory Based preset ────────────────────────────────────────────────────────────
+        # Weights grounded in multi-factor asset pricing & behavioral finance
+        st.info(
+            "**Theory Based Weighting**\n\n"
+            "Weights are grounded in multi-factor asset pricing theory "
+            "(Fama & French, 1992; Carhart, 1997) and behavioral finance "
+            "research (Shiller, 2000; Thaler, 2015). Value and momentum "
+            "receive the largest allocations as compensated structural risk "
+            "premia with decades of cross-market evidence. Growth quality "
+            "captures profitability and reinvestment efficiency. Sentiment "
+            "serves as a constrained behavioral overlay.\n\n"
+            "Weights shift automatically based on the detected macroeconomic "
+            "regime \u2014 expansion, recession, inflation, or disinflation \u2014 "
+            "following regime-switching research (Ang & Bekaert, 2002). "
+            "Your selected investment horizon tilts the value\u2013momentum "
+            "balance per empirical holding-period evidence: value strengthens "
+            "over longer horizons, momentum over shorter ones."
+        )
+
+        # Configurable sub-settings
+        theory_cols = st.columns(3)
+        with theory_cols[0]:
+            theory_horizon = st.selectbox(
+                "Investment Horizon",
+                options=["short", "medium", "long"],
+                index=1,
+                format_func=lambda x: {
+                    "short":  "Short-term (3\u20136 months)",
+                    "medium": "Medium-term (6\u201318 months)",
+                    "long":   "Long-term (18+ months)",
+                }[x],
+                help=(
+                    "Jegadeesh & Titman (1993): momentum is strongest at 6\u201312 months. "
+                    "Fama & French (1992): value premia strengthen beyond 18 months."
+                ),
+            )
+        with theory_cols[1]:
+            theory_risk_fw = st.selectbox(
+                "Risk Framework",
+                options=["capital", "risk_contribution"],
+                index=0,
+                format_func=lambda x: {
+                    "capital":           "Capital-weighted",
+                    "risk_contribution": "Risk-contribution-weighted",
+                }[x],
+                help=(
+                    "Capital-weighted: allocate by conviction. "
+                    "Risk-contribution (Maillard et al., 2010): adjusts for "
+                    "momentum\u2019s higher volatility so each factor contributes "
+                    "similar portfolio risk."
+                ),
+            )
+        with theory_cols[2]:
+            theory_regime_sens = st.selectbox(
+                "Regime Sensitivity",
+                options=["conservative", "moderate", "aggressive"],
+                index=1,
+                format_func=lambda x: {
+                    "conservative": "Conservative (\u00b15pp)",
+                    "moderate":     "Moderate (\u00b110pp)",
+                    "aggressive":   "Aggressive (\u00b115pp)",
+                }[x],
+                help=(
+                    "How strongly macro regime shifts tilt the weights. "
+                    "Based on Ang & Bekaert (2002) and Ilmanen (2011)."
+                ),
+            )
+
+        # Weight lookup table: (horizon, risk_framework) -> weights
+        _THEORY_WEIGHTS = {
+            ("long",   "capital"):           {"value": 0.45, "growth_momentum": 0.30, "macro_regime": 0.05, "risk": 0.05, "sentiment": 0.15},
+            ("long",   "risk_contribution"): {"value": 0.40, "growth_momentum": 0.30, "macro_regime": 0.05, "risk": 0.10, "sentiment": 0.15},
+            ("medium", "capital"):           {"value": 0.35, "growth_momentum": 0.40, "macro_regime": 0.05, "risk": 0.05, "sentiment": 0.15},
+            ("medium", "risk_contribution"): {"value": 0.30, "growth_momentum": 0.35, "macro_regime": 0.05, "risk": 0.10, "sentiment": 0.20},
+            ("short",  "capital"):           {"value": 0.25, "growth_momentum": 0.45, "macro_regime": 0.05, "risk": 0.05, "sentiment": 0.20},
+            ("short",  "risk_contribution"): {"value": 0.20, "growth_momentum": 0.40, "macro_regime": 0.05, "risk": 0.10, "sentiment": 0.25},
+        }
+
+        agent_weights = _THEORY_WEIGHTS[(theory_horizon, theory_risk_fw)]
+
+        # Display the base allocation
+        st.markdown("**Base Factor Allocation** *(before regime adjustment)*")
+        tw_total = sum(agent_weights.values())
+        tw_cols = st.columns(5)
+        tw_labels = ["Value", "Growth / Mom.", "Macro Regime", "Risk", "Sentiment"]
+        for i, (agent_key, label) in enumerate(zip(
+            ["value", "growth_momentum", "macro_regime", "risk", "sentiment"], tw_labels
+        )):
+            with tw_cols[i]:
+                pct = (agent_weights[agent_key] / tw_total) * 100
+                st.metric(label, f"{pct:.0f}%")
+
+        # Store theory settings for downstream use
+        st.session_state.theory_settings = {
+            "horizon": theory_horizon,
+            "risk_framework": theory_risk_fw,
+            "regime_sensitivity": theory_regime_sens,
+        }
+        st.session_state.regime_modulation_enabled = True
+        st.session_state.locked_theory_weights = agent_weights.copy()
+
+        # Clear custom-weight state so display doesn't confuse the two
+        if 'locked_custom_weights' in st.session_state:
+            del st.session_state['locked_custom_weights']
 
     else:  # equal_weights
         # Always use truly equal weights (1.0 each), overriding orchestrator defaults
@@ -2115,6 +2233,7 @@ def stock_analysis_page():
         # Clear any previously locked custom weights so the display is consistent
         if 'locked_custom_weights' in st.session_state:
             del st.session_state['locked_custom_weights']
+        st.session_state.regime_modulation_enabled = False
     
     st.markdown("---")
     
@@ -2147,6 +2266,8 @@ def stock_analysis_page():
             'tickers': tickers if analysis_mode == "Multiple Stocks" else None,
             'date': analysis_date,
             'weights': agent_weights,
+            'regime_modulation': st.session_state.get('regime_modulation_enabled', False),
+            'regime_sensitivity': (st.session_state.get('theory_settings') or {}).get('regime_sensitivity', 'moderate'),
         }
         st.rerun()
 
@@ -3417,7 +3538,56 @@ def display_stock_analysis(result: dict):
     
     # Show which weights were used for this analysis
     weight_preset = st.session_state.get('weight_preset', 'equal_weights')
-    if weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state:
+    if weight_preset == 'theory_based' and 'locked_theory_weights' in st.session_state:
+        with st.expander("Theory Based Weights Used in This Analysis", expanded=True):
+            theory_s = st.session_state.get('theory_settings', {})
+            horizon_labels = {"short": "Short-term (3\u20136 mo)", "medium": "Medium-term (6\u201318 mo)", "long": "Long-term (18+ mo)"}
+            risk_labels = {"capital": "Capital-weighted", "risk_contribution": "Risk-contribution-weighted"}
+            sens_labels = {"conservative": "Conservative (\u00b15pp)", "moderate": "Moderate (\u00b110pp)", "aggressive": "Aggressive (\u00b115pp)"}
+            _dash = "\u2014"
+            _hz = horizon_labels.get(theory_s.get('horizon'), _dash)
+            _rf = risk_labels.get(theory_s.get('risk_framework'), _dash)
+            _rs = sens_labels.get(theory_s.get('regime_sensitivity'), _dash)
+            st.markdown(
+                f"**Settings:** {_hz} \u00b7 "
+                f"{_rf} \u00b7 "
+                f"{_rs}"
+            )
+
+            base_weights = st.session_state.get('locked_theory_weights', {})
+            agent_labels_map = {'value': 'Value', 'growth_momentum': 'Growth/Momentum',
+                                'macro_regime': 'Macro Regime', 'risk': 'Risk', 'sentiment': 'Sentiment'}
+
+            # Base weights
+            st.markdown("**Base Allocation (before regime shift):**")
+            base_total = sum(base_weights.values()) or 1
+            bcols = st.columns(5)
+            for i, (k, lbl) in enumerate(agent_labels_map.items()):
+                with bcols[i]:
+                    st.metric(lbl, f"{(base_weights.get(k, 0) / base_total) * 100:.0f}%")
+
+            # Regime-adjusted weights (from analysis result)
+            detected_regime = result.get('detected_regime')
+            adj_weights = result.get('regime_adjusted_weights')
+            if detected_regime and adj_weights:
+                regime_display = detected_regime.replace('_', ' ').title()
+                st.markdown(f"**Detected Macro Regime:** `{regime_display}`")
+                st.markdown("**Regime-Adjusted Allocation:**")
+                adj_total = sum(adj_weights.values()) or 1
+                agent_key_map = {'value_agent': 'Value', 'growth_momentum_agent': 'Growth/Momentum',
+                                 'macro_regime_agent': 'Macro Regime', 'risk_agent': 'Risk', 'sentiment_agent': 'Sentiment'}
+                acols = st.columns(5)
+                for i, (k, lbl) in enumerate(agent_key_map.items()):
+                    with acols[i]:
+                        st.metric(lbl, f"{(adj_weights.get(k, 0) / adj_total) * 100:.1f}%")
+
+            st.caption(
+                "Weights derived from Fama\u2013French (1992), Carhart (1997), and regime-switching "
+                "research (Ang & Bekaert, 2002). Upside multiplier is disabled \u2014 the score is a "
+                "pure weighted average reflecting the theoretical factor allocation."
+            )
+
+    elif weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state:
         with st.expander("Custom Weights Used in This Analysis", expanded=False):
             st.info("This analysis used custom agent weights to calculate the final score.")
             
@@ -3588,7 +3758,15 @@ def display_stock_analysis(result: dict):
         
         # Determine which weights were used
         weight_preset = st.session_state.get('weight_preset', 'equal_weights')
-        if weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state:
+        if weight_preset == 'theory_based' and 'locked_theory_weights' in st.session_state:
+            weights_used = st.session_state.locked_theory_weights
+            weights_source = "Theory Based"
+            # If regime-adjusted weights are available, show those instead
+            adj_w = result.get('regime_adjusted_weights')
+            if adj_w:
+                weights_used = {k.replace('_agent', ''): v for k, v in adj_w.items()}
+                weights_source = f"Theory Based (regime-adjusted: {(result.get('detected_regime') or 'unknown').replace('_', ' ').title()})"
+        elif weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state:
             weights_used = st.session_state.locked_custom_weights
             weights_source = "Custom Weights"
         else:
@@ -3678,15 +3856,18 @@ def display_stock_analysis(result: dict):
         
         # Show formula
         actual_final = result.get('final_score', calculated_score)
+        _is_theory = weight_preset == 'theory_based'
+        _score_note = "(pure weighted average \u2014 upside multiplier disabled)" if _is_theory else "(after upside/risk adjustments)"
         st.code(f"""
 Formula: Blended Score = Weighted Sum / Total Weight
          Blended Score = {total_weighted_score:.2f} / {total_weight:.2f} = {calculated_score:.2f}
-         Final Score   = {actual_final:.2f}  (after upside/risk adjustments)
+         Final Score   = {actual_final:.2f}  {_score_note}
         """)
         
-        # Weight impact analysis (only when custom weights differ from equal)
+        # Weight impact analysis (when custom or theory weights differ from equal)
         is_custom = weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state
-        if is_custom:
+        is_theory = weight_preset == 'theory_based' and 'locked_theory_weights' in st.session_state
+        if is_custom or is_theory:
             st.write("---")
             st.write("**Weight Impact Analysis:**")
             
@@ -3704,12 +3885,14 @@ Formula: Blended Score = Weighted Sum / Total Weight
                          delta=f"{weight_effect:+.2f}")
             
             if abs(weight_effect) > 0.5:
+                _w_label = "Theory-based" if is_theory else "Custom"
                 if weight_effect > 0:
-                    st.success(f"Custom weights INCREASED the score by {weight_effect:.2f} points by emphasizing higher-scoring agents")
+                    st.success(f"{_w_label} weights INCREASED the score by {weight_effect:.2f} points by emphasizing higher-scoring agents")
                 else:
-                    st.warning(f"Custom weights DECREASED the score by {abs(weight_effect):.2f} points by emphasizing lower-scoring agents")
+                    st.warning(f"{_w_label} weights DECREASED the score by {abs(weight_effect):.2f} points by emphasizing lower-scoring agents")
             else:
-                st.info("Custom weights had minimal impact on the final score")
+                _w_label = "Theory-based" if is_theory else "Custom"
+                st.info(f"{_w_label} weights had minimal impact on the final score")
         
         # Visual representation
         st.write("---")

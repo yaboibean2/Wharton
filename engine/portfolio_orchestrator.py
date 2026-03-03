@@ -168,7 +168,9 @@ class PortfolioOrchestrator:
         analysis_date: str,
         existing_portfolio: List[Dict] = None,
         agent_weights: Dict[str, float] = None,
-        progress_callback=None
+        progress_callback=None,
+        regime_modulation: bool = False,
+        regime_sensitivity: str = "moderate",
     ) -> Dict[str, Any]:
         """
         Analyze a single stock using all agents.
@@ -381,7 +383,11 @@ class PortfolioOrchestrator:
         # 3. Phase 3: Blend scores and finalize (98-100%)
         blend_start = time.time()
         update_progress(f"Blending agent scores with configured weights...", 98)
-        blended_score = self._blend_scores(agent_results)
+        blended_score = self._blend_scores(
+            agent_results,
+            regime_modulation=regime_modulation,
+            regime_sensitivity=regime_sensitivity,
+        )
 
         recommendation = self._generate_recommendation(blended_score)
         update_progress(f"Analysis complete: {blended_score:.1f}/100 - {recommendation}", 99)
@@ -422,6 +428,8 @@ class PortfolioOrchestrator:
             'fundamentals': data.get('fundamentals', {}),
             'price_history': data.get('price_history', {}),
             'step_timings': _step_timings,
+            'detected_regime': agent_results.get('macro_regime_agent', {}).get('regime', 'unknown') if regime_modulation else None,
+            'regime_adjusted_weights': getattr(self, '_last_regime_adjusted_weights', None),
         }
     
     def analyze_stock(
@@ -430,7 +438,9 @@ class PortfolioOrchestrator:
         analysis_date: str = None,
         existing_portfolio: List[Dict] = None,
         agent_weights: Dict[str, float] = None,
-        progress_callback=None
+        progress_callback=None,
+        regime_modulation: bool = False,
+        regime_sensitivity: str = "moderate",
     ) -> Dict[str, Any]:
         """
         Alias for analyze_single_stock method for backward compatibility.
@@ -441,6 +451,8 @@ class PortfolioOrchestrator:
             existing_portfolio: Existing portfolio for context
             agent_weights: Custom agent weights for this analysis
             progress_callback: Optional callable(progress_pct, message) for progress updates
+            regime_modulation: Whether to dynamically shift weights based on macro regime
+            regime_sensitivity: How aggressively to shift (conservative/moderate/aggressive)
 
         Returns:
             Complete analysis results
@@ -453,7 +465,9 @@ class PortfolioOrchestrator:
             analysis_date=analysis_date,
             existing_portfolio=existing_portfolio,
             agent_weights=agent_weights,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            regime_modulation=regime_modulation,
+            regime_sensitivity=regime_sensitivity,
         )
     
     @staticmethod
@@ -526,79 +540,101 @@ class PortfolioOrchestrator:
             s = secs % 60
             return f" ~{mins}m {s}s"
 
-    def _blend_scores(self, agent_results: Dict[str, Dict]) -> float:
+    def _blend_scores(self, agent_results: Dict[str, Dict],
+                      regime_modulation: bool = False,
+                      regime_sensitivity: str = "moderate") -> float:
         """
-        Blend agent scores using configured weights with UPSIDE POTENTIAL MULTIPLIER.
-        
-        Upside potential is THE MOST IMPORTANT factor. We boost scores based on:
-        - Growth momentum (earnings growth, revenue growth, price momentum)
-        - Distance from 52-week high (more room to run)
-        - Positive sentiment (market recognition of upside)
+        Blend agent scores using configured weights.
+
+        When regime_modulation is True, weights are dynamically shifted based
+        on the macro regime detected by the macro_regime_agent.  The upside
+        multiplier is skipped in that mode because the theory-based weights
+        already encode factor-exposure philosophy.
         """
+        # Determine effective weights
+        effective_weights = dict(self.agent_weights)
+
+        if regime_modulation:
+            regime = (agent_results.get('macro_regime_agent') or {}).get('regime', 'expansion')
+            effective_weights = self._apply_regime_modulation(
+                effective_weights, regime, regime_sensitivity
+            )
+            # Stash for the caller to include in the result dict
+            self._last_regime_adjusted_weights = {
+                k: round(v, 4) for k, v in effective_weights.items()
+            }
+        else:
+            self._last_regime_adjusted_weights = None
+
         # Calculate base weighted score
         total_score = 0
         total_weight = 0
-        
-        for agent_name, weight in self.agent_weights.items():
+
+        for agent_name, weight in effective_weights.items():
             if agent_name in agent_results:
                 score = agent_results[agent_name].get('score') or 50
                 total_score += score * weight
                 total_weight += weight
-        
+
         base_score = total_score / total_weight if total_weight > 0 else 50
-        
-        # ========== UPSIDE POTENTIAL MULTIPLIER ==========
+
+        # ---- When regime modulation is active, return pure weighted average ----
+        if regime_modulation:
+            logger.info(f"THEORY-BASED BLEND (regime modulation ON): {base_score:.1f}")
+            return base_score
+
+        # ========== UPSIDE POTENTIAL MULTIPLIER (non-theory-based presets only) ==========
         # This is THE KEY: boost stocks with high upside potential
-        
+
         upside_multiplier = 1.0  # Start at neutral
         upside_factors = []
-        
+
         # Factor 1: Growth/Momentum score (40% weight - most important!)
         if 'growth_momentum_agent' in agent_results:
             growth_score = agent_results['growth_momentum_agent'].get('score', 50)
             if growth_score >= 80:
                 upside_multiplier += 0.15  # +15% boost for exceptional growth
-                upside_factors.append(f"Exceptional growth ({growth_score:.0f}/100) → +15% boost")
+                upside_factors.append(f"Exceptional growth ({growth_score:.0f}/100) \u2192 +15% boost")
             elif growth_score >= 70:
                 upside_multiplier += 0.10  # +10% boost for strong growth
-                upside_factors.append(f"Strong growth ({growth_score:.0f}/100) → +10% boost")
+                upside_factors.append(f"Strong growth ({growth_score:.0f}/100) \u2192 +10% boost")
             elif growth_score >= 60:
                 upside_multiplier += 0.05  # +5% boost for good growth
-                upside_factors.append(f"Good growth ({growth_score:.0f}/100) → +5% boost")
+                upside_factors.append(f"Good growth ({growth_score:.0f}/100) \u2192 +5% boost")
             elif growth_score < 40:
                 upside_multiplier -= 0.05  # -5% penalty for weak growth
-                upside_factors.append(f"Weak growth ({growth_score:.0f}/100) → -5% penalty")
-        
+                upside_factors.append(f"Weak growth ({growth_score:.0f}/100) \u2192 -5% penalty")
+
         # Factor 2: Sentiment (market recognizing upside)
         if 'sentiment_agent' in agent_results:
             sentiment_score = agent_results['sentiment_agent'].get('score') or 50
             if sentiment_score >= 75:
                 upside_multiplier += 0.08  # +8% boost for very positive sentiment
-                upside_factors.append(f"Very positive sentiment ({sentiment_score:.0f}/100) → +8% boost")
+                upside_factors.append(f"Very positive sentiment ({sentiment_score:.0f}/100) \u2192 +8% boost")
             elif sentiment_score >= 65:
                 upside_multiplier += 0.05  # +5% boost for positive sentiment
-                upside_factors.append(f"Positive sentiment ({sentiment_score:.0f}/100) → +5% boost")
-        
+                upside_factors.append(f"Positive sentiment ({sentiment_score:.0f}/100) \u2192 +5% boost")
+
         # Factor 3: Value (reasonable entry point amplifies upside)
         if 'value_agent' in agent_results:
             value_score = agent_results['value_agent'].get('score', 50)
             if value_score >= 75:
                 upside_multiplier += 0.05  # +5% boost - good value = more upside runway
-                upside_factors.append(f"Attractive valuation ({value_score:.0f}/100) → +5% boost")
-        
+                upside_factors.append(f"Attractive valuation ({value_score:.0f}/100) \u2192 +5% boost")
+
         # Factor 4: Penalize very high risk (extreme risk reduces realizable upside)
         if 'risk_agent' in agent_results:
             risk_score = agent_results['risk_agent'].get('score', 50)
             if risk_score < 30:  # Very high risk
                 upside_multiplier -= 0.10  # -10% penalty for extreme risk
-                upside_factors.append(f"Extreme risk ({risk_score:.0f}/100) → -10% penalty")
-        
+                upside_factors.append(f"Extreme risk ({risk_score:.0f}/100) \u2192 -10% penalty")
+
         # Apply the multiplier (cap at 1.35 to prevent over-inflation)
         upside_multiplier = min(upside_multiplier, 1.35)
         upside_multiplier = max(upside_multiplier, 0.85)  # Floor at 0.85
-        
+
         final_score = base_score * upside_multiplier
-        
+
         # Log the upside calculation for transparency
         if upside_factors:
             logger.info(f"UPSIDE MULTIPLIER APPLIED: {upside_multiplier:.2f}x")
@@ -607,9 +643,85 @@ class PortfolioOrchestrator:
             for factor in upside_factors:
                 logger.info(f"     - {factor}")
             logger.info(f"   Final Score: {final_score:.1f} (boosted by {((upside_multiplier - 1) * 100):.0f}%)")
-        
+
         return final_score
-    
+
+    # --- Regime-based weight modulation (Theory Based preset) ---
+    # Shift table grounded in regime-switching research (Ang & Bekaert, 2002)
+    _REGIME_SHIFTS = {
+        'expansion': {
+            'value_agent': -0.05,
+            'growth_momentum_agent': +0.10,
+            'macro_regime_agent': 0.0,
+            'risk_agent': -0.05,
+            'sentiment_agent': +0.05,
+        },
+        'recession': {
+            'value_agent': +0.10,
+            'growth_momentum_agent': -0.15,
+            'macro_regime_agent': 0.0,
+            'risk_agent': +0.10,
+            'sentiment_agent': -0.05,
+        },
+        'high_inflation': {
+            'value_agent': +0.10,
+            'growth_momentum_agent': -0.10,
+            'macro_regime_agent': 0.0,
+            'risk_agent': +0.05,
+            'sentiment_agent': -0.05,
+        },
+        'disinflation': {
+            'value_agent': -0.05,
+            'growth_momentum_agent': +0.10,
+            'macro_regime_agent': 0.0,
+            'risk_agent': -0.05,
+            'sentiment_agent': +0.05,
+        },
+    }
+
+    _SENSITIVITY_MULTIPLIERS = {
+        'conservative': 0.5,
+        'moderate': 1.0,
+        'aggressive': 1.5,
+    }
+
+    def _apply_regime_modulation(
+        self,
+        base_weights: Dict[str, float],
+        regime: str,
+        sensitivity: str = "moderate",
+    ) -> Dict[str, float]:
+        """
+        Shift agent weights based on the detected macro regime.
+
+        Applies the shift table scaled by sensitivity, clamps each weight
+        to >= 0.02, and renormalizes so all weights sum to 1.0.
+        """
+        multiplier = self._SENSITIVITY_MULTIPLIERS.get(sensitivity, 1.0)
+        shifts = self._REGIME_SHIFTS.get(regime, {})
+
+        adjusted = {}
+        for agent, base_w in base_weights.items():
+            shift = shifts.get(agent, 0.0) * multiplier
+            adjusted[agent] = max(base_w + shift, 0.02)
+
+        # Clamp-then-normalize may push values below the floor, so iterate
+        for _ in range(3):
+            total = sum(adjusted.values())
+            if total > 0:
+                adjusted = {k: v / total for k, v in adjusted.items()}
+            if all(v >= 0.019 for v in adjusted.values()):
+                break
+            adjusted = {k: max(v, 0.02) for k, v in adjusted.items()}
+
+        logger.info(
+            f"REGIME MODULATION: regime={regime}, sensitivity={sensitivity} "
+            f"| base={{{', '.join(f'{k}: {v:.2f}' for k, v in base_weights.items())}}} "
+            f"| adjusted={{{', '.join(f'{k}: {v:.3f}' for k, v in adjusted.items())}}}"
+        )
+
+        return adjusted
+
     def _generate_recommendation(self, score: float) -> str:
         """Generate investment recommendation based on score."""
         if score >= 80:
