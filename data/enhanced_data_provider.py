@@ -610,7 +610,50 @@ class EnhancedDataProvider:
                             pass
             except Exception as e:
                 logger.error(f"CLEAN: Volatility extraction failed: {e}")
-                
+
+            # CLEAN METHOD 10: Get FCF Yield, EV/EBITDA, Profit Margin (valuation fundamentals)
+            if not is_etf:
+                try:
+                    valuation_query = f"""For {ticker} stock, provide the following three metrics based on the most recent trailing twelve months (TTM) financial data.
+
+1. Free Cash Flow Yield (%): calculated as (TTM Free Cash Flow / Market Capitalization) * 100.
+   - Free Cash Flow = Operating Cash Flow minus Capital Expenditures.
+   - Typical range: 1-8% for established companies.
+2. EV/EBITDA ratio: Enterprise Value divided by trailing twelve month EBITDA.
+   - Enterprise Value = Market Cap + Total Debt - Cash.
+   - Typical range: 8-30x for most public companies.
+3. Net Profit Margin (%): (Net Income / Total Revenue) * 100 for the trailing twelve months.
+   - Typical range: 5-35% for profitable tech companies.
+
+Respond ONLY with three numbers separated by commas, in this exact order: FCF_Yield, EV_EBITDA, Profit_Margin
+Example: 2.6, 22.5, 34.1
+Do NOT include labels, units, or explanation. Just three comma-separated numbers."""
+                    val_response = self._simple_perplexity_query(valuation_query, perplexity_key)
+                    if val_response:
+                        import re as _re
+                        # Extract up to 3 numbers from the response
+                        nums = _re.findall(r'(-?[\d]+\.?\d*)', val_response)
+                        if len(nums) >= 3:
+                            try:
+                                fcf_y = float(nums[0])
+                                ev_eb = float(nums[1])
+                                pm = float(nums[2])
+                                if -10 <= fcf_y <= 30:
+                                    all_metrics['fcf_yield'] = fcf_y
+                                    logger.info(f"CLEAN: Extracted FCF Yield: {fcf_y}%")
+                                if 0 < ev_eb <= 200:
+                                    all_metrics['ev_to_ebitda'] = ev_eb
+                                    logger.info(f"CLEAN: Extracted EV/EBITDA: {ev_eb}x")
+                                if -50 <= pm <= 80:
+                                    all_metrics['profit_margin'] = pm / 100.0  # store as decimal
+                                    logger.info(f"CLEAN: Extracted Profit Margin: {pm}%")
+                            except ValueError:
+                                logger.warning(f"CLEAN: Could not parse valuation metrics from: {val_response}")
+                        else:
+                            logger.warning(f"CLEAN: Expected 3 numbers, got {len(nums)} from: {val_response}")
+                except Exception as e:
+                    logger.error(f"CLEAN: Valuation metrics extraction failed: {e}")
+
             logger.info(f"CLEAN: All metrics collected for {ticker}: {all_metrics}")
             
             # CRITICAL DEBUG: Make sure we're returning the right data
@@ -728,7 +771,11 @@ class EnhancedDataProvider:
             'week_52_high': ['polygon', 'perplexity'],
             'volume': ['polygon', 'perplexity'],
             'description': ['polygon', 'perplexity'],
-            'sector': ['polygon', 'perplexity']
+            'sector': ['polygon', 'perplexity'],
+            # Valuation fundamentals (Perplexity only)
+            'fcf_yield': ['perplexity'],
+            'ev_to_ebitda': ['perplexity'],
+            'profit_margin': ['perplexity'],
         }
         
         sources = {
@@ -781,6 +828,12 @@ class EnhancedDataProvider:
                 return 0 <= int(value) <= 1e12  # Volume can be zero but not negative
             elif metric in ['description', 'sector']:
                 return len(str(value).strip()) > 2  # Must have meaningful content
+            elif metric == 'fcf_yield':
+                return -20 <= float(value) <= 50  # FCF yield percentage
+            elif metric == 'ev_to_ebitda':
+                return 0 < float(value) <= 500  # EV/EBITDA ratio
+            elif metric == 'profit_margin':
+                return -1.0 <= float(value) <= 1.0  # Stored as decimal (-100% to 100%)
             
             return True  # Default to true for other metrics
             
@@ -1971,7 +2024,18 @@ class EnhancedDataProvider:
             'source': 'multi_source_validated',
             'description': comprehensive_metrics.get('description', f"{ticker} stock"),
             'sector': comprehensive_metrics.get('sector', 'Unknown'),
+            # Valuation fundamentals (fetched via Perplexity CLEAN METHOD 10)
+            'fcf_yield': comprehensive_metrics.get('fcf_yield'),
+            'ev_to_ebitda': comprehensive_metrics.get('ev_to_ebitda') if not is_etf else None,
+            'profit_margin': comprehensive_metrics.get('profit_margin'),
         }
+        
+        # Compute pct_from_52w_high from price and week_52_high
+        price = metrics.get('price')
+        w52_high = metrics.get('week_52_high')
+        if price and w52_high and w52_high > 0:
+            metrics['pct_from_52w_high'] = ((price / w52_high) - 1) * 100
+            logger.info(f"Computed pct_from_52w_high for {ticker}: {metrics['pct_from_52w_high']:.1f}%")
         
         # Get earnings and revenue growth rates from Perplexity
         if not is_etf:
@@ -2445,12 +2509,18 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
                 'pe_ratio': pe_value,
                 'dividend_yield': key_metrics.get('dividend_yield', 0.0),
                 'beta': beta_value,
-                'eps': key_metrics.get('eps'),  # Add EPS to top level
-                'week_52_low': key_metrics.get('week_52_low'),  # Add 52-week low to top level
-                'week_52_high': key_metrics.get('week_52_high'),  # Add 52-week high to top level
+                'eps': key_metrics.get('eps'),
+                'week_52_low': key_metrics.get('week_52_low'),
+                'week_52_high': key_metrics.get('week_52_high'),
+                # Valuation fundamentals (from Perplexity)
+                'fcf_yield': key_metrics.get('fcf_yield'),
+                'ev_to_ebitda': key_metrics.get('ev_to_ebitda'),
+                'profit_margin': key_metrics.get('profit_margin'),
+                'enterprise_value': key_metrics.get('enterprise_value'),
+                'pct_from_52w_high': key_metrics.get('pct_from_52w_high'),
                 'is_etf': comprehensive_data.get('is_etf', False),
                 'data_sources': comprehensive_data.get('data_sources', []),
-                'key_metrics': key_metrics,  # Keep nested version too for compatibility
+                'key_metrics': key_metrics,
                 'risk_assessment': comprehensive_data.get('risk_assessment', {}),
                 'perplexity_analysis': comprehensive_data.get('perplexity_analysis', {}),
                 'polygon_data': {

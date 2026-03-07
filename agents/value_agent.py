@@ -92,11 +92,10 @@ class ValueAgent(BaseAgent):
             scores['ev_ebitda_score'] = 70  # Generous neutral
         
         # 3. FCF Yield (higher is better)
-        # Estimate: use operating cash flow if available
-        fcf_yield = 0
-        if market_cap and market_cap > 0:
-            # This would ideally come from cash flow statement
-            # For now, estimate using profit margin as proxy
+        # Use real FCF yield from Perplexity data provider (CLEAN METHOD 10)
+        fcf_yield = fundamentals.get('fcf_yield') or 0
+        # If not available from data provider, fall back to profit margin proxy
+        if not fcf_yield and market_cap and market_cap > 0:
             profit_margin = fundamentals.get('profit_margin', 0) or 0
             fcf_yield = profit_margin * 100 if profit_margin else 0
         

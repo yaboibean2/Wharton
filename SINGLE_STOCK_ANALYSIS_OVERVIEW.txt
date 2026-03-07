@@ -1,0 +1,805 @@
+SINGLE STOCK ANALYSIS - COMPREHENSIVE OVERVIEW
+
+OVERVIEW
+
+The main single-stock analysis is driven by the app UI and executed by the PortfolioOrchestrator. The app collects the ticker, date, and weighting mode, stores those inputs in session state, then reruns into the analysis path. The real engine logic lives in PortfolioOrchestrator.analyze_single_stock().
+
+At a high level, the flow is:
+
+1. Initialize the orchestrator with configs and agent objects
+2. Collect analysis inputs from the UI
+3. Pass per-run weights and theory settings into the orchestrator
+4. Gather stock data in parallel
+5. Run five analysis agents in parallel
+6. Blend the five agent scores according to the selected weighting mode
+7. Produce a final score and recommendation
+8. Return a result payload for display
+
+ENTRY FLOW
+
+The app initializes the system in app.py lines 704-759.
+
+That setup:
+- loads model config
+- loads IPS config
+- creates the enhanced data provider
+- creates the PortfolioOrchestrator
+
+The main app reroute logic is in app.py lines 819-940.
+
+The single-stock form and weight preset selection live in app.py lines 1970-2280.
+
+When the user clicks Run Analysis, the app does not immediately execute analysis inline. Instead, it stores analysis parameters in session state and reruns. Those parameters include:
+- mode
+- ticker
+- date
+- weights
+- regime_modulation
+- regime_sensitivity
+
+That submit-time capture is in app.py lines 2268-2279.
+
+After rerun, the app sees stored analysis parameters and enters the execution path in app.py lines 897-940.
+
+For single-stock analysis, it calls the progress wrapper in app.py lines 1233-1363.
+
+That wrapper starts a background thread and calls:
+orchestrator.analyze_stock()
+
+analyze_stock() is just a thin alias over:
+analyze_single_stock()
+
+See engine/portfolio_orchestrator.py lines 435-468.
+
+THE TRUE CORE: ANALYZE_SINGLE_STOCK()
+
+The main orchestration method is:
+engine/portfolio_orchestrator.py lines 166-433
+
+This method performs the entire single-stock workflow.
+
+PHASE 0 - INITIAL STATE AND PROGRESS SETUP
+
+At the start of analyze_single_stock():
+- it logs the start of analysis
+- loads learned timing estimates from data/step_times.json
+- initializes per-step timing tracking
+- resets ETA smoothing state
+- defines a local update_progress() callback that appends ETA text and pushes updates back to the UI
+
+The timing/ETA helper used by progress messages is:
+engine/portfolio_orchestrator.py lines 473-541
+
+The progress model is phase-based:
+- 0-42% = data gathering
+- 42-98% = agent execution
+- 98-100% = blending/finalization
+
+PHASE 1 - WEIGHT OVERRIDE FOR THIS RUN
+
+Before any data is fetched, the orchestrator checks whether agent_weights were passed in for this run.
+
+This logic is in:
+engine/portfolio_orchestrator.py lines 217-238
+
+If weights are passed:
+- the UI keys are mapped to engine keys
+- value -> value_agent
+- growth_momentum -> growth_momentum_agent
+- macro_regime -> macro_regime_agent
+- risk -> risk_agent
+- sentiment -> sentiment_agent
+
+The orchestrator then temporarily overwrites self.agent_weights for this analysis only.
+
+After the analysis finishes, the original weights are restored in:
+engine/portfolio_orchestrator.py lines 407-411
+
+This means the selected weight mode is mostly controlled by the UI, while the engine simply applies the weights it receives.
+
+PHASE 2 - DATA GATHERING
+
+The orchestrator starts data gathering through:
+_gather_data()
+
+Called from:
+engine/portfolio_orchestrator.py lines 239-260
+
+Implemented in:
+engine/portfolio_orchestrator.py lines 834-964
+
+What _gather_data() does:
+
+1. Computes the analysis date range
+   - uses the requested analysis date
+   - looks back one year
+   - prevents future dates from being used
+
+2. Initializes a data dictionary with:
+   - ticker
+   - analysis_date
+
+3. Reads the benchmark ticker from IPS config
+   - default is ^GSPC
+
+4. Launches three tasks in parallel:
+   - fundamentals fetch
+   - price history fetch
+   - benchmark data generation
+
+Those three tasks are started in:
+engine/portfolio_orchestrator.py lines 862-890
+
+The tasks are:
+
+A. FUNDAMENTALS
+- tries get_fundamentals_enhanced() if available
+- otherwise falls back to get_fundamentals()
+
+B. PRICE HISTORY
+- tries get_price_history_enhanced() if available
+- otherwise falls back to get_price_history()
+
+C. BENCHMARK
+- creates synthetic benchmark data through _create_benchmark_data()
+
+As each task finishes:
+- the result is stored in the data dictionary
+- task timing is stored in step_timings
+- progress updates are pushed back to the UI
+
+That collection logic is in:
+engine/portfolio_orchestrator.py lines 893-946
+
+After all three tasks complete, the orchestrator resolves price history fallback behavior:
+engine/portfolio_orchestrator.py lines 947-960
+
+The logic is:
+- if fundamentals indicate a comprehensive enhanced source, synthesize price history from fundamentals
+- else, if raw price history exists, use that
+- else, if fundamentals exist, synthesize price history from fundamentals
+- else, use an empty DataFrame
+
+Finally, it adds:
+- existing_portfolio
+
+That is important because the risk agent can use portfolio context.
+
+The method returns the assembled data bundle.
+
+EARLY EXIT CONDITION
+
+Back in analyze_single_stock(), if no fundamentals were obtained, the method exits early with an error result.
+
+That check is in:
+engine/portfolio_orchestrator.py lines 278-291
+
+This means fundamentals are the minimum viable dataset required for full analysis.
+
+PHASE 3 - PREPARE SUMMARY DATA FOR PROGRESS
+
+After successful data gathering, the orchestrator extracts a few headline values:
+- price
+- EPS
+- P/E ratio
+- market cap
+
+It formats the market cap for readable progress messages and reports that the data is ready.
+
+That logic is in:
+engine/portfolio_orchestrator.py lines 293-312
+
+PHASE 4 - RUN ALL FIVE AGENTS IN PARALLEL
+
+This is the main analytical core of the system.
+
+The parallel agent execution block is:
+engine/portfolio_orchestrator.py lines 314-373
+
+The orchestrator launches these five agents:
+
+1. ValueAgent
+2. GrowthMomentumAgent
+3. MacroRegimeAgent
+4. RiskAgent
+5. SentimentAgent
+
+These are created in the constructor at:
+engine/portfolio_orchestrator.py lines 131-137
+
+The orchestrator:
+- uses a thread pool with 5 workers
+- submits all 5 analyze() calls
+- lightly staggers launches by 0.2 seconds to avoid API bursts
+- records each agent’s elapsed time
+- updates progress as each agent completes
+
+If an agent succeeds:
+- its result is stored in agent_results
+- missing score defaults to 50
+- a completion message is generated
+
+If an agent fails:
+- the orchestrator inserts a fallback neutral result with score 50
+- the rationale says analysis failed
+
+That fallback behavior prevents one broken agent from collapsing the entire analysis.
+
+WHAT EACH AGENT DOES
+
+VALUE AGENT
+
+Defined in:
+agents/value_agent.py lines 1-40
+
+Purpose:
+- valuation-focused analysis
+
+Main inputs:
+- fundamentals
+- sector peer context if present
+
+Main factors:
+- P/E ratio
+- EV/EBITDA
+- FCF yield
+- shareholder yield
+
+Interpretation:
+This agent asks whether the stock looks attractively priced relative to its financial profile.
+
+GROWTH/MOMENTUM AGENT
+
+Defined in:
+agents/growth_momentum_agent.py lines 1-45
+
+Purpose:
+- upside and trend analysis
+
+Main inputs:
+- fundamentals
+- price history
+
+Main factors:
+- earnings growth
+- revenue growth
+- short/intermediate momentum
+- distance from 52-week highs
+
+Interpretation:
+This is the engine’s most upside-oriented factor. It heavily influences non-theory scoring both through weighting and through the upside multiplier.
+
+MACRO REGIME AGENT
+
+Defined in:
+agents/macro_regime_agent.py lines 1-96
+
+Regime classification logic:
+agents/macro_regime_agent.py lines 99-128
+
+Purpose:
+- macro and regime alignment analysis
+
+Main inputs:
+- fundamentals
+- macro indicators
+
+Main factors:
+- current regime classification
+- sector fit for that regime
+- market-cap fit
+- cyclicality / beta
+- macro health
+
+Possible regimes:
+- expansion
+- recession
+- high_inflation
+- disinflation
+
+Interpretation:
+This agent matters in two ways:
+1. it contributes its own score like the other agents
+2. in theory mode, it also determines the regime used to shift weights
+
+RISK AGENT
+
+Defined in:
+agents/risk_agent.py lines 1-120
+
+Purpose:
+- risk and portfolio-fit analysis
+
+Main inputs:
+- fundamentals
+- price history
+- benchmark history
+- existing portfolio
+
+Main factors:
+- volatility
+- beta
+- drawdown
+- diversification benefit
+- size / asset defensiveness
+- portfolio fit
+
+Interpretation:
+This agent tries to determine whether the stock is stable, appropriate, and manageable from a risk perspective.
+
+SENTIMENT AGENT
+
+Defined in:
+agents/sentiment_agent.py lines 1-90
+
+Purpose:
+- market narrative and news analysis
+
+Main inputs:
+- news
+- fundamentals
+- analysis context
+
+Main factors:
+- recent headline tone
+- article content
+- notable events
+- enhanced news scraping
+
+Interpretation:
+This agent captures whether the market story around the stock is supportive or hostile.
+
+PHASE 5 - BLEND AGENT SCORES
+
+After all 5 agents complete, the orchestrator blends the scores through:
+_blend_scores()
+
+Called in:
+engine/portfolio_orchestrator.py lines 375-383
+
+Implemented in:
+engine/portfolio_orchestrator.py lines 544-648
+
+This is where equal weights, custom weights, and theory mode diverge.
+
+DEFAULT RUNTIME WEIGHTS
+
+The orchestrator’s default weight set is defined in the constructor:
+engine/portfolio_orchestrator.py lines 147-163
+
+Default runtime weights are:
+- value_agent = 0.20
+- growth_momentum_agent = 0.40
+- macro_regime_agent = 0.10
+- risk_agent = 0.15
+- sentiment_agent = 0.15
+
+Important caveat:
+These runtime defaults are sourced from:
+ips_config.get('agent_weights', {})
+
+They are not sourced from model_config.
+
+The IPS loader is in:
+utils/config_loader.py lines 18-35
+
+The current IPS file is:
+config/ips.yaml lines 1-120
+
+That file currently does not define an agent_weights block, so the system falls back to the hardcoded defaults above.
+
+This means the live single-stock default is an upside-focused weighting scheme:
+- Growth/Momentum is the heaviest factor
+- Value is second
+- Risk and Sentiment are moderate
+- Macro is light
+
+THE CORE BLENDING FORMULA
+
+The weighted-average blend inside _blend_scores() is:
+
+base_score = sum(score * weight) / sum(weight)
+
+More formally:
+
+base score = weighted average of agent scores using the effective weights for that run
+
+If the total weight is zero, the method falls back to 50.
+
+MODE 1 - EQUAL WEIGHTS
+
+The equal-weight preset is defined in:
+app.py lines 2232-2245
+
+The app passes:
+- value = 1.0
+- growth_momentum = 1.0
+- macro_regime = 1.0
+- risk = 1.0
+- sentiment = 1.0
+
+Inside the orchestrator, those are remapped to the agent-key names and temporarily applied.
+
+What equal mode means:
+- each of the 5 agents has identical influence in the weighted average
+- so the base weighted score becomes the simple mean of the five scores
+
+However, equal mode is NOT a pure average all the way to the end.
+
+After the equal-weight base score is computed, the engine still enters the non-theory upside multiplier path in:
+engine/portfolio_orchestrator.py lines 581-648
+
+That means the final score is:
+
+final score = equal-weight average, then adjusted by the upside multiplier
+
+UPSIDE MULTIPLIER IN NON-THEORY MODES
+
+In equal mode and custom mode, _blend_scores() adds a second layer after the weighted average.
+
+This layer examines:
+
+1. Growth/Momentum score
+- >= 80 -> +15%
+- >= 70 -> +10%
+- >= 60 -> +5%
+- < 40 -> -5%
+
+2. Sentiment score
+- >= 75 -> +8%
+- >= 65 -> +5%
+
+3. Value score
+- >= 75 -> +5%
+
+4. Risk score
+- < 30 -> -10%
+
+Then the total multiplier is clamped:
+- max 1.35
+- min 0.85
+
+So in equal mode:
+- all agents count equally in the base score
+- then growth, sentiment, value, and extreme risk can further modify the final output
+
+Interpretation:
+Equal mode is equal at the averaging stage, but not fully neutral at the final-score stage.
+
+MODE 2 - CUSTOM WEIGHTS
+
+The custom-weight preset lives in:
+app.py lines 1990-2124
+
+UI behavior:
+- initializes all sliders at 0.5
+- sliders range from 0.0 to 1.0
+- step size is 0.05
+
+The custom weights are stored in session state and passed as:
+- value
+- growth_momentum
+- macro_regime
+- risk
+- sentiment
+
+The orchestrator remaps those keys and applies them temporarily.
+
+Important detail:
+The engine does not pre-normalize custom weights before blending. It uses them directly in the weighted average formula.
+
+That means only the relative proportions matter.
+
+Examples:
+- all five weights at 0.5 is mathematically equivalent to all five at 1.0
+- setting growth_momentum to 1.0 and all others to 0.25 gives growth four times as much influence as each other factor
+- setting a factor to 0.0 removes that factor from the base weighted average
+
+Then, just like equal mode, custom mode still goes through the non-theory upside multiplier.
+
+So custom mode is a two-layer process:
+1. user-defined weighted average
+2. engine-defined upside/risk adjustment
+
+Final interpretation:
+Custom mode lets the user choose the relative importance of each agent, but the final score is still stylized by the engine’s upside philosophy.
+
+MODE 3 - THEORY BASED
+
+The theory-based preset is defined in:
+app.py lines 2126-2229
+
+This mode is conceptually different.
+
+The UI does three things:
+1. chooses a base factor allocation table
+2. enables regime_modulation
+3. passes regime_sensitivity
+
+So the engine does not know a special label called “Theory Based.” It only sees:
+- a specific base weight table
+- regime_modulation=True
+- a sensitivity value
+
+THEORY SETTINGS IN THE UI
+
+The selectable theory settings are:
+- investment horizon
+- risk framework
+- regime sensitivity
+
+The UI explains the theory preset directly in:
+app.py lines 2126-2195
+
+BASE THEORY WEIGHT TABLES
+
+The theory lookup table is in:
+app.py lines 2199-2206
+
+The six base allocations are:
+
+Long / Capital
+- value 0.45
+- growth_momentum 0.30
+- macro_regime 0.05
+- risk 0.05
+- sentiment 0.15
+
+Long / Risk Contribution
+- value 0.40
+- growth_momentum 0.30
+- macro_regime 0.05
+- risk 0.10
+- sentiment 0.15
+
+Medium / Capital
+- value 0.35
+- growth_momentum 0.40
+- macro_regime 0.05
+- risk 0.05
+- sentiment 0.15
+
+Medium / Risk Contribution
+- value 0.30
+- growth_momentum 0.35
+- macro_regime 0.05
+- risk 0.10
+- sentiment 0.20
+
+Short / Capital
+- value 0.25
+- growth_momentum 0.45
+- macro_regime 0.05
+- risk 0.05
+- sentiment 0.20
+
+Short / Risk Contribution
+- value 0.20
+- growth_momentum 0.40
+- macro_regime 0.05
+- risk 0.10
+- sentiment 0.25
+
+Interpretation:
+- longer horizons emphasize value more
+- shorter horizons emphasize momentum more
+- risk-contribution variants increase the explicit risk allocation
+
+HOW THEORY MODE WORKS INSIDE THE ENGINE
+
+Inside _blend_scores():
+engine/portfolio_orchestrator.py lines 544-583
+
+If regime_modulation=True:
+1. the engine reads the detected regime from the macro agent result
+2. it calls _apply_regime_modulation()
+3. it adjusts the base weights according to the regime table
+4. it renormalizes them
+5. it computes the weighted average
+6. it returns immediately
+
+The critical point:
+In theory mode, the upside multiplier is completely skipped.
+
+So theory mode produces:
+final score = pure regime-adjusted weighted average
+
+REGIME MODULATION
+
+The regime shift table is defined in:
+engine/portfolio_orchestrator.py lines 649-684
+
+Shifts by regime:
+
+Expansion
+- value -0.05
+- growth_momentum +0.10
+- macro_regime 0.00
+- risk -0.05
+- sentiment +0.05
+
+Recession
+- value +0.10
+- growth_momentum -0.15
+- macro_regime 0.00
+- risk +0.10
+- sentiment -0.05
+
+High Inflation
+- value +0.10
+- growth_momentum -0.10
+- macro_regime 0.00
+- risk +0.05
+- sentiment -0.05
+
+Disinflation
+- value -0.05
+- growth_momentum +0.10
+- macro_regime 0.00
+- risk -0.05
+- sentiment +0.05
+
+Sensitivity multipliers are defined in:
+engine/portfolio_orchestrator.py lines 686-688
+
+They are:
+- conservative = 0.5
+- moderate = 1.0
+- aggressive = 1.5
+
+WEIGHT NORMALIZATION IN THEORY MODE
+
+_apply_regime_modulation() is implemented in:
+engine/portfolio_orchestrator.py lines 690-719
+
+It does the following:
+- applies regime shifts to the base weights
+- floors each weight at about 0.02
+- renormalizes all weights so they sum to 1.0
+- repeats clamp/normalize a few times if necessary
+
+This makes theory mode more mathematically self-contained than the other modes.
+
+PRACTICAL DIFFERENCE BETWEEN THE THREE MODES
+
+EQUAL WEIGHTS
+- base score: simple mean of the 5 agent scores
+- final score: equal-weight average plus upside/risk multiplier
+- philosophy: neutral averaging, but still with engine upside tilt
+
+CUSTOM WEIGHTS
+- base score: user-controlled weighted average
+- final score: custom weighted average plus upside/risk multiplier
+- philosophy: user-selected emphasis, still with engine upside tilt
+
+THEORY BASED
+- base score: theory weight table, shifted by macro regime
+- final score: pure regime-adjusted weighted average
+- philosophy: factor-model-driven scoring with no extra upside overlay
+
+WHY THEORY MODE FEELS DIFFERENT
+
+Theory mode differs from equal/custom in one very important way:
+- it disables the upside multiplier
+
+So if two stocks have the same agent scores:
+- equal/custom may still produce a boosted or penalized final score because of the overlay
+- theory mode will not
+
+That makes theory mode cleaner and more interpretable for anyone who wants the final score to reflect only the weighted agent mix.
+
+FINALIZATION
+
+After blending:
+- the orchestrator calls _generate_recommendation()
+- the thresholds are:
+
+engine/portfolio_orchestrator.py lines 721-731
+
+Recommendation thresholds:
+- 80+ = STRONG BUY
+- 70+ = BUY
+- 60+ = HOLD
+- 40+ = WEAK HOLD
+- below 40 = SELL
+
+The orchestrator then:
+- stores blend timing
+- stores total timing
+- restores original weights if they were overridden
+- extracts simplified agent_scores
+- extracts simplified agent_rationales
+- returns the final result dictionary
+
+That final return structure is in:
+engine/portfolio_orchestrator.py lines 414-433
+
+RETURNED RESULT CONTENTS
+
+The single-stock result includes:
+- ticker
+- analysis_date
+- agent_results
+- agent_scores
+- agent_rationales
+- blended_score
+- final_score
+- eligible
+- recommendation
+- rationale
+- fundamentals
+- price_history
+- step_timings
+- detected_regime
+- regime_adjusted_weights
+
+Note:
+In the engine, blended_score is actually the direct output of _blend_scores(), and final_score is set equal to it. So in practice, they are the same value in this method.
+
+RESULT DISPLAY
+
+The result page includes weight explanations and score breakdowns in:
+app.py lines 3548-3905
+
+Theory display:
+app.py lines 3548-3597
+
+Custom display:
+app.py lines 3598-3641
+
+Score breakdown:
+app.py lines 3768-3872
+
+The UI explicitly notes that theory mode is a pure weighted average with the upside multiplier disabled:
+app.py lines 3862-3872
+
+IMPORTANT CAVEATS
+
+1. DEFAULT CONFIG MISMATCH
+The app loads both model config and IPS config, but the orchestrator’s live default weights come from IPS config, not model config.
+
+Relevant files:
+utils/config_loader.py lines 18-35
+config/model.yaml lines 1-6
+config/ips.yaml lines 1-120
+engine/portfolio_orchestrator.py lines 147-163
+
+Since ips.yaml currently has no agent_weights, the live runtime defaults are the hardcoded 20/40/10/15/15 split.
+
+2. EQUAL MODE IS NOT FULLY NEUTRAL
+Equal mode only equalizes the weighted average stage. The final score still gets the upside/risk overlay.
+
+3. CUSTOM MODE IS NOT PURELY CUSTOM
+Custom mode changes the weighted average, but the final score is still modified by the engine’s non-theory upside multiplier.
+
+4. THEORY MODE IS A UI PACKAGING CONCEPT
+The engine only sees weights plus regime_modulation=True. The phrase “Theory Based” comes from the UI preset, not from a special engine type.
+
+5. BLENDED SCORE TERMINOLOGY IS SLIGHTLY CONFUSING
+The engine stores the output of _blend_scores() as both blended_score and final_score, but the UI breakdown may separately recompute a raw weighted average for explanation.
+
+BOTTOM LINE
+
+The main single-stock analysis works like this:
+
+- collect one year of stock data and benchmark context
+- run five independent specialist agents in parallel
+- compute five agent scores
+- combine them using one of three weight systems
+- produce a final score and recommendation
+
+The three modes differ mainly in the score-combination step:
+
+Equal Weights
+- every agent has equal base influence
+- final score still uses upside/risk multiplier
+
+Custom Weights
+- user controls relative agent influence
+- final score still uses upside/risk multiplier
+
+Theory Based
+- starts from a factor-theory weight table
+- adjusts weights based on detected macro regime
+- disables upside multiplier
+- final score is a pure regime-adjusted weighted average

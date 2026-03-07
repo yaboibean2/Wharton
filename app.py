@@ -20,7 +20,7 @@ import time
 
 # Setup page config
 st.set_page_config(
-    page_title="Total Insights AI Investing Research",
+    page_title="Total Insights Investing",
     page_icon="TI",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -793,7 +793,7 @@ def _render_privacy_policy_page():
                 letter-spacing:-0.02em;">TI</div>
     <div>
         <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-            Total Insights AI Investing Research</div>
+            Total Insights Investing</div>
         <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
             Privacy Policy</div>
     </div>
@@ -810,7 +810,7 @@ def _render_privacy_policy_page():
     st.markdown("---")
     st.markdown(
         '<div style="text-align:center;color:#9ca3af;font-size:0.8rem;padding:16px 0;">'
-        '&copy; 2026 Total Insights AI Investing Research'
+        '&copy; 2026 Total Insights Investing'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -825,10 +825,10 @@ def main():
         _render_privacy_policy_page()
         return
 
-    # ---- Google OAuth callback (must run FIRST, before any display) ----
-    # When Google redirects back with ?code=..., exchange it for a token.
-    # This is at the top so it works even if session_state was lost.
-    _handle_google_oauth_callback()
+#     # ---- Google OAuth callback (must run FIRST, before any display) ----
+#     # When Google redirects back with ?code=..., exchange it for a token.
+#     # This is at the top so it works even if session_state was lost.
+#     _handle_google_oauth_callback()
 
     # Initialize tier manager early (before system init) so sidebar shows
     if 'tier_manager' not in st.session_state:
@@ -878,7 +878,7 @@ def main():
                         letter-spacing:-0.02em;">IA</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Total Insights AI Investing Research</div>
+                    Total Insights Investing</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                     Multi-Agent Investment Research Platform</div>
             </div>
@@ -914,7 +914,7 @@ def main():
                         letter-spacing:-0.02em;">TI</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                    Total Insights AI Investing Research</div>
+                    Total Insights Investing</div>
                 <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                     Multi-Agent Investment Research Platform</div>
             </div>
@@ -952,7 +952,7 @@ def main():
                     letter-spacing:-0.02em;">TI</div>
         <div>
             <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
-                Total Insights AI Investing Research</div>
+                Total Insights Investing</div>
             <div style="font-size:0.75rem;color:#9ca3af;font-weight:400;letter-spacing:0.01em;">
                 Multi-Agent Investment Research Platform</div>
         </div>
@@ -962,7 +962,7 @@ def main():
     # Purpose description & privacy link (required for Google OAuth verification)
     st.markdown(
         '<div style="color:#6b7280;font-size:0.85rem;margin:-4px 0 12px 0;line-height:1.5;">'
-        'Total Insights AI Investing Research is a multi-agent investment research '
+        'Total Insights Investing is a multi-agent investment research '
         'platform that analyzes stocks using AI-powered value, growth, macro, risk, '
         'and sentiment agents. Results can be exported to Google Docs and Sheets. '
         '<a href="?page=privacy" target="_self" style="color:#3b5998;">Privacy Policy</a>'
@@ -971,21 +971,25 @@ def main():
     )
 
     # Top navigation tabs
-    tab_stock, tab_portfolio, tab_config, tab_status = st.tabs([
-        "Stock Analysis",
-        "Portfolio Recs",
-        "Configuration",
-        "System Status",
-    ])
+#     tab_stock, tab_portfolio, tab_config, tab_status = st.tabs([
+#         "Stock Analysis",
+#         "Portfolio Recs",
+#         "Configuration",
+#         "System Status",
+#     ])
+# 
+#     with tab_stock:
+#         stock_analysis_page()
+#     with tab_portfolio:
+#         portfolio_recommendations_page()
+#     with tab_config:
+#         configuration_page()
+#     with tab_status:
+#         system_status_and_ai_disclosure_page()
 
-    with tab_stock:
-        stock_analysis_page()
-    with tab_portfolio:
-        portfolio_recommendations_page()
-    with tab_config:
-        configuration_page()
-    with tab_status:
-        system_status_and_ai_disclosure_page()
+    # Only Stock Analysis mode (other tabs commented out)
+    stock_analysis_page()
+
 
 
 
@@ -2280,1212 +2284,1212 @@ def stock_analysis_page():
         st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Google Sheets / Docs export helpers  (OAuth 2.0 via authlib)
-# ---------------------------------------------------------------------------
-from authlib.integrations.requests_client import OAuth2Session as _OAuth2Session
-
-_GOOGLE_SCOPES = [
-    'openid',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/userinfo.profile',
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/documents',
-    'https://www.googleapis.com/auth/drive',
-]
-
-_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
-_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-
-# Paths for persisting state across the OAuth redirect (session may be lost)
-_OAUTH_TOKEN_PATH = os.path.join(os.path.dirname(__file__), 'data', 'google_oauth_token.json')
-_OAUTH_DISPLAY_RESULT_PATH = os.path.join(os.path.dirname(__file__), 'data', '_display_result_backup.json')
-
-
-def _save_display_result_to_disk():
-    """Persist _display_result to disk so it survives an OAuth redirect."""
-    dr = st.session_state.get('_display_result')
-    if not dr:
-        return
-    try:
-        with open(_OAUTH_DISPLAY_RESULT_PATH, 'w') as f:
-            json.dump(dr, f, default=str)
-    except Exception:
-        pass
-
-
-def _restore_display_result_from_disk():
-    """Restore _display_result from disk if session was lost after OAuth redirect."""
-    if '_display_result' in st.session_state:
-        return  # already have it
-    if not os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
-        return
-    try:
-        with open(_OAUTH_DISPLAY_RESULT_PATH, 'r') as f:
-            dr = json.load(f)
-        st.session_state['_display_result'] = dr
-    except Exception:
-        pass
-
-
-def _cleanup_display_result_backup():
-    """Remove the backup file after it's no longer needed."""
-    try:
-        if os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
-            os.remove(_OAUTH_DISPLAY_RESULT_PATH)
-    except Exception:
-        pass
-
-
-def _save_oauth_token_to_disk(token, user_info=None):
-    """Persist OAuth token to disk so it survives session loss."""
-    try:
-        data = {'token': token}
-        if user_info:
-            data['user'] = user_info
-        with open(_OAUTH_TOKEN_PATH, 'w') as f:
-            json.dump(data, f, default=str)
-    except Exception:
-        pass
-
-
-def _load_oauth_token_from_disk():
-    """Load a previously saved OAuth token from disk into session_state."""
-    if 'google_token' in st.session_state:
-        return  # already loaded
-    if not os.path.exists(_OAUTH_TOKEN_PATH):
-        return
-    try:
-        with open(_OAUTH_TOKEN_PATH, 'r') as f:
-            data = json.load(f)
-        st.session_state['google_token'] = data['token']
-        if 'user' in data:
-            st.session_state['google_user'] = data['user']
-    except Exception:
-        pass
-
-
-def _google_oauth_cfg():
-    """Return (client_id, client_secret, redirect_uri) from secrets, or Nones."""
-    try:
-        g = st.secrets["google"]
-        cid = g["client_id"]
-        csecret = g["client_secret"]
-        redirect = g.get("redirect_uri", "http://localhost:8501")
-        if cid.startswith("YOUR_"):
-            return None, None, None
-        return cid, csecret, redirect
-    except Exception:
-        return None, None, None
-
-
-def _handle_google_oauth_callback():
-    """If the URL contains a Google OAuth `code` param, exchange it for a token.
-
-    Called at the top of main() so it runs before any display logic.
-    Restores analysis results from disk if the session was lost during redirect.
-    """
-    code = st.query_params.get("code")
-    if not code:
-        # No callback — but try to load a previously saved token from disk
-        _load_oauth_token_from_disk()
-        return
-    if "google_token" in st.session_state:
-        # Already exchanged — just clear leftover params
-        st.query_params.clear()
-        return
-
-    cid, csecret, redirect = _google_oauth_cfg()
-    if not cid:
-        return
-
-    try:
-        session = _OAuth2Session(
-            cid, csecret,
-            redirect_uri=redirect,
-        )
-        token = session.fetch_token(
-            _GOOGLE_TOKEN_URL,
-            code=code,
-        )
-        st.session_state["google_token"] = token
-
-        # Fetch basic user info for display
-        user_info = session.get(
-            "https://www.googleapis.com/oauth2/v1/userinfo"
-        ).json()
-        st.session_state["google_user"] = user_info
-
-        # Persist token to disk (survives session loss)
-        _save_oauth_token_to_disk(token, user_info)
-
-        # Restore analysis results if session was lost during the redirect
-        _restore_display_result_from_disk()
-
-        # Clear the code from the URL so it doesn't get reused
-        st.query_params.clear()
-        st.rerun()
-    except Exception as exc:
-        # Still try to restore results even if auth fails
-        _restore_display_result_from_disk()
-        st.query_params.clear()
-        st.warning(f"Google sign-in failed: {exc}")
-
-
-def _get_google_creds():
-    """Return google.oauth2.credentials.Credentials built from the OAuth2 token, or None."""
-    token_data = st.session_state.get("google_token")
-    if not token_data:
-        return None
-
-    try:
-        from google.oauth2.credentials import Credentials
-        cid, csecret, _ = _google_oauth_cfg()
-        creds = Credentials(
-            token=token_data["access_token"],
-            refresh_token=token_data.get("refresh_token"),
-            token_uri=_GOOGLE_TOKEN_URL,
-            client_id=cid,
-            client_secret=csecret,
-            scopes=_GOOGLE_SCOPES,
-        )
-        return creds
-    except Exception:
-        return None
-
-
-def _render_google_sign_in(key_suffix=""):
-    """Show a 'Sign in with Google' button if the user is not yet authenticated.
-
-    Returns True if the user IS signed in, False otherwise.
-    """
-    if "google_token" in st.session_state:
-        user = st.session_state.get("google_user", {})
-        name = user.get("name", "Google User")
-        email = user.get("email", "")
-        st.caption(f"Signed in as **{name}** ({email})")
-        if st.button("Sign out of Google", key=f"google_sign_out_{key_suffix}"):
-            for k in ("google_token", "google_user"):
-                st.session_state.pop(k, None)
-            # Remove persisted token from disk too
-            try:
-                if os.path.exists(_OAUTH_TOKEN_PATH):
-                    os.remove(_OAUTH_TOKEN_PATH)
-            except Exception:
-                pass
-            _cleanup_display_result_backup()
-            st.rerun()
-        return True
-
-    cid, csecret, redirect = _google_oauth_cfg()
-    if not cid:
-        st.warning(
-            "Google export requires OAuth 2.0 credentials.  "
-            "Add `[google]` client_id / client_secret to `.streamlit/secrets.toml`.  "
-            "[Setup guide](https://console.cloud.google.com/apis/credentials)"
-        )
-        return False
-
-    # Save analysis results to disk BEFORE the user navigates away,
-    # so we can restore them if the session is lost during the redirect.
-    _save_display_result_to_disk()
-
-    session = _OAuth2Session(
-        cid, csecret,
-        scope=" ".join(_GOOGLE_SCOPES),
-        redirect_uri=redirect,
-    )
-    auth_url, _ = session.create_authorization_url(
-        _GOOGLE_AUTH_URL,
-        access_type="offline",
-        prompt="consent",
-    )
-
-    st.markdown(f'<a href="{auth_url}" target="_self" style="'
-                f'display:inline-block;padding:8px 20px;background:#4285F4;'
-                f'color:white;border-radius:4px;text-decoration:none;'
-                f'font-weight:500;">Sign in with Google</a>',
-                unsafe_allow_html=True)
-    return False
-
-
-def _share_file_anyone(creds, file_id):
-    """Make a Drive file accessible to anyone with the link."""
-    try:
-        from googleapiclient.discovery import build
-        drive = build('drive', 'v3', credentials=creds)
-        drive.permissions().create(
-            fileId=file_id,
-            body={'type': 'anyone', 'role': 'writer'},
-            fields='id',
-        ).execute()
-    except Exception:
-        pass  # non-fatal — file still works for service account
-
-
-
-def _build_report_text(result):
-    """Build a plain-text report from analysis result (fallback / Sheets use)."""
-    f = result['fundamentals']
-    ticker = result['ticker']
-    lines = []
-    lines.append(f"Investment Analysis: {ticker}")
-    lines.append(f"{f.get('name', 'N/A')}")
-    lines.append(f"Date: {datetime.now().strftime('%B %d, %Y')}")
-    lines.append(f"Sector: {f.get('sector', 'N/A')}")
-    lines.append(f"Price: ${f.get('price', 0):.2f}")
-    lines.append("")
-    lines.append(f"Final Score: {result['final_score']:.1f}/100")
-    lines.append(f"Recommendation: {result.get('recommendation', 'N/A')}")
-    lines.append("")
-    lines.append("Agent Breakdown:")
-    for agent, score in result.get('agent_scores', {}).items():
-        lines.append(f"  {agent.replace('_', ' ').title()}: {score:.1f}/100")
-    lines.append("")
-    lines.append("Key Metrics:")
-    mc = f.get('market_cap', 0)
-    lines.append(f"  Market Cap: ${mc/1e9:.2f}B" if mc else "  Market Cap: N/A")
-    pe = f.get('pe_ratio')
-    lines.append(f"  P/E Ratio: {pe:.1f}" if pe else "  P/E Ratio: N/A")
-    beta = f.get('beta')
-    lines.append(f"  Beta: {beta:.2f}" if beta else "  Beta: N/A")
-    dy = f.get('dividend_yield')
-    if dy:
-        lines.append(f"  Dividend Yield: {dy*100:.2f}%")
-    lines.append("")
-    lines.append("Agent Analysis:")
-    for agent, rationale in result.get('agent_rationales', {}).items():
-        if rationale:
-            lines.append(f"\n{agent.replace('_', ' ').title()}:")
-            lines.append(rationale)
-    return "\n".join(lines)
-
-
-def _build_formatted_doc_content(result, base_index=1, tab_id=None):
-    """Build text and Google Docs API formatting requests for a richly formatted report.
-
-    Returns (full_text, format_requests) where format_requests is a list
-    of Google Docs API batchUpdate request dicts for styling (headings, bold,
-    colored scores, hyperlinks).  All body text is set to Times New Roman.
-    Key Metrics and Agent Scores are rendered as inline tables.
-    """
-    import re as _re_fmt
-    f = result['fundamentals']
-    ticker = result['ticker']
-    timestamp = datetime.now().strftime('%B %d, %Y')
-    score = result['final_score']
-    rec = result.get('recommendation', 'N/A')
-
-    # --- Accumulate text with position tracking ---
-    _offset = [0]  # mutable counter
-    _ranges = []    # (start_offset, end_offset, style)
-    _parts = []
-
-    def add(text, style='normal'):
-        _parts.append(text)
-        s = _offset[0]
-        _offset[0] += len(text)
-        if style != 'normal':
-            _ranges.append((s, _offset[0], style))
-
-    # ── Title ──
-    add(f"Investment Analysis: {ticker}\n", 'title')
-    add(f"{f.get('name', 'N/A')}  •  {f.get('sector', 'N/A')}  •  {timestamp}\n", 'subtitle')
-    add("\n")
-
-    # ── Summary ──
-    add("Summary\n", 'heading2')
-    score_style = 'score_good' if score >= 60 else 'score_bad'
-    add(f"Final Score: {score:.1f}/100", score_style)
-    add("   |   ")
-    rec_style = 'rec_good' if rec and any(w in rec.lower() for w in ('buy', 'outperform', 'overweight', 'accumulate')) else (
-        'rec_bad' if rec and any(w in rec.lower() for w in ('sell', 'underperform', 'underweight', 'reduce')) else 'bold')
-    add(f"Recommendation: {rec}\n", rec_style)
-    add("\n")
-
-    # ── Key Metrics (as text table) ──
-    add("Key Metrics\n", 'heading2')
-    metrics = []
-    price = f.get('price', 0)
-    if price:
-        metrics.append(("Price", f"${price:.2f}"))
-    mc = f.get('market_cap', 0)
-    if mc:
-        metrics.append(("Market Cap", f"${mc/1e9:.2f}B"))
-    pe = f.get('pe_ratio')
-    if pe:
-        metrics.append(("P/E Ratio", f"{pe:.1f}"))
-    beta_val = f.get('beta')
-    if beta_val:
-        metrics.append(("Beta", f"{beta_val:.2f}"))
-    dy = f.get('dividend_yield')
-    if dy:
-        metrics.append(("Dividend Yield", f"{dy*100:.2f}%"))
-    ev = f.get('enterprise_value')
-    if ev and ev > 0:
-        metrics.append(("Enterprise Value", f"${ev/1e9:.2f}B"))
-    pb = f.get('pb_ratio')
-    if pb:
-        metrics.append(("P/B Ratio", f"{pb:.2f}"))
-    # Render as two-column aligned text block
-    if metrics:
-        col_w = max(len(m[0]) for m in metrics) + 4
-        add("Metric".ljust(col_w) + "Value\n", 'table_header')
-        add("─" * (col_w + 16) + "\n")
-        for i, (label, value) in enumerate(metrics):
-            add(label.ljust(col_w), 'metric_label')
-            add(f"{value}\n")
-    add("\n")
-
-    # ── Agent Scores (as text table) ──
-    add("Agent Scores\n", 'heading2')
-    agent_scores_list = list(result.get('agent_scores', {}).items())
-    if agent_scores_list:
-        name_w = max(len(n.replace('_', ' ').title()) for n, _ in agent_scores_list) + 4
-        add("Agent".ljust(name_w) + "Score".ljust(14) + "Rating\n", 'table_header')
-        add("─" * (name_w + 24) + "\n")
-        for agent_name, agent_score in agent_scores_list:
-            display_name = agent_name.replace('_', ' ').title()
-            a_style = 'score_good' if agent_score >= 60 else 'score_bad'
-            rating = "Strong" if agent_score >= 75 else ("Good" if agent_score >= 60 else ("Fair" if agent_score >= 40 else "Weak"))
-            add(f"{display_name.ljust(name_w)}", 'metric_label')
-            add(f"{agent_score:.1f}/100".ljust(14), a_style)
-            add(f"{rating}\n")
-    add("\n")
-
-    # ── Detailed Analysis ──
-    add("Detailed Analysis\n", 'heading2')
-    for agent_name, rationale in result.get('agent_rationales', {}).items():
-        if rationale:
-            display_name = agent_name.replace('_', ' ').title()
-            add(f"{display_name}\n", 'heading3')
-            rat_text = str(rationale).strip()
-            add(f"{rat_text}\n\n")
-
-    full_text = "".join(_parts)
-
-    # --- Generate formatting requests ---
-    _GREEN  = {'red': 0.067, 'green': 0.533, 'blue': 0.227}   # #119938
-    _RED    = {'red': 0.776, 'green': 0.165, 'blue': 0.165}   # #C62A2A
-    _GRAY   = {'red': 0.42,  'green': 0.45,  'blue': 0.49}    # #6B737D
-    _BLUE   = {'red': 0.063, 'green': 0.376, 'blue': 0.784}   # #1060C8
-    _NAVY_BG = {'red': 0.11, 'green': 0.22, 'blue': 0.43}
-    _TIMES  = 'Times New Roman'
-
-    def _rng(s, e):
-        r = {'startIndex': base_index + s, 'endIndex': base_index + e}
-        if tab_id:
-            r['tabId'] = tab_id
-        return r
-
-    fmt = []
-
-    # ── Set entire document text to Times New Roman ──
-    fmt.append({'updateTextStyle': {
-        'range': _rng(0, len(full_text)),
-        'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES}},
-        'fields': 'weightedFontFamily',
-    }})
-
-    for s, e, style in _ranges:
-        rng = _rng(s, e)
-        if style == 'title':
-            fmt.append({'updateParagraphStyle': {
-                'range': rng,
-                'paragraphStyle': {'namedStyleType': 'HEADING_1'},
-                'fields': 'namedStyleType',
-            }})
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
-                              'fontSize': {'magnitude': 18, 'unit': 'PT'}},
-                'fields': 'weightedFontFamily,fontSize',
-            }})
-        elif style == 'subtitle':
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'italic': True,
-                              'foregroundColor': {'color': {'rgbColor': _GRAY}},
-                              'fontSize': {'magnitude': 11, 'unit': 'PT'},
-                              'weightedFontFamily': {'fontFamily': _TIMES}},
-                'fields': 'italic,foregroundColor,fontSize,weightedFontFamily',
-            }})
-        elif style == 'heading2':
-            fmt.append({'updateParagraphStyle': {
-                'range': rng,
-                'paragraphStyle': {'namedStyleType': 'HEADING_2',
-                                   'spaceAbove': {'magnitude': 14, 'unit': 'PT'},
-                                   'spaceBelow': {'magnitude': 6, 'unit': 'PT'}},
-                'fields': 'namedStyleType,spaceAbove,spaceBelow',
-            }})
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
-                              'fontSize': {'magnitude': 14, 'unit': 'PT'}},
-                'fields': 'weightedFontFamily,fontSize',
-            }})
-        elif style == 'heading3':
-            fmt.append({'updateParagraphStyle': {
-                'range': rng,
-                'paragraphStyle': {'namedStyleType': 'HEADING_3',
-                                   'spaceAbove': {'magnitude': 10, 'unit': 'PT'}},
-                'fields': 'namedStyleType,spaceAbove',
-            }})
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
-                              'fontSize': {'magnitude': 12, 'unit': 'PT'}},
-                'fields': 'weightedFontFamily,fontSize',
-            }})
-        elif style == 'table_header':
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'bold': True,
-                              'foregroundColor': {'color': {'rgbColor': _NAVY_BG}},
-                              'fontSize': {'magnitude': 10, 'unit': 'PT'},
-                              'weightedFontFamily': {'fontFamily': _TIMES}},
-                'fields': 'bold,foregroundColor,fontSize,weightedFontFamily',
-            }})
-        elif style in ('bold', 'metric_label'):
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'bold': True,
-                              'weightedFontFamily': {'fontFamily': _TIMES}},
-                'fields': 'bold,weightedFontFamily',
-            }})
-        elif style in ('score_good', 'rec_good'):
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'bold': True,
-                              'foregroundColor': {'color': {'rgbColor': _GREEN}},
-                              'weightedFontFamily': {'fontFamily': _TIMES}},
-                'fields': 'bold,foregroundColor,weightedFontFamily',
-            }})
-        elif style in ('score_bad', 'rec_bad'):
-            fmt.append({'updateTextStyle': {
-                'range': rng,
-                'textStyle': {'bold': True,
-                              'foregroundColor': {'color': {'rgbColor': _RED}},
-                              'weightedFontFamily': {'fontFamily': _TIMES}},
-                'fields': 'bold,foregroundColor,weightedFontFamily',
-            }})
-
-    # --- Convert URLs in text to clickable hyperlinks ---
-    _url_re = _re_fmt.compile(r'https?://[^\s\)\]\}>,"]+')
-    for m in _url_re.finditer(full_text):
-        url = m.group().rstrip('.')  # strip trailing period if any
-        rng = _rng(m.start(), m.start() + len(url))
-        fmt.append({'updateTextStyle': {
-            'range': rng,
-            'textStyle': {'link': {'url': url},
-                          'foregroundColor': {'color': {'rgbColor': _BLUE}},
-                          'underline': True,
-                          'weightedFontFamily': {'fontFamily': _TIMES}},
-            'fields': 'link,foregroundColor,underline,weightedFontFamily',
-        }})
-
-    return full_text, fmt
-
-
-def _export_to_sheets(creds, result, spreadsheet_id=None, custom_name=None):
-    """Export analysis to Google Sheets. Returns (spreadsheet_id, url)."""
-    import gspread
-    from gspread_formatting import (
-        format_cell_range, CellFormat, TextFormat, Color, Border, Borders,
-        set_column_widths, set_row_height,
-    )
-    gc = gspread.authorize(creds)
-    f = result['fundamentals']
-    ticker = result['ticker']
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-
-    if spreadsheet_id:
-        sh = gc.open_by_key(spreadsheet_id)
-        ws_title = f"{ticker} {datetime.now().strftime('%m/%d')}"
-        try:
-            ws = sh.add_worksheet(title=ws_title, rows=60, cols=10)
-        except Exception:
-            ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=60, cols=10)
-    else:
-        title = custom_name if custom_name else f"{ticker} Analysis - {timestamp}"
-        sh = gc.create(title)
-        ws = sh.sheet1
-        ws.update_title(f"{ticker} Analysis")
-
-    # ── Colour palette ──
-    _WHITE = Color(1, 1, 1)
-    _DARK  = Color(0.15, 0.18, 0.22)
-    _NAVY  = Color(0.11, 0.22, 0.43)       # header bg
-    _LIGHT_BLUE = Color(0.85, 0.91, 0.97)  # alternating row
-    _GREEN = Color(0.07, 0.53, 0.23)
-    _RED   = Color(0.78, 0.17, 0.17)
-    _LIGHT_GRAY = Color(0.94, 0.94, 0.94)
-
-    _thin_border = Border("SOLID", width=1, color=Color(0.8, 0.8, 0.8))
-    _borders_all = Borders(top=_thin_border, bottom=_thin_border, left=_thin_border, right=_thin_border)
-
-    score_val = result['final_score']
-    rec = result.get('recommendation', 'N/A')
-
-    # ── Build rows ──
-    rows = [
-        [f"{ticker} – Investment Analysis", "", "", "", ""],
-        [f.get('name', 'N/A'), "", f"Sector: {f.get('sector', 'N/A')}", "", f"Date: {timestamp}"],
-        [],
-        ["SUMMARY", "", "", "", ""],
-        ["Final Score", f"{score_val:.1f} / 100", "", "Recommendation", rec],
-        [],
-        ["KEY METRICS", "", "", "", ""],
-        ["Metric", "Value", "", "Metric", "Value"],
-    ]
-
-    # Build two-column metric pairs
-    metric_pairs = []
-    price = f.get('price', 0)
-    if price:
-        metric_pairs.append(("Price", f"${price:.2f}"))
-    mc = f.get('market_cap', 0)
-    if mc:
-        metric_pairs.append(("Market Cap", f"${mc/1e9:.2f}B"))
-    pe = f.get('pe_ratio')
-    if pe:
-        metric_pairs.append(("P/E Ratio", f"{pe:.1f}"))
-    beta_val = f.get('beta')
-    if beta_val:
-        metric_pairs.append(("Beta", f"{beta_val:.2f}"))
-    dy = f.get('dividend_yield')
-    if dy:
-        metric_pairs.append(("Dividend Yield", f"{dy*100:.2f}%"))
-    ev = f.get('enterprise_value')
-    if ev and ev > 0:
-        metric_pairs.append(("Enterprise Value", f"${ev/1e9:.2f}B"))
-    pb = f.get('pb_ratio')
-    if pb:
-        metric_pairs.append(("P/B Ratio", f"{pb:.2f}"))
-
-    # Pair metrics into left/right columns
-    half = (len(metric_pairs) + 1) // 2
-    for i in range(half):
-        left = metric_pairs[i] if i < len(metric_pairs) else ("", "")
-        right = metric_pairs[i + half] if (i + half) < len(metric_pairs) else ("", "")
-        rows.append([left[0], left[1], "", right[0], right[1]])
-    metrics_end_row = len(rows)
-
-    rows.append([])
-    agent_header_row = len(rows) + 1
-    rows.append(["AGENT SCORES", "", "", "", ""])
-    rows.append(["Agent", "Score", "Rating", "", ""])
-    agent_start_row = len(rows) + 1
-    for agent_name, agent_score in result.get('agent_scores', {}).items():
-        display_name = agent_name.replace('_', ' ').title()
-        rating = "Strong" if agent_score >= 75 else ("Good" if agent_score >= 60 else ("Fair" if agent_score >= 40 else "Weak"))
-        rows.append([display_name, round(agent_score, 1), rating, "", ""])
-    agent_end_row = len(rows)
-
-    rows.append([])
-    analysis_header_row = len(rows) + 1
-    rows.append(["DETAILED ANALYSIS", "", "", "", ""])
-    for agent_name, rationale in result.get('agent_rationales', {}).items():
-        if rationale:
-            rows.append([agent_name.replace('_', ' ').title()])
-            for line in str(rationale).split('\n'):
-                if line.strip():
-                    rows.append([line.strip()])
-            rows.append([])
-    total_rows = len(rows)
-
-    ws.update(range_name='A1', values=rows)
-
-    # ── Formatting ──
-    try:
-        # Column widths
-        set_column_widths(ws, [('A', 180), ('B', 140), ('C', 140), ('D', 180), ('E', 180)])
-
-        # Row 1 – Title bar
-        set_row_height(ws, '1', 42)
-        format_cell_range(ws, 'A1:E1', CellFormat(
-            backgroundColor=_NAVY,
-            textFormat=TextFormat(bold=True, fontSize=16, foregroundColor=_WHITE,
-                                 fontFamily='Arial'),
-            horizontalAlignment='LEFT',
-            verticalAlignment='MIDDLE',
-        ))
-
-        # Row 2 – Subtitle
-        format_cell_range(ws, 'A2:E2', CellFormat(
-            backgroundColor=_LIGHT_GRAY,
-            textFormat=TextFormat(fontSize=10, foregroundColor=_DARK, fontFamily='Arial'),
-            horizontalAlignment='LEFT',
-        ))
-
-        # Section headers (SUMMARY, KEY METRICS, AGENT SCORES, DETAILED ANALYSIS)
-        _section_fmt = CellFormat(
-            backgroundColor=Color(0.22, 0.32, 0.52),
-            textFormat=TextFormat(bold=True, fontSize=12, foregroundColor=_WHITE, fontFamily='Arial'),
-            horizontalAlignment='LEFT',
-            borders=_borders_all,
-        )
-        format_cell_range(ws, 'A4:E4', _section_fmt)
-        format_cell_range(ws, 'A7:E7', _section_fmt)
-        format_cell_range(ws, f'A{agent_header_row}:E{agent_header_row}', _section_fmt)
-        format_cell_range(ws, f'A{analysis_header_row}:E{analysis_header_row}', _section_fmt)
-
-        # Summary row (row 5)
-        format_cell_range(ws, 'A5:E5', CellFormat(
-            textFormat=TextFormat(bold=True, fontSize=11, fontFamily='Arial'),
-            borders=_borders_all,
-            backgroundColor=_LIGHT_BLUE,
-        ))
-        # Color score
-        score_color = _GREEN if score_val >= 60 else _RED
-        format_cell_range(ws, 'B5', CellFormat(
-            textFormat=TextFormat(bold=True, fontSize=11, foregroundColor=score_color, fontFamily='Arial'),
-        ))
-
-        # Metric table header (row 8)
-        format_cell_range(ws, 'A8:E8', CellFormat(
-            textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=_WHITE, fontFamily='Arial'),
-            backgroundColor=Color(0.33, 0.43, 0.60),
-            borders=_borders_all,
-        ))
-        # Metric rows with alternating colours
-        for r_idx in range(9, metrics_end_row + 1):
-            bg = _LIGHT_BLUE if (r_idx % 2 == 1) else _WHITE
-            format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
-                backgroundColor=bg,
-                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
-                borders=_borders_all,
-            ))
-            # Bold metric labels
-            format_cell_range(ws, f'A{r_idx}', CellFormat(
-                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
-            ))
-            format_cell_range(ws, f'D{r_idx}', CellFormat(
-                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
-            ))
-
-        # Agent scores table header
-        agent_hdr = agent_start_row - 1
-        format_cell_range(ws, f'A{agent_hdr}:E{agent_hdr}', CellFormat(
-            textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=_WHITE, fontFamily='Arial'),
-            backgroundColor=Color(0.33, 0.43, 0.60),
-            borders=_borders_all,
-        ))
-        # Agent score rows with conditional coloring
-        for r_idx in range(agent_start_row, agent_end_row + 1):
-            bg = _LIGHT_BLUE if (r_idx % 2 == 1) else _WHITE
-            format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
-                backgroundColor=bg,
-                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
-                borders=_borders_all,
-            ))
-            format_cell_range(ws, f'A{r_idx}', CellFormat(
-                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
-            ))
-
-        # Color agent scores (column B) green/red based on value
-        for r_idx in range(agent_start_row, agent_end_row + 1):
-            cell_val = ws.acell(f'B{r_idx}').value
-            try:
-                v = float(cell_val)
-                clr = _GREEN if v >= 60 else _RED
-            except (TypeError, ValueError):
-                clr = _DARK
-            format_cell_range(ws, f'B{r_idx}', CellFormat(
-                textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=clr, fontFamily='Arial'),
-            ))
-
-        # Analysis section – bold agent names
-        for r_idx in range(analysis_header_row + 1, total_rows + 1):
-            format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
-                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
-            ))
-
-        # Freeze top row
-        ws.freeze(rows=1)
-
-    except Exception:
-        pass
-
-    _share_file_anyone(creds, sh.id)
-    return sh.id, sh.url
-
-
-def _export_to_docs(creds, result, document_id=None, insert_mode='page_break', custom_name=None):
-    """Export analysis to Google Docs with rich formatting. Returns (doc_id, url).
-
-    insert_mode: 'page_break' inserts a page break then the report (new page).
-                 'append' appends to the bottom of the document with a separator.
-                 'doc_tab' creates a new document tab within the same document.
-    """
-    from googleapiclient.discovery import build
-    service = build('docs', 'v1', credentials=creds)
-    drive_service = build('drive', 'v3', credentials=creds)
-
-    ticker = result['ticker']
-    timestamp = datetime.now().strftime('%B %d, %Y')
-
-    if document_id:
-        if insert_mode == 'doc_tab':
-            # ── Create a new document tab via addDocumentTab ──
-            tab_title = f"{ticker} Analysis - {datetime.now().strftime('%m/%d')}"
-            try:
-                resp = service.documents().batchUpdate(
-                    documentId=document_id,
-                    body={'requests': [{'addDocumentTab': {
-                        'tabProperties': {'title': tab_title}
-                    }}]}
-                ).execute()
-                new_tab_id = resp['replies'][0]['addDocumentTab']['tabProperties']['tabId']
-
-                # Build formatted text + formatting requests targeting the new tab
-                report_text, fmt_requests = _build_formatted_doc_content(
-                    result, base_index=1, tab_id=new_tab_id)
-
-                # Insert text then apply formatting
-                all_requests = [{'insertText': {
-                    'location': {'index': 1, 'tabId': new_tab_id},
-                    'text': report_text,
-                }}]
-                all_requests.extend(fmt_requests)
-                service.documents().batchUpdate(
-                    documentId=document_id, body={'requests': all_requests}
-                ).execute()
-
-            except Exception as tab_err:
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"Document tab creation failed ({tab_err}), falling back to page break."
-                )
-                return _export_to_docs(creds, result, document_id=document_id,
-                                       insert_mode='page_break', custom_name=custom_name)
-
-            url = f"https://docs.google.com/document/d/{document_id}/edit"
-            return document_id, url
-
-        # ── Export to existing document (page_break or append) ──
-        doc = service.documents().get(documentId=document_id).execute()
-        end_index = doc['body']['content'][-1]['endIndex'] - 1
-
-        if insert_mode == 'page_break':
-            # Phase 1: insert the page break
-            service.documents().batchUpdate(documentId=document_id, body={'requests': [
-                {'insertText': {'location': {'index': end_index}, 'text': '\n'}},
-                {'insertPageBreak': {'location': {'index': end_index + 1}}},
-            ]}).execute()
-
-            # Re-fetch to get the new insertion point
-            doc = service.documents().get(documentId=document_id).execute()
-            new_end = doc['body']['content'][-1]['endIndex'] - 1
-
-            # Phase 2: insert formatted text + styling
-            report_text, fmt_requests = _build_formatted_doc_content(
-                result, base_index=new_end)
-            all_requests = [{'insertText': {
-                'location': {'index': new_end}, 'text': report_text
-            }}]
-            all_requests.extend(fmt_requests)
-            service.documents().batchUpdate(
-                documentId=document_id, body={'requests': all_requests}
-            ).execute()
-        else:
-            # Append with separator
-            separator = "\n\n" + "=" * 60 + "\n\n"
-            base = end_index + len(separator)
-            report_text, fmt_requests = _build_formatted_doc_content(
-                result, base_index=base)
-            all_requests = [{'insertText': {
-                'location': {'index': end_index},
-                'text': separator + report_text
-            }}]
-            all_requests.extend(fmt_requests)
-            service.documents().batchUpdate(
-                documentId=document_id, body={'requests': all_requests}
-            ).execute()
-
-        url = f"https://docs.google.com/document/d/{document_id}/edit"
-        return document_id, url
-    else:
-        # ── Create new document ──
-        title = custom_name if custom_name else f"{ticker} Investment Analysis - {timestamp}"
-        doc = service.documents().create(body={'title': title}).execute()
-        doc_id = doc['documentId']
-
-        report_text, fmt_requests = _build_formatted_doc_content(
-            result, base_index=1)
-        all_requests = [{'insertText': {
-            'location': {'index': 1}, 'text': report_text
-        }}]
-        all_requests.extend(fmt_requests)
-        service.documents().batchUpdate(
-            documentId=doc_id, body={'requests': all_requests}
-        ).execute()
-
-        _share_file_anyone(creds, doc_id)
-
-        url = f"https://docs.google.com/document/d/{doc_id}/edit"
-        return doc_id, url
-
-
-def _export_multi_to_sheets(creds, results, spreadsheet_id=None, custom_name=None):
-    """Export multi-stock comparison to Google Sheets."""
-    import gspread
-    from gspread_formatting import (
-        format_cell_range, CellFormat, TextFormat, Color, Border, Borders,
-        set_column_widths, set_row_height,
-    )
-    gc = gspread.authorize(creds)
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-
-    if spreadsheet_id:
-        sh = gc.open_by_key(spreadsheet_id)
-        ws_title = f"Comparison {datetime.now().strftime('%m/%d')}"
-        try:
-            ws = sh.add_worksheet(title=ws_title, rows=50, cols=15)
-        except Exception:
-            ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=15)
-    else:
-        title = custom_name if custom_name else f"Stock Comparison - {timestamp}"
-        sh = gc.create(title)
-        ws = sh.sheet1
-        ws.update_title("Comparison")
-
-    # Colour palette
-    _WHITE = Color(1, 1, 1)
-    _NAVY  = Color(0.11, 0.22, 0.43)
-    _LIGHT_BLUE = Color(0.85, 0.91, 0.97)
-    _GREEN = Color(0.07, 0.53, 0.23)
-    _RED   = Color(0.78, 0.17, 0.17)
-    _thin = Border("SOLID", width=1, color=Color(0.8, 0.8, 0.8))
-    _borders_all = Borders(top=_thin, bottom=_thin, left=_thin, right=_thin)
-
-    # Header
-    headers = ['Ticker', 'Name', 'Final Score', 'Recommendation', 'Price',
-               'Sector', 'Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
-    rows = [headers]
-
-    sorted_results = sorted(results, key=lambda x: x['final_score'], reverse=True)
-    for r in sorted_results:
-        f = r['fundamentals']
-        scores = r.get('agent_scores', {})
-        rows.append([
-            r['ticker'],
-            f.get('name', 'N/A'),
-            round(r['final_score'], 1),
-            r.get('recommendation', 'N/A'),
-            f"${f.get('price', 0):.2f}",
-            f.get('sector', 'N/A'),
-            round(scores.get('value_agent', 0), 1),
-            round(scores.get('growth_momentum_agent', 0), 1),
-            round(scores.get('macro_regime_agent', 0), 1),
-            round(scores.get('risk_agent', 0), 1),
-            round(scores.get('sentiment_agent', 0), 1),
-        ])
-
-    ws.update(range_name='A1', values=rows)
-
-    # ── Formatting ──
-    try:
-        total_rows = len(rows)
-
-        # Column widths
-        set_column_widths(ws, [
-            ('A', 90), ('B', 200), ('C', 100), ('D', 140), ('E', 100),
-            ('F', 140), ('G', 80), ('H', 80), ('I', 80), ('J', 80), ('K', 90),
-        ])
-
-        # Header row
-        set_row_height(ws, '1', 38)
-        format_cell_range(ws, 'A1:K1', CellFormat(
-            backgroundColor=_NAVY,
-            textFormat=TextFormat(bold=True, fontSize=11, foregroundColor=_WHITE, fontFamily='Arial'),
-            horizontalAlignment='CENTER',
-            verticalAlignment='MIDDLE',
-            borders=_borders_all,
-        ))
-
-        # Data rows with alternating colours
-        for r_idx in range(2, total_rows + 1):
-            bg = _LIGHT_BLUE if (r_idx % 2 == 0) else _WHITE
-            format_cell_range(ws, f'A{r_idx}:K{r_idx}', CellFormat(
-                backgroundColor=bg,
-                textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
-                borders=_borders_all,
-                verticalAlignment='MIDDLE',
-            ))
-            # Bold ticker
-            format_cell_range(ws, f'A{r_idx}', CellFormat(
-                textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
-            ))
-
-        # Color final scores (column C) and agent scores (G-K) green/red
-        score_cols = ['C', 'G', 'H', 'I', 'J', 'K']
-        for r_idx in range(2, total_rows + 1):
-            for col in score_cols:
-                cell_val = ws.acell(f'{col}{r_idx}').value
-                try:
-                    v = float(cell_val)
-                    clr = _GREEN if v >= 60 else _RED
-                except (TypeError, ValueError):
-                    continue
-                format_cell_range(ws, f'{col}{r_idx}', CellFormat(
-                    textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=clr, fontFamily='Arial'),
-                ))
-
-        # Freeze header row
-        ws.freeze(rows=1)
-
-    except Exception:
-        pass
-
-    _share_file_anyone(creds, sh.id)
-
-    return sh.id, sh.url
-
-
-def _list_drive_files(creds, mime_type):
-    """List recent files of given MIME type from user's Drive."""
-    from googleapiclient.discovery import build
-    service = build('drive', 'v3', credentials=creds)
-    query = f"mimeType='{mime_type}' and trashed=false"
-    results = service.files().list(
-        q=query, pageSize=20, orderBy='modifiedTime desc',
-        fields='files(id, name, modifiedTime)',
-    ).execute()
-    return results.get('files', [])
-
-
-def _render_google_export(result):
-    """Render the Google Sheets/Docs export UI for a single stock."""
-    ticker = result['ticker']
-    exp_key = f"_gexp_open_{ticker}"
-    is_expanded = st.session_state.get(exp_key, False)
-    with st.expander("Export to Google Sheets / Docs", expanded=is_expanded):
-        # Track that the user opened the expander (persists across reruns)
-        if not is_expanded:
-            st.session_state[exp_key] = True
-
-        if not _render_google_sign_in(key_suffix=ticker):
-            return
-
-        creds = _get_google_creds()
-        if creds is None:
-            st.error("Could not build credentials from token.")
-            return
-
-        # ---- Authenticated: show export options ----
-        col_s, col_d = st.columns(2)
-
-        with col_s:
-            st.markdown("**Google Sheets**")
-            sheets_mode = st.radio(
-                "Destination", ["New Spreadsheet", "Existing Spreadsheet"],
-                key=f"sheets_mode_{ticker}", horizontal=True
-            )
-            sheet_id = None
-            sheets_custom_name = None
-            if sheets_mode == "Existing Spreadsheet":
-                try:
-                    files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
-                    if files:
-                        options = {gf['name']: gf['id'] for gf in files}
-                        selected = st.selectbox("Choose spreadsheet", list(options.keys()),
-                                                key=f"sheets_pick_{ticker}")
-                        sheet_id = options[selected]
-                    else:
-                        st.caption("No spreadsheets found. A new one will be created.")
-                except Exception:
-                    st.caption("Could not list files. A new one will be created.")
-            else:
-                default_name = f"{ticker} Analysis - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                sheets_custom_name = st.text_input(
-                    "Spreadsheet name", value=default_name,
-                    key=f"sheets_name_{ticker}"
-                )
-
-            if st.button("Export to Sheets", key=f"export_sheets_{ticker}", use_container_width=True):
-                with st.spinner("Exporting to Google Sheets..."):
-                    try:
-                        sid, url = _export_to_sheets(creds, result, spreadsheet_id=sheet_id,
-                                                     custom_name=sheets_custom_name)
-                        st.success(f"Exported! [Open Spreadsheet]({url})")
-                    except Exception as e:
-                        st.error(f"Export failed: {e}")
-
-        with col_d:
-            st.markdown("**Google Docs**")
-            docs_mode = st.radio(
-                "Destination", ["New Document", "Existing Document"],
-                key=f"docs_mode_{ticker}", horizontal=True
-            )
-            doc_id = None
-            docs_insert_mode = 'page_break'
-            docs_custom_name = None
-            if docs_mode == "Existing Document":
-                try:
-                    files = _list_drive_files(creds, 'application/vnd.google-apps.document')
-                    if files:
-                        options = {gf['name']: gf['id'] for gf in files}
-                        selected = st.selectbox("Choose document", list(options.keys()),
-                                                key=f"docs_pick_{ticker}")
-                        doc_id = options[selected]
-                    else:
-                        st.caption("No documents found. A new one will be created.")
-                except Exception:
-                    st.caption("Could not list files. A new one will be created.")
-
-                docs_insert_mode = st.radio(
-                    "Insert method",
-                    ["New document tab", "New page (page break)", "Append to bottom"],
-                    key=f"docs_insert_{ticker}", horizontal=True,
-                    help="New document tab: creates a separate tab in the same doc. "
-                         "Page break: adds content on a new page. "
-                         "Append: adds to the bottom of the current content."
-                )
-                if 'tab' in docs_insert_mode.lower():
-                    docs_insert_mode = 'doc_tab'
-                elif 'New page' in docs_insert_mode:
-                    docs_insert_mode = 'page_break'
-                else:
-                    docs_insert_mode = 'append'
-            else:
-                default_doc_name = f"{ticker} Investment Analysis - {datetime.now().strftime('%B %d, %Y')}"
-                docs_custom_name = st.text_input(
-                    "Document name", value=default_doc_name,
-                    key=f"docs_name_{ticker}"
-                )
-
-            if st.button("Export to Docs", key=f"export_docs_{ticker}", use_container_width=True):
-                with st.spinner("Exporting to Google Docs..."):
-                    try:
-                        did, url = _export_to_docs(creds, result, document_id=doc_id,
-                                                   insert_mode=docs_insert_mode,
-                                                   custom_name=docs_custom_name)
-                        st.success(f"Exported! [Open Document]({url})")
-                    except Exception as e:
-                        st.error(f"Export failed: {e}")
-
-
-def _render_google_export_multi(results):
-    """Render the Google Sheets/Docs export UI for multi-stock comparison."""
-    exp_key = "_gexp_open_multi"
-    is_expanded = st.session_state.get(exp_key, False)
-    with st.expander("Export Comparison to Google Sheets / Docs", expanded=is_expanded):
-        if not is_expanded:
-            st.session_state[exp_key] = True
-
-        if not _render_google_sign_in(key_suffix="multi"):
-            return
-
-        creds = _get_google_creds()
-        if creds is None:
-            st.error("Could not build credentials from token.")
-            return
-
-        # ---- Authenticated ----
-        col_s, col_d = st.columns(2)
-
-        with col_s:
-            st.markdown("**Google Sheets (Comparison Table)**")
-            sheets_mode = st.radio(
-                "Destination", ["New Spreadsheet", "Existing Spreadsheet"],
-                key="sheets_mode_multi", horizontal=True
-            )
-            sheet_id = None
-            sheets_custom_name = None
-            if sheets_mode == "Existing Spreadsheet":
-                try:
-                    files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
-                    if files:
-                        options = {gf['name']: gf['id'] for gf in files}
-                        selected = st.selectbox("Choose spreadsheet", list(options.keys()),
-                                                key="sheets_pick_multi")
-                        sheet_id = options[selected]
-                    else:
-                        st.caption("No spreadsheets found.")
-                except Exception:
-                    st.caption("Could not list files.")
-            else:
-                tickers_str = ", ".join(r['ticker'] for r in results[:5])
-                default_name = f"Stock Comparison ({tickers_str}) - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                sheets_custom_name = st.text_input(
-                    "Spreadsheet name", value=default_name,
-                    key="sheets_name_multi"
-                )
-
-            if st.button("Export Comparison to Sheets", key="export_sheets_multi", use_container_width=True):
-                with st.spinner("Exporting comparison to Google Sheets..."):
-                    try:
-                        sid, url = _export_multi_to_sheets(creds, results, spreadsheet_id=sheet_id,
-                                                           custom_name=sheets_custom_name)
-                        st.success(f"Exported! [Open Spreadsheet]({url})")
-                    except Exception as e:
-                        st.error(f"Export failed: {e}")
-
-        with col_d:
-            st.markdown("**Google Docs (Full Reports)**")
-            docs_mode = st.radio(
-                "Destination", ["New Document", "Existing Document"],
-                key="docs_mode_multi", horizontal=True
-            )
-            doc_id = None
-            docs_insert_mode_multi = 'page_break'
-            docs_custom_name = None
-            if docs_mode == "Existing Document":
-                try:
-                    files = _list_drive_files(creds, 'application/vnd.google-apps.document')
-                    if files:
-                        options = {gf['name']: gf['id'] for gf in files}
-                        selected = st.selectbox("Choose document", list(options.keys()),
-                                                key="docs_pick_multi")
-                        doc_id = options[selected]
-                    else:
-                        st.caption("No documents found.")
-                except Exception:
-                    st.caption("Could not list files.")
-
-                docs_insert_mode_multi = st.radio(
-                    "Insert method",
-                    ["New document tab", "New page (page break)", "Append to bottom"],
-                    key="docs_insert_multi", horizontal=True,
-                    help="New document tab: creates a separate tab in the same doc. "
-                         "Page break: adds content on a new page. "
-                         "Append: adds to the bottom of the current content."
-                )
-                if 'tab' in docs_insert_mode_multi.lower():
-                    docs_insert_mode_multi = 'doc_tab'
-                elif 'New page' in docs_insert_mode_multi:
-                    docs_insert_mode_multi = 'page_break'
-                else:
-                    docs_insert_mode_multi = 'append'
-            else:
-                tickers_str = ", ".join(r['ticker'] for r in results[:5])
-                default_doc_name = f"Investment Analysis ({tickers_str}) - {datetime.now().strftime('%B %d, %Y')}"
-                docs_custom_name = st.text_input(
-                    "Document name", value=default_doc_name,
-                    key="docs_name_multi"
-                )
-
-            if st.button("Export Reports to Docs", key="export_docs_multi", use_container_width=True):
-                with st.spinner("Exporting reports to Google Docs..."):
-                    try:
-                        first = True
-                        created_doc_id = doc_id
-                        _ins_mode = docs_insert_mode_multi
-                        for r in sorted(results, key=lambda x: x['final_score'], reverse=True):
-                            if first and not created_doc_id:
-                                created_doc_id, url = _export_to_docs(creds, r, document_id=None,
-                                                                       custom_name=docs_custom_name)
-                                first = False
-                            else:
-                                _, url = _export_to_docs(creds, r, document_id=created_doc_id,
-                                                         insert_mode=_ins_mode)
-                                first = False
-                        st.success(f"Exported {len(results)} reports! [Open Document]({url})")
-                    except Exception as e:
-                        st.error(f"Export failed: {e}")
-
-
+# # ---------------------------------------------------------------------------
+# # Google Sheets / Docs export helpers  (OAuth 2.0 via authlib)
+# # ---------------------------------------------------------------------------
+# from authlib.integrations.requests_client import OAuth2Session as _OAuth2Session
+# 
+# _GOOGLE_SCOPES = [
+#     'openid',
+#     'https://www.googleapis.com/auth/userinfo.email',
+#     'https://www.googleapis.com/auth/userinfo.profile',
+#     'https://www.googleapis.com/auth/spreadsheets',
+#     'https://www.googleapis.com/auth/documents',
+#     'https://www.googleapis.com/auth/drive',
+# ]
+# 
+# _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
+# _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+# 
+# # Paths for persisting state across the OAuth redirect (session may be lost)
+# _OAUTH_TOKEN_PATH = os.path.join(os.path.dirname(__file__), 'data', 'google_oauth_token.json')
+# _OAUTH_DISPLAY_RESULT_PATH = os.path.join(os.path.dirname(__file__), 'data', '_display_result_backup.json')
+# 
+# 
+# def _save_display_result_to_disk():
+#     """Persist _display_result to disk so it survives an OAuth redirect."""
+#     dr = st.session_state.get('_display_result')
+#     if not dr:
+#         return
+#     try:
+#         with open(_OAUTH_DISPLAY_RESULT_PATH, 'w') as f:
+#             json.dump(dr, f, default=str)
+#     except Exception:
+#         pass
+# 
+# 
+# def _restore_display_result_from_disk():
+#     """Restore _display_result from disk if session was lost after OAuth redirect."""
+#     if '_display_result' in st.session_state:
+#         return  # already have it
+#     if not os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
+#         return
+#     try:
+#         with open(_OAUTH_DISPLAY_RESULT_PATH, 'r') as f:
+#             dr = json.load(f)
+#         st.session_state['_display_result'] = dr
+#     except Exception:
+#         pass
+# 
+# 
+# def _cleanup_display_result_backup():
+#     """Remove the backup file after it's no longer needed."""
+#     try:
+#         if os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
+#             os.remove(_OAUTH_DISPLAY_RESULT_PATH)
+#     except Exception:
+#         pass
+# 
+# 
+# def _save_oauth_token_to_disk(token, user_info=None):
+#     """Persist OAuth token to disk so it survives session loss."""
+#     try:
+#         data = {'token': token}
+#         if user_info:
+#             data['user'] = user_info
+#         with open(_OAUTH_TOKEN_PATH, 'w') as f:
+#             json.dump(data, f, default=str)
+#     except Exception:
+#         pass
+# 
+# 
+# def _load_oauth_token_from_disk():
+#     """Load a previously saved OAuth token from disk into session_state."""
+#     if 'google_token' in st.session_state:
+#         return  # already loaded
+#     if not os.path.exists(_OAUTH_TOKEN_PATH):
+#         return
+#     try:
+#         with open(_OAUTH_TOKEN_PATH, 'r') as f:
+#             data = json.load(f)
+#         st.session_state['google_token'] = data['token']
+#         if 'user' in data:
+#             st.session_state['google_user'] = data['user']
+#     except Exception:
+#         pass
+# 
+# 
+# def _google_oauth_cfg():
+#     """Return (client_id, client_secret, redirect_uri) from secrets, or Nones."""
+#     try:
+#         g = st.secrets["google"]
+#         cid = g["client_id"]
+#         csecret = g["client_secret"]
+#         redirect = g.get("redirect_uri", "http://localhost:8501")
+#         if cid.startswith("YOUR_"):
+#             return None, None, None
+#         return cid, csecret, redirect
+#     except Exception:
+#         return None, None, None
+# 
+# 
+# def _handle_google_oauth_callback():
+#     """If the URL contains a Google OAuth `code` param, exchange it for a token.
+# 
+#     Called at the top of main() so it runs before any display logic.
+#     Restores analysis results from disk if the session was lost during redirect.
+#     """
+#     code = st.query_params.get("code")
+#     if not code:
+#         # No callback — but try to load a previously saved token from disk
+#         _load_oauth_token_from_disk()
+#         return
+#     if "google_token" in st.session_state:
+#         # Already exchanged — just clear leftover params
+#         st.query_params.clear()
+#         return
+# 
+#     cid, csecret, redirect = _google_oauth_cfg()
+#     if not cid:
+#         return
+# 
+#     try:
+#         session = _OAuth2Session(
+#             cid, csecret,
+#             redirect_uri=redirect,
+#         )
+#         token = session.fetch_token(
+#             _GOOGLE_TOKEN_URL,
+#             code=code,
+#         )
+#         st.session_state["google_token"] = token
+# 
+#         # Fetch basic user info for display
+#         user_info = session.get(
+#             "https://www.googleapis.com/oauth2/v1/userinfo"
+#         ).json()
+#         st.session_state["google_user"] = user_info
+# 
+#         # Persist token to disk (survives session loss)
+#         _save_oauth_token_to_disk(token, user_info)
+# 
+#         # Restore analysis results if session was lost during the redirect
+#         _restore_display_result_from_disk()
+# 
+#         # Clear the code from the URL so it doesn't get reused
+#         st.query_params.clear()
+#         st.rerun()
+#     except Exception as exc:
+#         # Still try to restore results even if auth fails
+#         _restore_display_result_from_disk()
+#         st.query_params.clear()
+#         st.warning(f"Google sign-in failed: {exc}")
+# 
+# 
+# def _get_google_creds():
+#     """Return google.oauth2.credentials.Credentials built from the OAuth2 token, or None."""
+#     token_data = st.session_state.get("google_token")
+#     if not token_data:
+#         return None
+# 
+#     try:
+#         from google.oauth2.credentials import Credentials
+#         cid, csecret, _ = _google_oauth_cfg()
+#         creds = Credentials(
+#             token=token_data["access_token"],
+#             refresh_token=token_data.get("refresh_token"),
+#             token_uri=_GOOGLE_TOKEN_URL,
+#             client_id=cid,
+#             client_secret=csecret,
+#             scopes=_GOOGLE_SCOPES,
+#         )
+#         return creds
+#     except Exception:
+#         return None
+# 
+# 
+# def _render_google_sign_in(key_suffix=""):
+#     """Show a 'Sign in with Google' button if the user is not yet authenticated.
+# 
+#     Returns True if the user IS signed in, False otherwise.
+#     """
+#     if "google_token" in st.session_state:
+#         user = st.session_state.get("google_user", {})
+#         name = user.get("name", "Google User")
+#         email = user.get("email", "")
+#         st.caption(f"Signed in as **{name}** ({email})")
+#         if st.button("Sign out of Google", key=f"google_sign_out_{key_suffix}"):
+#             for k in ("google_token", "google_user"):
+#                 st.session_state.pop(k, None)
+#             # Remove persisted token from disk too
+#             try:
+#                 if os.path.exists(_OAUTH_TOKEN_PATH):
+#                     os.remove(_OAUTH_TOKEN_PATH)
+#             except Exception:
+#                 pass
+#             _cleanup_display_result_backup()
+#             st.rerun()
+#         return True
+# 
+#     cid, csecret, redirect = _google_oauth_cfg()
+#     if not cid:
+#         st.warning(
+#             "Google export requires OAuth 2.0 credentials.  "
+#             "Add `[google]` client_id / client_secret to `.streamlit/secrets.toml`.  "
+#             "[Setup guide](https://console.cloud.google.com/apis/credentials)"
+#         )
+#         return False
+# 
+#     # Save analysis results to disk BEFORE the user navigates away,
+#     # so we can restore them if the session is lost during the redirect.
+#     _save_display_result_to_disk()
+# 
+#     session = _OAuth2Session(
+#         cid, csecret,
+#         scope=" ".join(_GOOGLE_SCOPES),
+#         redirect_uri=redirect,
+#     )
+#     auth_url, _ = session.create_authorization_url(
+#         _GOOGLE_AUTH_URL,
+#         access_type="offline",
+#         prompt="consent",
+#     )
+# 
+#     st.markdown(f'<a href="{auth_url}" target="_self" style="'
+#                 f'display:inline-block;padding:8px 20px;background:#4285F4;'
+#                 f'color:white;border-radius:4px;text-decoration:none;'
+#                 f'font-weight:500;">Sign in with Google</a>',
+#                 unsafe_allow_html=True)
+#     return False
+# 
+# 
+# def _share_file_anyone(creds, file_id):
+#     """Make a Drive file accessible to anyone with the link."""
+#     try:
+#         from googleapiclient.discovery import build
+#         drive = build('drive', 'v3', credentials=creds)
+#         drive.permissions().create(
+#             fileId=file_id,
+#             body={'type': 'anyone', 'role': 'writer'},
+#             fields='id',
+#         ).execute()
+#     except Exception:
+#         pass  # non-fatal — file still works for service account
+# 
+# 
+# 
+# def _build_report_text(result):
+#     """Build a plain-text report from analysis result (fallback / Sheets use)."""
+#     f = result['fundamentals']
+#     ticker = result['ticker']
+#     lines = []
+#     lines.append(f"Investment Analysis: {ticker}")
+#     lines.append(f"{f.get('name', 'N/A')}")
+#     lines.append(f"Date: {datetime.now().strftime('%B %d, %Y')}")
+#     lines.append(f"Sector: {f.get('sector', 'N/A')}")
+#     lines.append(f"Price: ${f.get('price', 0):.2f}")
+#     lines.append("")
+#     lines.append(f"Final Score: {result['final_score']:.1f}/100")
+#     lines.append(f"Recommendation: {result.get('recommendation', 'N/A')}")
+#     lines.append("")
+#     lines.append("Agent Breakdown:")
+#     for agent, score in result.get('agent_scores', {}).items():
+#         lines.append(f"  {agent.replace('_', ' ').title()}: {score:.1f}/100")
+#     lines.append("")
+#     lines.append("Key Metrics:")
+#     mc = f.get('market_cap', 0)
+#     lines.append(f"  Market Cap: ${mc/1e9:.2f}B" if mc else "  Market Cap: N/A")
+#     pe = f.get('pe_ratio')
+#     lines.append(f"  P/E Ratio: {pe:.1f}" if pe else "  P/E Ratio: N/A")
+#     beta = f.get('beta')
+#     lines.append(f"  Beta: {beta:.2f}" if beta else "  Beta: N/A")
+#     dy = f.get('dividend_yield')
+#     if dy:
+#         lines.append(f"  Dividend Yield: {dy*100:.2f}%")
+#     lines.append("")
+#     lines.append("Agent Analysis:")
+#     for agent, rationale in result.get('agent_rationales', {}).items():
+#         if rationale:
+#             lines.append(f"\n{agent.replace('_', ' ').title()}:")
+#             lines.append(rationale)
+#     return "\n".join(lines)
+# 
+# 
+# def _build_formatted_doc_content(result, base_index=1, tab_id=None):
+#     """Build text and Google Docs API formatting requests for a richly formatted report.
+# 
+#     Returns (full_text, format_requests) where format_requests is a list
+#     of Google Docs API batchUpdate request dicts for styling (headings, bold,
+#     colored scores, hyperlinks).  All body text is set to Times New Roman.
+#     Key Metrics and Agent Scores are rendered as inline tables.
+#     """
+#     import re as _re_fmt
+#     f = result['fundamentals']
+#     ticker = result['ticker']
+#     timestamp = datetime.now().strftime('%B %d, %Y')
+#     score = result['final_score']
+#     rec = result.get('recommendation', 'N/A')
+# 
+#     # --- Accumulate text with position tracking ---
+#     _offset = [0]  # mutable counter
+#     _ranges = []    # (start_offset, end_offset, style)
+#     _parts = []
+# 
+#     def add(text, style='normal'):
+#         _parts.append(text)
+#         s = _offset[0]
+#         _offset[0] += len(text)
+#         if style != 'normal':
+#             _ranges.append((s, _offset[0], style))
+# 
+#     # ── Title ──
+#     add(f"Investment Analysis: {ticker}\n", 'title')
+#     add(f"{f.get('name', 'N/A')}  •  {f.get('sector', 'N/A')}  •  {timestamp}\n", 'subtitle')
+#     add("\n")
+# 
+#     # ── Summary ──
+#     add("Summary\n", 'heading2')
+#     score_style = 'score_good' if score >= 60 else 'score_bad'
+#     add(f"Final Score: {score:.1f}/100", score_style)
+#     add("   |   ")
+#     rec_style = 'rec_good' if rec and any(w in rec.lower() for w in ('buy', 'outperform', 'overweight', 'accumulate')) else (
+#         'rec_bad' if rec and any(w in rec.lower() for w in ('sell', 'underperform', 'underweight', 'reduce')) else 'bold')
+#     add(f"Recommendation: {rec}\n", rec_style)
+#     add("\n")
+# 
+#     # ── Key Metrics (as text table) ──
+#     add("Key Metrics\n", 'heading2')
+#     metrics = []
+#     price = f.get('price', 0)
+#     if price:
+#         metrics.append(("Price", f"${price:.2f}"))
+#     mc = f.get('market_cap', 0)
+#     if mc:
+#         metrics.append(("Market Cap", f"${mc/1e9:.2f}B"))
+#     pe = f.get('pe_ratio')
+#     if pe:
+#         metrics.append(("P/E Ratio", f"{pe:.1f}"))
+#     beta_val = f.get('beta')
+#     if beta_val:
+#         metrics.append(("Beta", f"{beta_val:.2f}"))
+#     dy = f.get('dividend_yield')
+#     if dy:
+#         metrics.append(("Dividend Yield", f"{dy*100:.2f}%"))
+#     ev = f.get('enterprise_value')
+#     if ev and ev > 0:
+#         metrics.append(("Enterprise Value", f"${ev/1e9:.2f}B"))
+#     pb = f.get('pb_ratio')
+#     if pb:
+#         metrics.append(("P/B Ratio", f"{pb:.2f}"))
+#     # Render as two-column aligned text block
+#     if metrics:
+#         col_w = max(len(m[0]) for m in metrics) + 4
+#         add("Metric".ljust(col_w) + "Value\n", 'table_header')
+#         add("─" * (col_w + 16) + "\n")
+#         for i, (label, value) in enumerate(metrics):
+#             add(label.ljust(col_w), 'metric_label')
+#             add(f"{value}\n")
+#     add("\n")
+# 
+#     # ── Agent Scores (as text table) ──
+#     add("Agent Scores\n", 'heading2')
+#     agent_scores_list = list(result.get('agent_scores', {}).items())
+#     if agent_scores_list:
+#         name_w = max(len(n.replace('_', ' ').title()) for n, _ in agent_scores_list) + 4
+#         add("Agent".ljust(name_w) + "Score".ljust(14) + "Rating\n", 'table_header')
+#         add("─" * (name_w + 24) + "\n")
+#         for agent_name, agent_score in agent_scores_list:
+#             display_name = agent_name.replace('_', ' ').title()
+#             a_style = 'score_good' if agent_score >= 60 else 'score_bad'
+#             rating = "Strong" if agent_score >= 75 else ("Good" if agent_score >= 60 else ("Fair" if agent_score >= 40 else "Weak"))
+#             add(f"{display_name.ljust(name_w)}", 'metric_label')
+#             add(f"{agent_score:.1f}/100".ljust(14), a_style)
+#             add(f"{rating}\n")
+#     add("\n")
+# 
+#     # ── Detailed Analysis ──
+#     add("Detailed Analysis\n", 'heading2')
+#     for agent_name, rationale in result.get('agent_rationales', {}).items():
+#         if rationale:
+#             display_name = agent_name.replace('_', ' ').title()
+#             add(f"{display_name}\n", 'heading3')
+#             rat_text = str(rationale).strip()
+#             add(f"{rat_text}\n\n")
+# 
+#     full_text = "".join(_parts)
+# 
+#     # --- Generate formatting requests ---
+#     _GREEN  = {'red': 0.067, 'green': 0.533, 'blue': 0.227}   # #119938
+#     _RED    = {'red': 0.776, 'green': 0.165, 'blue': 0.165}   # #C62A2A
+#     _GRAY   = {'red': 0.42,  'green': 0.45,  'blue': 0.49}    # #6B737D
+#     _BLUE   = {'red': 0.063, 'green': 0.376, 'blue': 0.784}   # #1060C8
+#     _NAVY_BG = {'red': 0.11, 'green': 0.22, 'blue': 0.43}
+#     _TIMES  = 'Times New Roman'
+# 
+#     def _rng(s, e):
+#         r = {'startIndex': base_index + s, 'endIndex': base_index + e}
+#         if tab_id:
+#             r['tabId'] = tab_id
+#         return r
+# 
+#     fmt = []
+# 
+#     # ── Set entire document text to Times New Roman ──
+#     fmt.append({'updateTextStyle': {
+#         'range': _rng(0, len(full_text)),
+#         'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES}},
+#         'fields': 'weightedFontFamily',
+#     }})
+# 
+#     for s, e, style in _ranges:
+#         rng = _rng(s, e)
+#         if style == 'title':
+#             fmt.append({'updateParagraphStyle': {
+#                 'range': rng,
+#                 'paragraphStyle': {'namedStyleType': 'HEADING_1'},
+#                 'fields': 'namedStyleType',
+#             }})
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
+#                               'fontSize': {'magnitude': 18, 'unit': 'PT'}},
+#                 'fields': 'weightedFontFamily,fontSize',
+#             }})
+#         elif style == 'subtitle':
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'italic': True,
+#                               'foregroundColor': {'color': {'rgbColor': _GRAY}},
+#                               'fontSize': {'magnitude': 11, 'unit': 'PT'},
+#                               'weightedFontFamily': {'fontFamily': _TIMES}},
+#                 'fields': 'italic,foregroundColor,fontSize,weightedFontFamily',
+#             }})
+#         elif style == 'heading2':
+#             fmt.append({'updateParagraphStyle': {
+#                 'range': rng,
+#                 'paragraphStyle': {'namedStyleType': 'HEADING_2',
+#                                    'spaceAbove': {'magnitude': 14, 'unit': 'PT'},
+#                                    'spaceBelow': {'magnitude': 6, 'unit': 'PT'}},
+#                 'fields': 'namedStyleType,spaceAbove,spaceBelow',
+#             }})
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
+#                               'fontSize': {'magnitude': 14, 'unit': 'PT'}},
+#                 'fields': 'weightedFontFamily,fontSize',
+#             }})
+#         elif style == 'heading3':
+#             fmt.append({'updateParagraphStyle': {
+#                 'range': rng,
+#                 'paragraphStyle': {'namedStyleType': 'HEADING_3',
+#                                    'spaceAbove': {'magnitude': 10, 'unit': 'PT'}},
+#                 'fields': 'namedStyleType,spaceAbove',
+#             }})
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'weightedFontFamily': {'fontFamily': _TIMES},
+#                               'fontSize': {'magnitude': 12, 'unit': 'PT'}},
+#                 'fields': 'weightedFontFamily,fontSize',
+#             }})
+#         elif style == 'table_header':
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'bold': True,
+#                               'foregroundColor': {'color': {'rgbColor': _NAVY_BG}},
+#                               'fontSize': {'magnitude': 10, 'unit': 'PT'},
+#                               'weightedFontFamily': {'fontFamily': _TIMES}},
+#                 'fields': 'bold,foregroundColor,fontSize,weightedFontFamily',
+#             }})
+#         elif style in ('bold', 'metric_label'):
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'bold': True,
+#                               'weightedFontFamily': {'fontFamily': _TIMES}},
+#                 'fields': 'bold,weightedFontFamily',
+#             }})
+#         elif style in ('score_good', 'rec_good'):
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'bold': True,
+#                               'foregroundColor': {'color': {'rgbColor': _GREEN}},
+#                               'weightedFontFamily': {'fontFamily': _TIMES}},
+#                 'fields': 'bold,foregroundColor,weightedFontFamily',
+#             }})
+#         elif style in ('score_bad', 'rec_bad'):
+#             fmt.append({'updateTextStyle': {
+#                 'range': rng,
+#                 'textStyle': {'bold': True,
+#                               'foregroundColor': {'color': {'rgbColor': _RED}},
+#                               'weightedFontFamily': {'fontFamily': _TIMES}},
+#                 'fields': 'bold,foregroundColor,weightedFontFamily',
+#             }})
+# 
+#     # --- Convert URLs in text to clickable hyperlinks ---
+#     _url_re = _re_fmt.compile(r'https?://[^\s\)\]\}>,"]+')
+#     for m in _url_re.finditer(full_text):
+#         url = m.group().rstrip('.')  # strip trailing period if any
+#         rng = _rng(m.start(), m.start() + len(url))
+#         fmt.append({'updateTextStyle': {
+#             'range': rng,
+#             'textStyle': {'link': {'url': url},
+#                           'foregroundColor': {'color': {'rgbColor': _BLUE}},
+#                           'underline': True,
+#                           'weightedFontFamily': {'fontFamily': _TIMES}},
+#             'fields': 'link,foregroundColor,underline,weightedFontFamily',
+#         }})
+# 
+#     return full_text, fmt
+# 
+# 
+# def _export_to_sheets(creds, result, spreadsheet_id=None, custom_name=None):
+#     """Export analysis to Google Sheets. Returns (spreadsheet_id, url)."""
+#     import gspread
+#     from gspread_formatting import (
+#         format_cell_range, CellFormat, TextFormat, Color, Border, Borders,
+#         set_column_widths, set_row_height,
+#     )
+#     gc = gspread.authorize(creds)
+#     f = result['fundamentals']
+#     ticker = result['ticker']
+#     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+# 
+#     if spreadsheet_id:
+#         sh = gc.open_by_key(spreadsheet_id)
+#         ws_title = f"{ticker} {datetime.now().strftime('%m/%d')}"
+#         try:
+#             ws = sh.add_worksheet(title=ws_title, rows=60, cols=10)
+#         except Exception:
+#             ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=60, cols=10)
+#     else:
+#         title = custom_name if custom_name else f"{ticker} Analysis - {timestamp}"
+#         sh = gc.create(title)
+#         ws = sh.sheet1
+#         ws.update_title(f"{ticker} Analysis")
+# 
+#     # ── Colour palette ──
+#     _WHITE = Color(1, 1, 1)
+#     _DARK  = Color(0.15, 0.18, 0.22)
+#     _NAVY  = Color(0.11, 0.22, 0.43)       # header bg
+#     _LIGHT_BLUE = Color(0.85, 0.91, 0.97)  # alternating row
+#     _GREEN = Color(0.07, 0.53, 0.23)
+#     _RED   = Color(0.78, 0.17, 0.17)
+#     _LIGHT_GRAY = Color(0.94, 0.94, 0.94)
+# 
+#     _thin_border = Border("SOLID", width=1, color=Color(0.8, 0.8, 0.8))
+#     _borders_all = Borders(top=_thin_border, bottom=_thin_border, left=_thin_border, right=_thin_border)
+# 
+#     score_val = result['final_score']
+#     rec = result.get('recommendation', 'N/A')
+# 
+#     # ── Build rows ──
+#     rows = [
+#         [f"{ticker} – Investment Analysis", "", "", "", ""],
+#         [f.get('name', 'N/A'), "", f"Sector: {f.get('sector', 'N/A')}", "", f"Date: {timestamp}"],
+#         [],
+#         ["SUMMARY", "", "", "", ""],
+#         ["Final Score", f"{score_val:.1f} / 100", "", "Recommendation", rec],
+#         [],
+#         ["KEY METRICS", "", "", "", ""],
+#         ["Metric", "Value", "", "Metric", "Value"],
+#     ]
+# 
+#     # Build two-column metric pairs
+#     metric_pairs = []
+#     price = f.get('price', 0)
+#     if price:
+#         metric_pairs.append(("Price", f"${price:.2f}"))
+#     mc = f.get('market_cap', 0)
+#     if mc:
+#         metric_pairs.append(("Market Cap", f"${mc/1e9:.2f}B"))
+#     pe = f.get('pe_ratio')
+#     if pe:
+#         metric_pairs.append(("P/E Ratio", f"{pe:.1f}"))
+#     beta_val = f.get('beta')
+#     if beta_val:
+#         metric_pairs.append(("Beta", f"{beta_val:.2f}"))
+#     dy = f.get('dividend_yield')
+#     if dy:
+#         metric_pairs.append(("Dividend Yield", f"{dy*100:.2f}%"))
+#     ev = f.get('enterprise_value')
+#     if ev and ev > 0:
+#         metric_pairs.append(("Enterprise Value", f"${ev/1e9:.2f}B"))
+#     pb = f.get('pb_ratio')
+#     if pb:
+#         metric_pairs.append(("P/B Ratio", f"{pb:.2f}"))
+# 
+#     # Pair metrics into left/right columns
+#     half = (len(metric_pairs) + 1) // 2
+#     for i in range(half):
+#         left = metric_pairs[i] if i < len(metric_pairs) else ("", "")
+#         right = metric_pairs[i + half] if (i + half) < len(metric_pairs) else ("", "")
+#         rows.append([left[0], left[1], "", right[0], right[1]])
+#     metrics_end_row = len(rows)
+# 
+#     rows.append([])
+#     agent_header_row = len(rows) + 1
+#     rows.append(["AGENT SCORES", "", "", "", ""])
+#     rows.append(["Agent", "Score", "Rating", "", ""])
+#     agent_start_row = len(rows) + 1
+#     for agent_name, agent_score in result.get('agent_scores', {}).items():
+#         display_name = agent_name.replace('_', ' ').title()
+#         rating = "Strong" if agent_score >= 75 else ("Good" if agent_score >= 60 else ("Fair" if agent_score >= 40 else "Weak"))
+#         rows.append([display_name, round(agent_score, 1), rating, "", ""])
+#     agent_end_row = len(rows)
+# 
+#     rows.append([])
+#     analysis_header_row = len(rows) + 1
+#     rows.append(["DETAILED ANALYSIS", "", "", "", ""])
+#     for agent_name, rationale in result.get('agent_rationales', {}).items():
+#         if rationale:
+#             rows.append([agent_name.replace('_', ' ').title()])
+#             for line in str(rationale).split('\n'):
+#                 if line.strip():
+#                     rows.append([line.strip()])
+#             rows.append([])
+#     total_rows = len(rows)
+# 
+#     ws.update(range_name='A1', values=rows)
+# 
+#     # ── Formatting ──
+#     try:
+#         # Column widths
+#         set_column_widths(ws, [('A', 180), ('B', 140), ('C', 140), ('D', 180), ('E', 180)])
+# 
+#         # Row 1 – Title bar
+#         set_row_height(ws, '1', 42)
+#         format_cell_range(ws, 'A1:E1', CellFormat(
+#             backgroundColor=_NAVY,
+#             textFormat=TextFormat(bold=True, fontSize=16, foregroundColor=_WHITE,
+#                                  fontFamily='Arial'),
+#             horizontalAlignment='LEFT',
+#             verticalAlignment='MIDDLE',
+#         ))
+# 
+#         # Row 2 – Subtitle
+#         format_cell_range(ws, 'A2:E2', CellFormat(
+#             backgroundColor=_LIGHT_GRAY,
+#             textFormat=TextFormat(fontSize=10, foregroundColor=_DARK, fontFamily='Arial'),
+#             horizontalAlignment='LEFT',
+#         ))
+# 
+#         # Section headers (SUMMARY, KEY METRICS, AGENT SCORES, DETAILED ANALYSIS)
+#         _section_fmt = CellFormat(
+#             backgroundColor=Color(0.22, 0.32, 0.52),
+#             textFormat=TextFormat(bold=True, fontSize=12, foregroundColor=_WHITE, fontFamily='Arial'),
+#             horizontalAlignment='LEFT',
+#             borders=_borders_all,
+#         )
+#         format_cell_range(ws, 'A4:E4', _section_fmt)
+#         format_cell_range(ws, 'A7:E7', _section_fmt)
+#         format_cell_range(ws, f'A{agent_header_row}:E{agent_header_row}', _section_fmt)
+#         format_cell_range(ws, f'A{analysis_header_row}:E{analysis_header_row}', _section_fmt)
+# 
+#         # Summary row (row 5)
+#         format_cell_range(ws, 'A5:E5', CellFormat(
+#             textFormat=TextFormat(bold=True, fontSize=11, fontFamily='Arial'),
+#             borders=_borders_all,
+#             backgroundColor=_LIGHT_BLUE,
+#         ))
+#         # Color score
+#         score_color = _GREEN if score_val >= 60 else _RED
+#         format_cell_range(ws, 'B5', CellFormat(
+#             textFormat=TextFormat(bold=True, fontSize=11, foregroundColor=score_color, fontFamily='Arial'),
+#         ))
+# 
+#         # Metric table header (row 8)
+#         format_cell_range(ws, 'A8:E8', CellFormat(
+#             textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=_WHITE, fontFamily='Arial'),
+#             backgroundColor=Color(0.33, 0.43, 0.60),
+#             borders=_borders_all,
+#         ))
+#         # Metric rows with alternating colours
+#         for r_idx in range(9, metrics_end_row + 1):
+#             bg = _LIGHT_BLUE if (r_idx % 2 == 1) else _WHITE
+#             format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
+#                 backgroundColor=bg,
+#                 textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+#                 borders=_borders_all,
+#             ))
+#             # Bold metric labels
+#             format_cell_range(ws, f'A{r_idx}', CellFormat(
+#                 textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+#             ))
+#             format_cell_range(ws, f'D{r_idx}', CellFormat(
+#                 textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+#             ))
+# 
+#         # Agent scores table header
+#         agent_hdr = agent_start_row - 1
+#         format_cell_range(ws, f'A{agent_hdr}:E{agent_hdr}', CellFormat(
+#             textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=_WHITE, fontFamily='Arial'),
+#             backgroundColor=Color(0.33, 0.43, 0.60),
+#             borders=_borders_all,
+#         ))
+#         # Agent score rows with conditional coloring
+#         for r_idx in range(agent_start_row, agent_end_row + 1):
+#             bg = _LIGHT_BLUE if (r_idx % 2 == 1) else _WHITE
+#             format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
+#                 backgroundColor=bg,
+#                 textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+#                 borders=_borders_all,
+#             ))
+#             format_cell_range(ws, f'A{r_idx}', CellFormat(
+#                 textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+#             ))
+# 
+#         # Color agent scores (column B) green/red based on value
+#         for r_idx in range(agent_start_row, agent_end_row + 1):
+#             cell_val = ws.acell(f'B{r_idx}').value
+#             try:
+#                 v = float(cell_val)
+#                 clr = _GREEN if v >= 60 else _RED
+#             except (TypeError, ValueError):
+#                 clr = _DARK
+#             format_cell_range(ws, f'B{r_idx}', CellFormat(
+#                 textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=clr, fontFamily='Arial'),
+#             ))
+# 
+#         # Analysis section – bold agent names
+#         for r_idx in range(analysis_header_row + 1, total_rows + 1):
+#             format_cell_range(ws, f'A{r_idx}:E{r_idx}', CellFormat(
+#                 textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+#             ))
+# 
+#         # Freeze top row
+#         ws.freeze(rows=1)
+# 
+#     except Exception:
+#         pass
+# 
+#     _share_file_anyone(creds, sh.id)
+#     return sh.id, sh.url
+# 
+# 
+# def _export_to_docs(creds, result, document_id=None, insert_mode='page_break', custom_name=None):
+#     """Export analysis to Google Docs with rich formatting. Returns (doc_id, url).
+# 
+#     insert_mode: 'page_break' inserts a page break then the report (new page).
+#                  'append' appends to the bottom of the document with a separator.
+#                  'doc_tab' creates a new document tab within the same document.
+#     """
+#     from googleapiclient.discovery import build
+#     service = build('docs', 'v1', credentials=creds)
+#     drive_service = build('drive', 'v3', credentials=creds)
+# 
+#     ticker = result['ticker']
+#     timestamp = datetime.now().strftime('%B %d, %Y')
+# 
+#     if document_id:
+#         if insert_mode == 'doc_tab':
+#             # ── Create a new document tab via addDocumentTab ──
+#             tab_title = f"{ticker} Analysis - {datetime.now().strftime('%m/%d')}"
+#             try:
+#                 resp = service.documents().batchUpdate(
+#                     documentId=document_id,
+#                     body={'requests': [{'addDocumentTab': {
+#                         'tabProperties': {'title': tab_title}
+#                     }}]}
+#                 ).execute()
+#                 new_tab_id = resp['replies'][0]['addDocumentTab']['tabProperties']['tabId']
+# 
+#                 # Build formatted text + formatting requests targeting the new tab
+#                 report_text, fmt_requests = _build_formatted_doc_content(
+#                     result, base_index=1, tab_id=new_tab_id)
+# 
+#                 # Insert text then apply formatting
+#                 all_requests = [{'insertText': {
+#                     'location': {'index': 1, 'tabId': new_tab_id},
+#                     'text': report_text,
+#                 }}]
+#                 all_requests.extend(fmt_requests)
+#                 service.documents().batchUpdate(
+#                     documentId=document_id, body={'requests': all_requests}
+#                 ).execute()
+# 
+#             except Exception as tab_err:
+#                 import logging
+#                 logging.getLogger(__name__).warning(
+#                     f"Document tab creation failed ({tab_err}), falling back to page break."
+#                 )
+#                 return _export_to_docs(creds, result, document_id=document_id,
+#                                        insert_mode='page_break', custom_name=custom_name)
+# 
+#             url = f"https://docs.google.com/document/d/{document_id}/edit"
+#             return document_id, url
+# 
+#         # ── Export to existing document (page_break or append) ──
+#         doc = service.documents().get(documentId=document_id).execute()
+#         end_index = doc['body']['content'][-1]['endIndex'] - 1
+# 
+#         if insert_mode == 'page_break':
+#             # Phase 1: insert the page break
+#             service.documents().batchUpdate(documentId=document_id, body={'requests': [
+#                 {'insertText': {'location': {'index': end_index}, 'text': '\n'}},
+#                 {'insertPageBreak': {'location': {'index': end_index + 1}}},
+#             ]}).execute()
+# 
+#             # Re-fetch to get the new insertion point
+#             doc = service.documents().get(documentId=document_id).execute()
+#             new_end = doc['body']['content'][-1]['endIndex'] - 1
+# 
+#             # Phase 2: insert formatted text + styling
+#             report_text, fmt_requests = _build_formatted_doc_content(
+#                 result, base_index=new_end)
+#             all_requests = [{'insertText': {
+#                 'location': {'index': new_end}, 'text': report_text
+#             }}]
+#             all_requests.extend(fmt_requests)
+#             service.documents().batchUpdate(
+#                 documentId=document_id, body={'requests': all_requests}
+#             ).execute()
+#         else:
+#             # Append with separator
+#             separator = "\n\n" + "=" * 60 + "\n\n"
+#             base = end_index + len(separator)
+#             report_text, fmt_requests = _build_formatted_doc_content(
+#                 result, base_index=base)
+#             all_requests = [{'insertText': {
+#                 'location': {'index': end_index},
+#                 'text': separator + report_text
+#             }}]
+#             all_requests.extend(fmt_requests)
+#             service.documents().batchUpdate(
+#                 documentId=document_id, body={'requests': all_requests}
+#             ).execute()
+# 
+#         url = f"https://docs.google.com/document/d/{document_id}/edit"
+#         return document_id, url
+#     else:
+#         # ── Create new document ──
+#         title = custom_name if custom_name else f"{ticker} Investment Analysis - {timestamp}"
+#         doc = service.documents().create(body={'title': title}).execute()
+#         doc_id = doc['documentId']
+# 
+#         report_text, fmt_requests = _build_formatted_doc_content(
+#             result, base_index=1)
+#         all_requests = [{'insertText': {
+#             'location': {'index': 1}, 'text': report_text
+#         }}]
+#         all_requests.extend(fmt_requests)
+#         service.documents().batchUpdate(
+#             documentId=doc_id, body={'requests': all_requests}
+#         ).execute()
+# 
+#         _share_file_anyone(creds, doc_id)
+# 
+#         url = f"https://docs.google.com/document/d/{doc_id}/edit"
+#         return doc_id, url
+# 
+# 
+# def _export_multi_to_sheets(creds, results, spreadsheet_id=None, custom_name=None):
+#     """Export multi-stock comparison to Google Sheets."""
+#     import gspread
+#     from gspread_formatting import (
+#         format_cell_range, CellFormat, TextFormat, Color, Border, Borders,
+#         set_column_widths, set_row_height,
+#     )
+#     gc = gspread.authorize(creds)
+#     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+# 
+#     if spreadsheet_id:
+#         sh = gc.open_by_key(spreadsheet_id)
+#         ws_title = f"Comparison {datetime.now().strftime('%m/%d')}"
+#         try:
+#             ws = sh.add_worksheet(title=ws_title, rows=50, cols=15)
+#         except Exception:
+#             ws = sh.add_worksheet(title=f"{ws_title}_{int(time.time())%10000}", rows=50, cols=15)
+#     else:
+#         title = custom_name if custom_name else f"Stock Comparison - {timestamp}"
+#         sh = gc.create(title)
+#         ws = sh.sheet1
+#         ws.update_title("Comparison")
+# 
+#     # Colour palette
+#     _WHITE = Color(1, 1, 1)
+#     _NAVY  = Color(0.11, 0.22, 0.43)
+#     _LIGHT_BLUE = Color(0.85, 0.91, 0.97)
+#     _GREEN = Color(0.07, 0.53, 0.23)
+#     _RED   = Color(0.78, 0.17, 0.17)
+#     _thin = Border("SOLID", width=1, color=Color(0.8, 0.8, 0.8))
+#     _borders_all = Borders(top=_thin, bottom=_thin, left=_thin, right=_thin)
+# 
+#     # Header
+#     headers = ['Ticker', 'Name', 'Final Score', 'Recommendation', 'Price',
+#                'Sector', 'Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
+#     rows = [headers]
+# 
+#     sorted_results = sorted(results, key=lambda x: x['final_score'], reverse=True)
+#     for r in sorted_results:
+#         f = r['fundamentals']
+#         scores = r.get('agent_scores', {})
+#         rows.append([
+#             r['ticker'],
+#             f.get('name', 'N/A'),
+#             round(r['final_score'], 1),
+#             r.get('recommendation', 'N/A'),
+#             f"${f.get('price', 0):.2f}",
+#             f.get('sector', 'N/A'),
+#             round(scores.get('value_agent', 0), 1),
+#             round(scores.get('growth_momentum_agent', 0), 1),
+#             round(scores.get('macro_regime_agent', 0), 1),
+#             round(scores.get('risk_agent', 0), 1),
+#             round(scores.get('sentiment_agent', 0), 1),
+#         ])
+# 
+#     ws.update(range_name='A1', values=rows)
+# 
+#     # ── Formatting ──
+#     try:
+#         total_rows = len(rows)
+# 
+#         # Column widths
+#         set_column_widths(ws, [
+#             ('A', 90), ('B', 200), ('C', 100), ('D', 140), ('E', 100),
+#             ('F', 140), ('G', 80), ('H', 80), ('I', 80), ('J', 80), ('K', 90),
+#         ])
+# 
+#         # Header row
+#         set_row_height(ws, '1', 38)
+#         format_cell_range(ws, 'A1:K1', CellFormat(
+#             backgroundColor=_NAVY,
+#             textFormat=TextFormat(bold=True, fontSize=11, foregroundColor=_WHITE, fontFamily='Arial'),
+#             horizontalAlignment='CENTER',
+#             verticalAlignment='MIDDLE',
+#             borders=_borders_all,
+#         ))
+# 
+#         # Data rows with alternating colours
+#         for r_idx in range(2, total_rows + 1):
+#             bg = _LIGHT_BLUE if (r_idx % 2 == 0) else _WHITE
+#             format_cell_range(ws, f'A{r_idx}:K{r_idx}', CellFormat(
+#                 backgroundColor=bg,
+#                 textFormat=TextFormat(fontSize=10, fontFamily='Arial'),
+#                 borders=_borders_all,
+#                 verticalAlignment='MIDDLE',
+#             ))
+#             # Bold ticker
+#             format_cell_range(ws, f'A{r_idx}', CellFormat(
+#                 textFormat=TextFormat(bold=True, fontSize=10, fontFamily='Arial'),
+#             ))
+# 
+#         # Color final scores (column C) and agent scores (G-K) green/red
+#         score_cols = ['C', 'G', 'H', 'I', 'J', 'K']
+#         for r_idx in range(2, total_rows + 1):
+#             for col in score_cols:
+#                 cell_val = ws.acell(f'{col}{r_idx}').value
+#                 try:
+#                     v = float(cell_val)
+#                     clr = _GREEN if v >= 60 else _RED
+#                 except (TypeError, ValueError):
+#                     continue
+#                 format_cell_range(ws, f'{col}{r_idx}', CellFormat(
+#                     textFormat=TextFormat(bold=True, fontSize=10, foregroundColor=clr, fontFamily='Arial'),
+#                 ))
+# 
+#         # Freeze header row
+#         ws.freeze(rows=1)
+# 
+#     except Exception:
+#         pass
+# 
+#     _share_file_anyone(creds, sh.id)
+# 
+#     return sh.id, sh.url
+# 
+# 
+# def _list_drive_files(creds, mime_type):
+#     """List recent files of given MIME type from user's Drive."""
+#     from googleapiclient.discovery import build
+#     service = build('drive', 'v3', credentials=creds)
+#     query = f"mimeType='{mime_type}' and trashed=false"
+#     results = service.files().list(
+#         q=query, pageSize=20, orderBy='modifiedTime desc',
+#         fields='files(id, name, modifiedTime)',
+#     ).execute()
+#     return results.get('files', [])
+# 
+# 
+# def _render_google_export(result):
+#     """Render the Google Sheets/Docs export UI for a single stock."""
+#     ticker = result['ticker']
+#     exp_key = f"_gexp_open_{ticker}"
+#     is_expanded = st.session_state.get(exp_key, False)
+#     with st.expander("Export to Google Sheets / Docs", expanded=is_expanded):
+#         # Track that the user opened the expander (persists across reruns)
+#         if not is_expanded:
+#             st.session_state[exp_key] = True
+# 
+#         if not _render_google_sign_in(key_suffix=ticker):
+#             return
+# 
+#         creds = _get_google_creds()
+#         if creds is None:
+#             st.error("Could not build credentials from token.")
+#             return
+# 
+#         # ---- Authenticated: show export options ----
+#         col_s, col_d = st.columns(2)
+# 
+#         with col_s:
+#             st.markdown("**Google Sheets**")
+#             sheets_mode = st.radio(
+#                 "Destination", ["New Spreadsheet", "Existing Spreadsheet"],
+#                 key=f"sheets_mode_{ticker}", horizontal=True
+#             )
+#             sheet_id = None
+#             sheets_custom_name = None
+#             if sheets_mode == "Existing Spreadsheet":
+#                 try:
+#                     files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
+#                     if files:
+#                         options = {gf['name']: gf['id'] for gf in files}
+#                         selected = st.selectbox("Choose spreadsheet", list(options.keys()),
+#                                                 key=f"sheets_pick_{ticker}")
+#                         sheet_id = options[selected]
+#                     else:
+#                         st.caption("No spreadsheets found. A new one will be created.")
+#                 except Exception:
+#                     st.caption("Could not list files. A new one will be created.")
+#             else:
+#                 default_name = f"{ticker} Analysis - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+#                 sheets_custom_name = st.text_input(
+#                     "Spreadsheet name", value=default_name,
+#                     key=f"sheets_name_{ticker}"
+#                 )
+# 
+#             if st.button("Export to Sheets", key=f"export_sheets_{ticker}", use_container_width=True):
+#                 with st.spinner("Exporting to Google Sheets..."):
+#                     try:
+#                         sid, url = _export_to_sheets(creds, result, spreadsheet_id=sheet_id,
+#                                                      custom_name=sheets_custom_name)
+#                         st.success(f"Exported! [Open Spreadsheet]({url})")
+#                     except Exception as e:
+#                         st.error(f"Export failed: {e}")
+# 
+#         with col_d:
+#             st.markdown("**Google Docs**")
+#             docs_mode = st.radio(
+#                 "Destination", ["New Document", "Existing Document"],
+#                 key=f"docs_mode_{ticker}", horizontal=True
+#             )
+#             doc_id = None
+#             docs_insert_mode = 'page_break'
+#             docs_custom_name = None
+#             if docs_mode == "Existing Document":
+#                 try:
+#                     files = _list_drive_files(creds, 'application/vnd.google-apps.document')
+#                     if files:
+#                         options = {gf['name']: gf['id'] for gf in files}
+#                         selected = st.selectbox("Choose document", list(options.keys()),
+#                                                 key=f"docs_pick_{ticker}")
+#                         doc_id = options[selected]
+#                     else:
+#                         st.caption("No documents found. A new one will be created.")
+#                 except Exception:
+#                     st.caption("Could not list files. A new one will be created.")
+# 
+#                 docs_insert_mode = st.radio(
+#                     "Insert method",
+#                     ["New document tab", "New page (page break)", "Append to bottom"],
+#                     key=f"docs_insert_{ticker}", horizontal=True,
+#                     help="New document tab: creates a separate tab in the same doc. "
+#                          "Page break: adds content on a new page. "
+#                          "Append: adds to the bottom of the current content."
+#                 )
+#                 if 'tab' in docs_insert_mode.lower():
+#                     docs_insert_mode = 'doc_tab'
+#                 elif 'New page' in docs_insert_mode:
+#                     docs_insert_mode = 'page_break'
+#                 else:
+#                     docs_insert_mode = 'append'
+#             else:
+#                 default_doc_name = f"{ticker} Investment Analysis - {datetime.now().strftime('%B %d, %Y')}"
+#                 docs_custom_name = st.text_input(
+#                     "Document name", value=default_doc_name,
+#                     key=f"docs_name_{ticker}"
+#                 )
+# 
+#             if st.button("Export to Docs", key=f"export_docs_{ticker}", use_container_width=True):
+#                 with st.spinner("Exporting to Google Docs..."):
+#                     try:
+#                         did, url = _export_to_docs(creds, result, document_id=doc_id,
+#                                                    insert_mode=docs_insert_mode,
+#                                                    custom_name=docs_custom_name)
+#                         st.success(f"Exported! [Open Document]({url})")
+#                     except Exception as e:
+#                         st.error(f"Export failed: {e}")
+# 
+# 
+# def _render_google_export_multi(results):
+#     """Render the Google Sheets/Docs export UI for multi-stock comparison."""
+#     exp_key = "_gexp_open_multi"
+#     is_expanded = st.session_state.get(exp_key, False)
+#     with st.expander("Export Comparison to Google Sheets / Docs", expanded=is_expanded):
+#         if not is_expanded:
+#             st.session_state[exp_key] = True
+# 
+#         if not _render_google_sign_in(key_suffix="multi"):
+#             return
+# 
+#         creds = _get_google_creds()
+#         if creds is None:
+#             st.error("Could not build credentials from token.")
+#             return
+# 
+#         # ---- Authenticated ----
+#         col_s, col_d = st.columns(2)
+# 
+#         with col_s:
+#             st.markdown("**Google Sheets (Comparison Table)**")
+#             sheets_mode = st.radio(
+#                 "Destination", ["New Spreadsheet", "Existing Spreadsheet"],
+#                 key="sheets_mode_multi", horizontal=True
+#             )
+#             sheet_id = None
+#             sheets_custom_name = None
+#             if sheets_mode == "Existing Spreadsheet":
+#                 try:
+#                     files = _list_drive_files(creds, 'application/vnd.google-apps.spreadsheet')
+#                     if files:
+#                         options = {gf['name']: gf['id'] for gf in files}
+#                         selected = st.selectbox("Choose spreadsheet", list(options.keys()),
+#                                                 key="sheets_pick_multi")
+#                         sheet_id = options[selected]
+#                     else:
+#                         st.caption("No spreadsheets found.")
+#                 except Exception:
+#                     st.caption("Could not list files.")
+#             else:
+#                 tickers_str = ", ".join(r['ticker'] for r in results[:5])
+#                 default_name = f"Stock Comparison ({tickers_str}) - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+#                 sheets_custom_name = st.text_input(
+#                     "Spreadsheet name", value=default_name,
+#                     key="sheets_name_multi"
+#                 )
+# 
+#             if st.button("Export Comparison to Sheets", key="export_sheets_multi", use_container_width=True):
+#                 with st.spinner("Exporting comparison to Google Sheets..."):
+#                     try:
+#                         sid, url = _export_multi_to_sheets(creds, results, spreadsheet_id=sheet_id,
+#                                                            custom_name=sheets_custom_name)
+#                         st.success(f"Exported! [Open Spreadsheet]({url})")
+#                     except Exception as e:
+#                         st.error(f"Export failed: {e}")
+# 
+#         with col_d:
+#             st.markdown("**Google Docs (Full Reports)**")
+#             docs_mode = st.radio(
+#                 "Destination", ["New Document", "Existing Document"],
+#                 key="docs_mode_multi", horizontal=True
+#             )
+#             doc_id = None
+#             docs_insert_mode_multi = 'page_break'
+#             docs_custom_name = None
+#             if docs_mode == "Existing Document":
+#                 try:
+#                     files = _list_drive_files(creds, 'application/vnd.google-apps.document')
+#                     if files:
+#                         options = {gf['name']: gf['id'] for gf in files}
+#                         selected = st.selectbox("Choose document", list(options.keys()),
+#                                                 key="docs_pick_multi")
+#                         doc_id = options[selected]
+#                     else:
+#                         st.caption("No documents found.")
+#                 except Exception:
+#                     st.caption("Could not list files.")
+# 
+#                 docs_insert_mode_multi = st.radio(
+#                     "Insert method",
+#                     ["New document tab", "New page (page break)", "Append to bottom"],
+#                     key="docs_insert_multi", horizontal=True,
+#                     help="New document tab: creates a separate tab in the same doc. "
+#                          "Page break: adds content on a new page. "
+#                          "Append: adds to the bottom of the current content."
+#                 )
+#                 if 'tab' in docs_insert_mode_multi.lower():
+#                     docs_insert_mode_multi = 'doc_tab'
+#                 elif 'New page' in docs_insert_mode_multi:
+#                     docs_insert_mode_multi = 'page_break'
+#                 else:
+#                     docs_insert_mode_multi = 'append'
+#             else:
+#                 tickers_str = ", ".join(r['ticker'] for r in results[:5])
+#                 default_doc_name = f"Investment Analysis ({tickers_str}) - {datetime.now().strftime('%B %d, %Y')}"
+#                 docs_custom_name = st.text_input(
+#                     "Document name", value=default_doc_name,
+#                     key="docs_name_multi"
+#                 )
+# 
+#             if st.button("Export Reports to Docs", key="export_docs_multi", use_container_width=True):
+#                 with st.spinner("Exporting reports to Google Docs..."):
+#                     try:
+#                         first = True
+#                         created_doc_id = doc_id
+#                         _ins_mode = docs_insert_mode_multi
+#                         for r in sorted(results, key=lambda x: x['final_score'], reverse=True):
+#                             if first and not created_doc_id:
+#                                 created_doc_id, url = _export_to_docs(creds, r, document_id=None,
+#                                                                        custom_name=docs_custom_name)
+#                                 first = False
+#                             else:
+#                                 _, url = _export_to_docs(creds, r, document_id=created_doc_id,
+#                                                          insert_mode=_ins_mode)
+#                                 first = False
+#                         st.success(f"Exported {len(results)} reports! [Open Document]({url})")
+#                     except Exception as e:
+#                         st.error(f"Export failed: {e}")
+# 
+# 
 def display_stock_analysis(result: dict):
     """Display detailed stock analysis results with enhanced rationales."""
     
@@ -3944,8 +3948,8 @@ Formula: Blended Score = Weighted Sum / Total Weight
     # Display enhanced agent rationales with collaboration
     display_enhanced_agent_rationales(result)
     
-    # Google Sheets / Docs export
-    _render_google_export(result)
+#     # Google Sheets / Docs export
+#     _render_google_export(result)
 
     # Back to home
     st.markdown("---")
@@ -4249,8 +4253,8 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
         with tab:
             display_stock_analysis(result)
 
-    # Google Sheets / Docs export (multi-stock comparison)
-    _render_google_export_multi(results)
+#     # Google Sheets / Docs export (multi-stock comparison)
+#     _render_google_export_multi(results)
 
     # Back to home
     st.markdown("---")
@@ -4850,860 +4854,860 @@ def extract_key_factors(agent_key: str, result: dict) -> list:
     return factors
 
 
-def portfolio_recommendations_page():
-    """Portfolio recommendation page with AI-powered selection."""
-    st.header("AI-Powered Portfolio Recommendations")
-    st.write("Multi-stage AI selection using OpenAI o3 and Gemini 2.5 Pro to identify optimal stocks.")
-    st.markdown("---")
-    
-    # Challenge context input
-    st.subheader("Investment Challenge Context")
-    challenge_context = st.text_area(
-        "Describe the investment challenge, goals, and requirements:",
-        value="""Generate an optimal diversified portfolio that maximizes risk-adjusted returns 
-while adhering to the Investment Policy Statement constraints.
-Focus on high-quality companies with strong fundamentals and growth potential.""",
-        height=120,
-        help="Provide detailed context about the investment challenge"
-    )
-    
-    st.markdown("---")
-    
-    # Configuration options
-    with st.expander("Portfolio Configuration", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            num_positions = st.number_input(
-                "Target Portfolio Positions",
-                min_value=3,
-                max_value=20,
-                value=5,
-                help="Target number of holdings in portfolio (up to 20 for diversified growth)"
-            )
-    
-    # Advanced options
-    with st.expander("Investment Focus & Strategy"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Investment Focus**")
-            focus_value = st.checkbox("Emphasize Value (Undervalued stocks)", value=False)
-            focus_growth = st.checkbox("Emphasize Growth & Momentum", value=False)
-            focus_upside = st.checkbox("Emphasize Potential Upside (High-growth niche stocks)", value=False, 
-                                      help="Discover small-cap and emerging companies with massive growth potential")
-            focus_dividend = st.checkbox("Emphasize Dividend Income", value=False)
-            focus_lowrisk = st.checkbox("Emphasize Low Volatility", value=False)
-        
-        with col2:
-            st.markdown("**Portfolio Strategy**")
-            sector_constraint = st.selectbox(
-                "Sector Diversification",
-                ["No Preference", "Tech-Heavy", "Tech-Light", "Diversified Only"],
-                help="Control sector concentration"
-            )
-            
-            market_cap_pref = st.selectbox(
-                "Market Cap Preference",
-                ["All Market Caps (Best opportunities anywhere)", 
-                 "Small & Mid Cap Focus (Higher growth potential)", 
-                 "Large Cap Focus (Established companies)",
-                 "Mix of All Sizes"],
-                index=0,
-                help="Define which company sizes to prioritize"
-            )
-    
-    # Build custom instructions from advanced options
-    custom_instructions = []
-    if focus_value:
-        custom_instructions.append("Prioritize value stocks with low P/E ratios, strong fundamentals, and attractive valuations.")
-    if focus_growth:
-        custom_instructions.append("Seek high-growth companies with strong revenue acceleration and momentum indicators.")
-    if focus_upside:
-        custom_instructions.append("CRITICAL: Discover hidden gems - small-cap, mid-cap, and emerging companies with MASSIVE growth potential. Look beyond well-known names. Seek niche players, disruptors, and companies in high-growth sectors (AI, biotech, clean energy, fintech, SaaS, semiconductors). Market cap is NOT a constraint - find the best opportunities regardless of size.")
-    if focus_dividend:
-        custom_instructions.append("Include dividend-paying stocks with sustainable yields above 2%.")
-    if focus_lowrisk:
-        custom_instructions.append("Favor low-beta stocks with reduced volatility and defensive characteristics.")
-    
-    if sector_constraint == "Tech-Heavy":
-        custom_instructions.append("Allocate 40-60% to technology sector stocks.")
-    elif sector_constraint == "Tech-Light":
-        custom_instructions.append("Limit technology sector exposure to 20% maximum.")
-    elif sector_constraint == "Diversified Only":
-        custom_instructions.append("Ensure no single sector exceeds 25% of portfolio weight.")
-    
-    if market_cap_pref == "Small & Mid Cap Focus (Higher growth potential)":
-        custom_instructions.append("Focus primarily on small-cap ($300M-$2B) and mid-cap ($2B-$10B) companies with high growth potential.")
-    elif market_cap_pref == "Large Cap Focus (Established companies)":
-        custom_instructions.append("Focus on large-cap companies ($10B+) with established market positions.")
-    elif market_cap_pref == "Mix of All Sizes":
-        custom_instructions.append("Include a balanced mix of small-cap, mid-cap, and large-cap companies.")
-    else:  # All Market Caps
-        custom_instructions.append("Consider companies of ALL sizes - from small-cap emerging players to mega-cap leaders. Find the best opportunities regardless of market capitalization.")
-    
-    # Append custom instructions to challenge context
-    if custom_instructions:
-        challenge_context += "\n\nAdditional Requirements:\n" + "\n".join(f"- {inst}" for inst in custom_instructions)
-    
-    # AI-powered ticker selection
-    tickers = None
-    st.info("""
-    **AI Selection Process:**
-    1. OpenAI o3 selects 20 best tickers
-    2. Gemini 2.5 Pro selects 20 best tickers
-    3. Aggregate to 40 unique candidates
-    4. Generate 4-sentence rationale for each
-    5. Run 3 rounds of top-5 selection
-    6. Consolidate to final 5 tickers
-    7. Full analysis on all final selections
-    """)
-    
-    if st.button("Generate Portfolio", type="primary", use_container_width=True):
-        with st.spinner("Running AI-powered portfolio generation..."):
-            try:
-                result = st.session_state.orchestrator.recommend_portfolio(
-                    challenge_context=challenge_context,
-                    tickers=tickers,
-                    num_positions=num_positions
-                )
-
-                # Store result in session state
-                st.session_state.portfolio_result = result
-
-                # Display results
-                display_portfolio_recommendations(result)
-
-            except Exception as e:
-                st.error(f"Portfolio generation failed: {e}")
-                import traceback
-                st.code(traceback.format_exc())
-
-
-def display_portfolio_recommendations(result: dict):
-    """Display portfolio recommendations with AI selection details."""
-    
-    portfolio = result['portfolio']
-    summary = result['summary']
-    selection_log = result.get('selection_log', {})
-    
-    if not portfolio:
-        st.warning("No stocks found in universe")
-        return
-    
-    # AI Selection Summary (if available)
-    if not selection_log.get('manual_selection', False):
-        st.subheader("AI Selection Process")
-        
-        with st.expander("View AI Selection Details", expanded=False):
-            stages = selection_log.get('stages', [])
-            
-            for stage_info in stages:
-                stage = stage_info.get('stage', 'Unknown')
-                
-                if stage == 'openai_initial_selection':
-                    st.markdown("#### 1. OpenAI Initial Selection")
-                    tickers = stage_info.get('tickers', [])
-                    st.write(f"Selected {len(tickers)} tickers: {', '.join(tickers)}")
-                
-                elif stage == 'gemini_initial_selection':
-                    st.markdown("#### 2. Gemini 2.5 Pro Initial Selection")
-                    tickers = stage_info.get('tickers', [])
-                    st.write(f"Selected {len(tickers)} tickers: {', '.join(tickers)}")
-                
-                elif stage == 'aggregation':
-                    st.markdown("#### 3. Aggregation")
-                    count = stage_info.get('count', 0)
-                    st.write(f"Total unique candidates: **{count}** tickers")
-                
-                elif stage == 'rationale_generation':
-                    st.markdown("#### 4. Rationale Generation")
-                    rationales = stage_info.get('ticker_rationales', {})
-                    st.write(f"Generated 4-sentence rationales for {len(rationales)} tickers")
-                
-                elif stage == 'final_selection_rounds':
-                    st.markdown("#### 5. Final Selection Rounds")
-                    round_1 = stage_info.get('round_1', [])
-                    round_2 = stage_info.get('round_2', [])
-                    round_3 = stage_info.get('round_3', [])
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.write("**Round 1:**")
-                        st.write(", ".join(round_1))
-                    with col2:
-                        st.write("**Round 2:**")
-                        st.write(", ".join(round_2))
-                    with col3:
-                        st.write("**Round 3:**")
-                        st.write(", ".join(round_3))
-                
-                elif stage == 'final_consolidation':
-                    st.markdown("#### 6. Final Consolidation")
-                    unique = stage_info.get('unique_finalists', [])
-                    final = stage_info.get('final_5', [])
-                    st.write(f"Unique finalists: {len(unique)} → Final selection: **{len(final)}**")
-                    st.success(f"Final tickers: {', '.join(final)}")
-            
-            # Download log
-            import json
-            log_json = json.dumps(selection_log, indent=2)
-            st.download_button(
-                label="Download Full Selection Log (JSON)",
-                data=log_json,
-                file_name=f"ai_selection_log_{result['analysis_date']}.json",
-                mime="application/json"
-            )
-        
-        # Download complete archives section
-        st.markdown("---")
-        st.subheader("Complete Archives")
-        st.write("Download all portfolio selection logs and archives from the system.")
-        
-        import os
-        import zipfile
-        from io import BytesIO
-        
-        # Check if portfolio_selection_logs directory exists
-        logs_dir = "portfolio_selection_logs"
-        if os.path.exists(logs_dir) and os.path.isdir(logs_dir):
-            log_files = [f for f in os.listdir(logs_dir) if f.endswith('.json')]
-            
-            if log_files:
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.info(f"Found **{len(log_files)}** archived portfolio selection(s)")
-                
-                with col2:
-                    # Create ZIP file in memory
-                    zip_buffer = BytesIO()
-                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                        # Add all JSON files
-                        for log_file in log_files:
-                            file_path = os.path.join(logs_dir, log_file)
-                            with open(file_path, 'r') as f:
-                                zip_file.writestr(log_file, f.read())
-                        
-                        # Add README if exists
-                        readme_path = os.path.join(logs_dir, 'README.md')
-                        if os.path.exists(readme_path):
-                            with open(readme_path, 'r') as f:
-                                zip_file.writestr('README.md', f.read())
-                    
-                    zip_buffer.seek(0)
-                    
-                    st.download_button(
-                        label="Download All Archives (ZIP)",
-                        data=zip_buffer.getvalue(),
-                        file_name=f"portfolio_archives_{result['analysis_date']}.zip",
-                        mime="application/zip",
-                        use_container_width=True,
-                        help="Download all portfolio selection logs as a ZIP file"
-                    )
-                
-                # Show list of available archives
-                with st.expander("View Available Archives", expanded=False):
-                    for log_file in sorted(log_files, reverse=True):
-                        file_path = os.path.join(logs_dir, log_file)
-                        file_size = os.path.getsize(file_path)
-                        file_size_kb = file_size / 1024
-                        
-                        col1, col2, col3 = st.columns([3, 1, 1])
-                        with col1:
-                            st.text(f"{log_file}")
-                        with col2:
-                            st.text(f"{file_size_kb:.1f} KB")
-                        with col3:
-                            # Individual download
-                            with open(file_path, 'r') as f:
-                                st.download_button(
-                                    label="Download",
-                                    data=f.read(),
-                                    file_name=log_file,
-                                    mime="application/json",
-                                    key=f"download_{log_file}"
-                                )
-            else:
-                st.info("No archived selections found yet. Generate a portfolio to create archives.")
-        else:
-            st.warning("Portfolio selection logs directory not found.")
-    
-    st.markdown("---")
-    
-    # Summary metrics
-    st.subheader("Portfolio Summary")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("Total Positions", summary['num_positions'])
-    with col2:
-        st.metric("Invested Capital", f"{summary['total_weight_pct']:.1f}%")
-    with col3:
-        st.metric("Average Score", f"{summary['avg_score']:.1f}")
-    with col4:
-        st.metric("Selection Method", summary.get('selection_method', 'N/A'))
-    with col5:
-        st.metric("Analyzed", f"{result.get('total_analyzed', 0)}")
-    
-    # Holdings table with AI rationales
-    st.subheader("Portfolio Holdings")
-    
-    for i, holding in enumerate(portfolio, 1):
-        with st.expander(f"{i}. {holding['ticker']} - {holding['name']} ({holding['sector']})", expanded=False):
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                st.metric("Final Score", f"{holding['final_score']:.1f}/100")
-                st.metric("Weight", f"{holding['target_weight_pct']:.1f}%")
-                st.metric("Recommendation", holding['recommendation'])
-            
-            with col2:
-                st.markdown("**AI Rationale:**")
-                st.write(holding['rationale'])
-    
-    # Detailed table
-    st.subheader("Holdings Table")
-    df = pd.DataFrame(portfolio)
-    df = df[['ticker', 'name', 'sector', 'final_score', 'target_weight_pct']]
-    df.columns = ['Ticker', 'Name', 'Sector', 'Score', 'Weight %']
-
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Score": st.column_config.ProgressColumn(
-                "Score",
-                help="Final composite score",
-                min_value=0,
-                max_value=100,
-            ),
-        }
-    )
-    
-    # Sector allocation
-    st.subheader("Sector Allocation")
-    
-    sector_data = summary['sector_exposure']
-    fig = go.Figure(data=[go.Pie(
-        labels=list(sector_data.keys()),
-        values=list(sector_data.values()),
-        hole=.3,
-        textinfo='label+percent',
-        marker=dict(colors=CHART_COLORS)
-    )])
-    
-    fig.update_layout(height=400, showlegend=True,
-                       paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Export
-    st.subheader("Export Portfolio")
-    
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Export basic CSV
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="Download Portfolio CSV",
-            data=csv,
-            file_name=f"portfolio_recommendations_{result['analysis_date']}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
-    with col2:
-        # Export full analysis JSON
-        import json
-        full_data = {
-            'portfolio': portfolio,
-            'summary': summary,
-            'analysis_date': result['analysis_date'],
-            'selection_log': selection_log
-        }
-        json_data = json.dumps(full_data, indent=2, default=str)
-        st.download_button(
-            label="Download Full Analysis (JSON)",
-            data=json_data,
-            file_name=f"portfolio_full_analysis_{result['analysis_date']}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-    
+# def portfolio_recommendations_page():
+#     """Portfolio recommendation page with AI-powered selection."""
+#     st.header("AI-Powered Portfolio Recommendations")
+#     st.write("Multi-stage AI selection using OpenAI o3 and Gemini 2.5 Pro to identify optimal stocks.")
+#     st.markdown("---")
+#     
+#     # Challenge context input
+#     st.subheader("Investment Challenge Context")
+#     challenge_context = st.text_area(
+#         "Describe the investment challenge, goals, and requirements:",
+#         value="""Generate an optimal diversified portfolio that maximizes risk-adjusted returns 
+# while adhering to the Investment Policy Statement constraints.
+# Focus on high-quality companies with strong fundamentals and growth potential.""",
+#         height=120,
+#         help="Provide detailed context about the investment challenge"
+#     )
+#     
+#     st.markdown("---")
+#     
+#     # Configuration options
+#     with st.expander("Portfolio Configuration", expanded=True):
+#         col1, col2 = st.columns(2)
+#         
+#         with col1:
+#             num_positions = st.number_input(
+#                 "Target Portfolio Positions",
+#                 min_value=3,
+#                 max_value=20,
+#                 value=5,
+#                 help="Target number of holdings in portfolio (up to 20 for diversified growth)"
+#             )
+#     
+#     # Advanced options
+#     with st.expander("Investment Focus & Strategy"):
+#         col1, col2 = st.columns(2)
+#         
+#         with col1:
+#             st.markdown("**Investment Focus**")
+#             focus_value = st.checkbox("Emphasize Value (Undervalued stocks)", value=False)
+#             focus_growth = st.checkbox("Emphasize Growth & Momentum", value=False)
+#             focus_upside = st.checkbox("Emphasize Potential Upside (High-growth niche stocks)", value=False, 
+#                                       help="Discover small-cap and emerging companies with massive growth potential")
+#             focus_dividend = st.checkbox("Emphasize Dividend Income", value=False)
+#             focus_lowrisk = st.checkbox("Emphasize Low Volatility", value=False)
+#         
+#         with col2:
+#             st.markdown("**Portfolio Strategy**")
+#             sector_constraint = st.selectbox(
+#                 "Sector Diversification",
+#                 ["No Preference", "Tech-Heavy", "Tech-Light", "Diversified Only"],
+#                 help="Control sector concentration"
+#             )
+#             
+#             market_cap_pref = st.selectbox(
+#                 "Market Cap Preference",
+#                 ["All Market Caps (Best opportunities anywhere)", 
+#                  "Small & Mid Cap Focus (Higher growth potential)", 
+#                  "Large Cap Focus (Established companies)",
+#                  "Mix of All Sizes"],
+#                 index=0,
+#                 help="Define which company sizes to prioritize"
+#             )
+#     
+#     # Build custom instructions from advanced options
+#     custom_instructions = []
+#     if focus_value:
+#         custom_instructions.append("Prioritize value stocks with low P/E ratios, strong fundamentals, and attractive valuations.")
+#     if focus_growth:
+#         custom_instructions.append("Seek high-growth companies with strong revenue acceleration and momentum indicators.")
+#     if focus_upside:
+#         custom_instructions.append("CRITICAL: Discover hidden gems - small-cap, mid-cap, and emerging companies with MASSIVE growth potential. Look beyond well-known names. Seek niche players, disruptors, and companies in high-growth sectors (AI, biotech, clean energy, fintech, SaaS, semiconductors). Market cap is NOT a constraint - find the best opportunities regardless of size.")
+#     if focus_dividend:
+#         custom_instructions.append("Include dividend-paying stocks with sustainable yields above 2%.")
+#     if focus_lowrisk:
+#         custom_instructions.append("Favor low-beta stocks with reduced volatility and defensive characteristics.")
+#     
+#     if sector_constraint == "Tech-Heavy":
+#         custom_instructions.append("Allocate 40-60% to technology sector stocks.")
+#     elif sector_constraint == "Tech-Light":
+#         custom_instructions.append("Limit technology sector exposure to 20% maximum.")
+#     elif sector_constraint == "Diversified Only":
+#         custom_instructions.append("Ensure no single sector exceeds 25% of portfolio weight.")
+#     
+#     if market_cap_pref == "Small & Mid Cap Focus (Higher growth potential)":
+#         custom_instructions.append("Focus primarily on small-cap ($300M-$2B) and mid-cap ($2B-$10B) companies with high growth potential.")
+#     elif market_cap_pref == "Large Cap Focus (Established companies)":
+#         custom_instructions.append("Focus on large-cap companies ($10B+) with established market positions.")
+#     elif market_cap_pref == "Mix of All Sizes":
+#         custom_instructions.append("Include a balanced mix of small-cap, mid-cap, and large-cap companies.")
+#     else:  # All Market Caps
+#         custom_instructions.append("Consider companies of ALL sizes - from small-cap emerging players to mega-cap leaders. Find the best opportunities regardless of market capitalization.")
+#     
+#     # Append custom instructions to challenge context
+#     if custom_instructions:
+#         challenge_context += "\n\nAdditional Requirements:\n" + "\n".join(f"- {inst}" for inst in custom_instructions)
+#     
+#     # AI-powered ticker selection
+#     tickers = None
+#     st.info("""
+#     **AI Selection Process:**
+#     1. OpenAI o3 selects 20 best tickers
+#     2. Gemini 2.5 Pro selects 20 best tickers
+#     3. Aggregate to 40 unique candidates
+#     4. Generate 4-sentence rationale for each
+#     5. Run 3 rounds of top-5 selection
+#     6. Consolidate to final 5 tickers
+#     7. Full analysis on all final selections
+#     """)
+#     
+#     if st.button("Generate Portfolio", type="primary", use_container_width=True):
+#         with st.spinner("Running AI-powered portfolio generation..."):
+#             try:
+#                 result = st.session_state.orchestrator.recommend_portfolio(
+#                     challenge_context=challenge_context,
+#                     tickers=tickers,
+#                     num_positions=num_positions
+#                 )
+# 
+#                 # Store result in session state
+#                 st.session_state.portfolio_result = result
+# 
+#                 # Display results
+#                 display_portfolio_recommendations(result)
+# 
+#             except Exception as e:
+#                 st.error(f"Portfolio generation failed: {e}")
+#                 import traceback
+#                 st.code(traceback.format_exc())
 
 
-
-def system_status_and_ai_disclosure_page():
-    """Combined system status and AI disclosure page."""
-    st.header("System Status & AI Disclosure")
-    st.write("Monitor system health, data provider status, and AI usage information.")
-    st.markdown("---")
+# def display_portfolio_recommendations(result: dict):
+#     """Display portfolio recommendations with AI selection details."""
+#     
+#     portfolio = result['portfolio']
+#     summary = result['summary']
+#     selection_log = result.get('selection_log', {})
+#     
+#     if not portfolio:
+#         st.warning("No stocks found in universe")
+#         return
+#     
+#     # AI Selection Summary (if available)
+#     if not selection_log.get('manual_selection', False):
+#         st.subheader("AI Selection Process")
+#         
+#         with st.expander("View AI Selection Details", expanded=False):
+#             stages = selection_log.get('stages', [])
+#             
+#             for stage_info in stages:
+#                 stage = stage_info.get('stage', 'Unknown')
+#                 
+#                 if stage == 'openai_initial_selection':
+#                     st.markdown("#### 1. OpenAI Initial Selection")
+#                     tickers = stage_info.get('tickers', [])
+#                     st.write(f"Selected {len(tickers)} tickers: {', '.join(tickers)}")
+#                 
+#                 elif stage == 'gemini_initial_selection':
+#                     st.markdown("#### 2. Gemini 2.5 Pro Initial Selection")
+#                     tickers = stage_info.get('tickers', [])
+#                     st.write(f"Selected {len(tickers)} tickers: {', '.join(tickers)}")
+#                 
+#                 elif stage == 'aggregation':
+#                     st.markdown("#### 3. Aggregation")
+#                     count = stage_info.get('count', 0)
+#                     st.write(f"Total unique candidates: **{count}** tickers")
+#                 
+#                 elif stage == 'rationale_generation':
+#                     st.markdown("#### 4. Rationale Generation")
+#                     rationales = stage_info.get('ticker_rationales', {})
+#                     st.write(f"Generated 4-sentence rationales for {len(rationales)} tickers")
+#                 
+#                 elif stage == 'final_selection_rounds':
+#                     st.markdown("#### 5. Final Selection Rounds")
+#                     round_1 = stage_info.get('round_1', [])
+#                     round_2 = stage_info.get('round_2', [])
+#                     round_3 = stage_info.get('round_3', [])
+#                     
+#                     col1, col2, col3 = st.columns(3)
+#                     with col1:
+#                         st.write("**Round 1:**")
+#                         st.write(", ".join(round_1))
+#                     with col2:
+#                         st.write("**Round 2:**")
+#                         st.write(", ".join(round_2))
+#                     with col3:
+#                         st.write("**Round 3:**")
+#                         st.write(", ".join(round_3))
+#                 
+#                 elif stage == 'final_consolidation':
+#                     st.markdown("#### 6. Final Consolidation")
+#                     unique = stage_info.get('unique_finalists', [])
+#                     final = stage_info.get('final_5', [])
+#                     st.write(f"Unique finalists: {len(unique)} → Final selection: **{len(final)}**")
+#                     st.success(f"Final tickers: {', '.join(final)}")
+#             
+#             # Download log
+#             import json
+#             log_json = json.dumps(selection_log, indent=2)
+#             st.download_button(
+#                 label="Download Full Selection Log (JSON)",
+#                 data=log_json,
+#                 file_name=f"ai_selection_log_{result['analysis_date']}.json",
+#                 mime="application/json"
+#             )
+#         
+#         # Download complete archives section
+#         st.markdown("---")
+#         st.subheader("Complete Archives")
+#         st.write("Download all portfolio selection logs and archives from the system.")
+#         
+#         import os
+#         import zipfile
+#         from io import BytesIO
+#         
+#         # Check if portfolio_selection_logs directory exists
+#         logs_dir = "portfolio_selection_logs"
+#         if os.path.exists(logs_dir) and os.path.isdir(logs_dir):
+#             log_files = [f for f in os.listdir(logs_dir) if f.endswith('.json')]
+#             
+#             if log_files:
+#                 col1, col2 = st.columns([2, 1])
+#                 
+#                 with col1:
+#                     st.info(f"Found **{len(log_files)}** archived portfolio selection(s)")
+#                 
+#                 with col2:
+#                     # Create ZIP file in memory
+#                     zip_buffer = BytesIO()
+#                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+#                         # Add all JSON files
+#                         for log_file in log_files:
+#                             file_path = os.path.join(logs_dir, log_file)
+#                             with open(file_path, 'r') as f:
+#                                 zip_file.writestr(log_file, f.read())
+#                         
+#                         # Add README if exists
+#                         readme_path = os.path.join(logs_dir, 'README.md')
+#                         if os.path.exists(readme_path):
+#                             with open(readme_path, 'r') as f:
+#                                 zip_file.writestr('README.md', f.read())
+#                     
+#                     zip_buffer.seek(0)
+#                     
+#                     st.download_button(
+#                         label="Download All Archives (ZIP)",
+#                         data=zip_buffer.getvalue(),
+#                         file_name=f"portfolio_archives_{result['analysis_date']}.zip",
+#                         mime="application/zip",
+#                         use_container_width=True,
+#                         help="Download all portfolio selection logs as a ZIP file"
+#                     )
+#                 
+#                 # Show list of available archives
+#                 with st.expander("View Available Archives", expanded=False):
+#                     for log_file in sorted(log_files, reverse=True):
+#                         file_path = os.path.join(logs_dir, log_file)
+#                         file_size = os.path.getsize(file_path)
+#                         file_size_kb = file_size / 1024
+#                         
+#                         col1, col2, col3 = st.columns([3, 1, 1])
+#                         with col1:
+#                             st.text(f"{log_file}")
+#                         with col2:
+#                             st.text(f"{file_size_kb:.1f} KB")
+#                         with col3:
+#                             # Individual download
+#                             with open(file_path, 'r') as f:
+#                                 st.download_button(
+#                                     label="Download",
+#                                     data=f.read(),
+#                                     file_name=log_file,
+#                                     mime="application/json",
+#                                     key=f"download_{log_file}"
+#                                 )
+#             else:
+#                 st.info("No archived selections found yet. Generate a portfolio to create archives.")
+#         else:
+#             st.warning("Portfolio selection logs directory not found.")
+#     
+#     st.markdown("---")
+#     
+#     # Summary metrics
+#     st.subheader("Portfolio Summary")
+#     
+#     col1, col2, col3, col4, col5 = st.columns(5)
+#     with col1:
+#         st.metric("Total Positions", summary['num_positions'])
+#     with col2:
+#         st.metric("Invested Capital", f"{summary['total_weight_pct']:.1f}%")
+#     with col3:
+#         st.metric("Average Score", f"{summary['avg_score']:.1f}")
+#     with col4:
+#         st.metric("Selection Method", summary.get('selection_method', 'N/A'))
+#     with col5:
+#         st.metric("Analyzed", f"{result.get('total_analyzed', 0)}")
+#     
+#     # Holdings table with AI rationales
+#     st.subheader("Portfolio Holdings")
+#     
+#     for i, holding in enumerate(portfolio, 1):
+#         with st.expander(f"{i}. {holding['ticker']} - {holding['name']} ({holding['sector']})", expanded=False):
+#             col1, col2 = st.columns([1, 2])
+#             
+#             with col1:
+#                 st.metric("Final Score", f"{holding['final_score']:.1f}/100")
+#                 st.metric("Weight", f"{holding['target_weight_pct']:.1f}%")
+#                 st.metric("Recommendation", holding['recommendation'])
+#             
+#             with col2:
+#                 st.markdown("**AI Rationale:**")
+#                 st.write(holding['rationale'])
+#     
+#     # Detailed table
+#     st.subheader("Holdings Table")
+#     df = pd.DataFrame(portfolio)
+#     df = df[['ticker', 'name', 'sector', 'final_score', 'target_weight_pct']]
+#     df.columns = ['Ticker', 'Name', 'Sector', 'Score', 'Weight %']
+# 
+#     st.dataframe(
+#         df,
+#         use_container_width=True,
+#         hide_index=True,
+#         column_config={
+#             "Score": st.column_config.ProgressColumn(
+#                 "Score",
+#                 help="Final composite score",
+#                 min_value=0,
+#                 max_value=100,
+#             ),
+#         }
+#     )
+#     
+#     # Sector allocation
+#     st.subheader("Sector Allocation")
+#     
+#     sector_data = summary['sector_exposure']
+#     fig = go.Figure(data=[go.Pie(
+#         labels=list(sector_data.keys()),
+#         values=list(sector_data.values()),
+#         hole=.3,
+#         textinfo='label+percent',
+#         marker=dict(colors=CHART_COLORS)
+#     )])
+#     
+#     fig.update_layout(height=400, showlegend=True,
+#                        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
+#     st.plotly_chart(fig, use_container_width=True)
+#     
+#     # Export
+#     st.subheader("Export Portfolio")
+#     
+#     col1, col2 = st.columns(2)
+# 
+#     with col1:
+#         # Export basic CSV
+#         csv = df.to_csv(index=False)
+#         st.download_button(
+#             label="Download Portfolio CSV",
+#             data=csv,
+#             file_name=f"portfolio_recommendations_{result['analysis_date']}.csv",
+#             mime="text/csv",
+#             use_container_width=True
+#         )
+# 
+#     with col2:
+#         # Export full analysis JSON
+#         import json
+#         full_data = {
+#             'portfolio': portfolio,
+#             'summary': summary,
+#             'analysis_date': result['analysis_date'],
+#             'selection_log': selection_log
+#         }
+#         json_data = json.dumps(full_data, indent=2, default=str)
+#         st.download_button(
+#             label="Download Full Analysis (JSON)",
+#             data=json_data,
+#             file_name=f"portfolio_full_analysis_{result['analysis_date']}.json",
+#             mime="application/json",
+#             use_container_width=True
+#         )
     
-    tab1, tab2 = st.tabs(["System Status", "AI Usage Disclosure"])
-    
-    with tab1:
-        st.subheader("Data Provider Status")
-        
-        # Check if data provider is available
-        if not st.session_state.data_provider:
-            st.error("Data provider not initialized. Please restart the application.")
-            return
-        
-        data_provider = st.session_state.data_provider
-        
-        # Display Data Provider Information
-        st.write("**Provider Information**")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Provider Type", "Enhanced Data Provider")
-        
-        with col2:
-            # Check if provider has premium services
-            has_polygon = hasattr(data_provider, 'polygon_client') and data_provider.polygon_client is not None
-            has_gemini = bool(os.getenv('GEMINI_API_KEY'))
-            premium_count = sum([has_polygon, has_gemini])
-            st.metric("Premium Services", f"{premium_count}/2 Available")
-        
-        with col3:
-            # Check cache directory
-            cache_dir = Path("data/cache")
-            cache_exists = cache_dir.exists()
-            st.metric("Cache Status", "Available" if cache_exists else "Not Found")
-        
-        # API Keys Status
-        st.markdown("---")
-        st.write("**API Keys Status**")
-        
-        api_keys_status = {
-            "Alpha Vantage": bool(os.getenv('ALPHA_VANTAGE_API_KEY')),
-            "OpenAI": bool(os.getenv('OPENAI_API_KEY')),
-            "Polygon.io": bool(os.getenv('POLYGON_API_KEY')),
-            "Gemini AI": bool(os.getenv('GEMINI_API_KEY')),
-            "NewsAPI": bool(os.getenv('NEWSAPI_KEY')),
-            "IEX Cloud": bool(os.getenv('IEX_TOKEN'))
-        }
-        
-        cols = st.columns(3)
-        for i, (service, available) in enumerate(api_keys_status.items()):
-            with cols[i % 3]:
-                icon = "" if available else ""
-                status_text = "Available" if available else "Missing"
-                st.write(f"{icon} **{service}**: {status_text}")
-        
-        # Provider Capabilities
-        st.markdown("---")
-        st.write("**Provider Capabilities**")
-        
-        capabilities = {
-            "Stock Price Data": True,
-            "Fundamentals Data": True,
-            "News & Sentiment": bool(os.getenv('NEWSAPI_KEY')),
-            "Premium Price Data": bool(os.getenv('POLYGON_API_KEY')),
-            "AI-Enhanced Analysis": bool(os.getenv('GEMINI_API_KEY')),
-            "52-Week Range Verification": True,
-            "Multi-Source Fallback": True
-        }
-        
-        col1, col2 = st.columns(2)
-        for i, (capability, available) in enumerate(capabilities.items()):
-            with col1 if i % 2 == 0 else col2:
-                icon = "" if available else ""
-                st.write(f"{icon} {capability}")
-        
-        # Cache Information
-        if cache_exists:
-            st.markdown("---")
-            st.write("**Cache Information**")
-            try:
-                cache_files = list(cache_dir.glob("*"))
-                total_size = sum(f.stat().st_size for f in cache_files if f.is_file())
-                total_size_mb = total_size / (1024 * 1024)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Cache Files", len(cache_files))
-                with col2:
-                    st.metric("Total Size", f"{total_size_mb:.1f} MB")
-                with col3:
-                    # Show newest cache file age
-                    if cache_files:
-                        newest_file = max(cache_files, key=lambda f: f.stat().st_mtime)
-                        current_time = datetime.now().timestamp()
-                        age_hours = (current_time - newest_file.stat().st_mtime) / 3600
-                        st.metric("Newest Cache", f"{age_hours:.1f} hours ago")
-            except Exception as e:
-                st.warning(f"Could not read cache information: {e}")
-        
-        # Data Source Test
-        st.markdown("---")
-        st.write("**Test Data Sources**")
-        
-        test_ticker = st.text_input("Test ticker:", value="AAPL")
-        
-        if st.button("Test All Data Sources"):
-            with st.spinner("Testing data sources..."):
-                results = {}
-                
-                # Test price data
-                try:
-                    if hasattr(st.session_state.data_provider, 'get_price_history_enhanced'):
-                        price_data = st.session_state.data_provider.get_price_history_enhanced(
-                            test_ticker, "2024-01-01", "2024-12-31"
-                        )
-                    else:
-                        price_data = st.session_state.data_provider.get_price_history(
-                            test_ticker, "2024-01-01", "2024-12-31"
-                        )
-                    
-                    if not price_data.empty:
-                        results['Price Data'] = f"{len(price_data)} days of data"
-                        if 'SYNTHETIC_DATA' in price_data.columns:
-                            results['Price Data'] += " (Synthetic)"
-                    else:
-                        results['Price Data'] = "No data"
-                        
-                except Exception as e:
-                    results['Price Data'] = f"Error: {str(e)}"
-                
-                # Test fundamentals
-                try:
-                    if hasattr(st.session_state.data_provider, 'get_fundamentals_enhanced'):
-                        fund_data = st.session_state.data_provider.get_fundamentals_enhanced(test_ticker)
-                    else:
-                        fund_data = st.session_state.data_provider.get_fundamentals(test_ticker)
-                    
-                    if fund_data:
-                        results['Fundamentals'] = f"{len(fund_data)} data points"
-                        if fund_data.get('estimated'):
-                            results['Fundamentals'] += " (Estimated)"
-                    else:
-                        results['Fundamentals'] = "No data"
-                        
-                except Exception as e:
-                    results['Fundamentals'] = f"Error: {str(e)}"
-                
-                # Display results
-                for source, result in results.items():
-                    st.write(f"**{source}:** {result}")
-        
-        # Clear Cache
-        if st.button("Clear Cache", help="Clear cached data to force fresh API calls"):
-            cache_dir = Path("data/cache")
-            if cache_dir.exists():
-                import shutil
-                shutil.rmtree(cache_dir)
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                st.success("Cache cleared!")
-            else:
-                st.info("No cache to clear")
-    
-    with tab2:
-        st.subheader("AI Usage Disclosure")
-        
-        disclosure_logger = get_disclosure_logger()
-        summary = disclosure_logger.get_disclosure_summary()
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total API Calls", summary['total_calls'])
-        with col2:
-            st.metric("Total Tokens", f"{summary['total_tokens']:,}")
-        with col3:
-            st.metric("Estimated Cost", f"${summary['total_cost_usd']:.2f}")
-        
-        st.write(f"**Tools Used:** {', '.join(summary.get('tools_used', []))}")
-        st.write(f"**Log File:** `{summary.get('log_file', 'N/A')}`")
-        
-        # Download log
-        log_file = summary.get('log_file', '')
-        if log_file and Path(log_file).exists():
-            with open(log_file, 'r') as f:
-                log_data = f.read()
-            
-            st.download_button(
-                label="Download Disclosure Log",
-                data=log_data,
-                file_name="ai_disclosure_log.jsonl",
-                mime="application/json"
-            )
-        
-        st.info("""
-        **For Works Cited:**
-        
-        This system uses the following APIs/tools:
-        - OpenAI o3 for agent reasoning and portfolio selection, Gemini 2.5 Pro for AI-powered ticker discovery and real-time data synthesis. 
-        - Polygon.io for market data
-        - Alpha Vantage for fundamental data and macroeconomic indicators
-        - NewsAPI for news sentiment analysis 
-        
-        All API calls are logged with timestamps, purposes, and token usage for full disclosure.
-        """)
-        
-        # Premium Setup Guide
-        st.markdown("---")
-        st.subheader("Premium Setup Guide")
-        
-        with st.expander("View Premium API Setup Instructions"):
-            st.markdown("""
-            ### Recommended Premium APIs for Production
-            
-            **For reliable data access without rate limits:**
-            
-            1. **IEX Cloud** ($9/month) - Excellent US stock data
-               - Add to .env: `IEX_TOKEN=your_token_here`
-               - Get token: https://iexcloud.io/
-            
-            2. **Alpha Vantage Premium** ($49.99/month) - Comprehensive fundamentals  
-               - Upgrade your existing key at: https://www.alphavantage.co/premium/
-               - 1200 calls/minute vs 5 calls/minute free
-            
-            3. **Polygon.io** ($99/month) - Professional grade data
-               - Add to .env: `POLYGON_API_KEY=your_key_here` 
-               - Get key: https://polygon.io/
-            
-            **Total recommended cost: ~$60/month for rock-solid data access**
-            
-            ### Current Free Tier Limitations:
-            - Alpha Vantage: 5 calls/minute, 500/day
-            - NewsAPI: 100 requests/day
-            
-            ### Testing vs Production:
-            - Free tier works fine for testing and development
-            - Premium recommended for live trading or intensive analysis
-            """)
 
 
-def configuration_page():
-    """Configuration management page."""
-    st.header("System Configuration")
-    st.write("Manage analysis constraints and model parameters.")
-    st.markdown("---")
 
-    tab1, tab2, tab3 = st.tabs(["Analysis Configuration", "Agent Weights", "Timing Analytics"])
+# def system_status_and_ai_disclosure_page():
+#     """Combined system status and AI disclosure page."""
+#     st.header("System Status & AI Disclosure")
+#     st.write("Monitor system health, data provider status, and AI usage information.")
+#     st.markdown("---")
+#     
+#     tab1, tab2 = st.tabs(["System Status", "AI Usage Disclosure"])
+#     
+#     with tab1:
+#         st.subheader("Data Provider Status")
+#         
+#         # Check if data provider is available
+#         if not st.session_state.data_provider:
+#             st.error("Data provider not initialized. Please restart the application.")
+#             return
+#         
+#         data_provider = st.session_state.data_provider
+#         
+#         # Display Data Provider Information
+#         st.write("**Provider Information**")
+#         col1, col2, col3 = st.columns(3)
+#         
+#         with col1:
+#             st.metric("Provider Type", "Enhanced Data Provider")
+#         
+#         with col2:
+#             # Check if provider has premium services
+#             has_polygon = hasattr(data_provider, 'polygon_client') and data_provider.polygon_client is not None
+#             has_gemini = bool(os.getenv('GEMINI_API_KEY'))
+#             premium_count = sum([has_polygon, has_gemini])
+#             st.metric("Premium Services", f"{premium_count}/2 Available")
+#         
+#         with col3:
+#             # Check cache directory
+#             cache_dir = Path("data/cache")
+#             cache_exists = cache_dir.exists()
+#             st.metric("Cache Status", "Available" if cache_exists else "Not Found")
+#         
+#         # API Keys Status
+#         st.markdown("---")
+#         st.write("**API Keys Status**")
+#         
+#         api_keys_status = {
+#             "Alpha Vantage": bool(os.getenv('ALPHA_VANTAGE_API_KEY')),
+#             "OpenAI": bool(os.getenv('OPENAI_API_KEY')),
+#             "Polygon.io": bool(os.getenv('POLYGON_API_KEY')),
+#             "Gemini AI": bool(os.getenv('GEMINI_API_KEY')),
+#             "NewsAPI": bool(os.getenv('NEWSAPI_KEY')),
+#             "IEX Cloud": bool(os.getenv('IEX_TOKEN'))
+#         }
+#         
+#         cols = st.columns(3)
+#         for i, (service, available) in enumerate(api_keys_status.items()):
+#             with cols[i % 3]:
+#                 icon = "" if available else ""
+#                 status_text = "Available" if available else "Missing"
+#                 st.write(f"{icon} **{service}**: {status_text}")
+#         
+#         # Provider Capabilities
+#         st.markdown("---")
+#         st.write("**Provider Capabilities**")
+#         
+#         capabilities = {
+#             "Stock Price Data": True,
+#             "Fundamentals Data": True,
+#             "News & Sentiment": bool(os.getenv('NEWSAPI_KEY')),
+#             "Premium Price Data": bool(os.getenv('POLYGON_API_KEY')),
+#             "AI-Enhanced Analysis": bool(os.getenv('GEMINI_API_KEY')),
+#             "52-Week Range Verification": True,
+#             "Multi-Source Fallback": True
+#         }
+#         
+#         col1, col2 = st.columns(2)
+#         for i, (capability, available) in enumerate(capabilities.items()):
+#             with col1 if i % 2 == 0 else col2:
+#                 icon = "" if available else ""
+#                 st.write(f"{icon} {capability}")
+#         
+#         # Cache Information
+#         if cache_exists:
+#             st.markdown("---")
+#             st.write("**Cache Information**")
+#             try:
+#                 cache_files = list(cache_dir.glob("*"))
+#                 total_size = sum(f.stat().st_size for f in cache_files if f.is_file())
+#                 total_size_mb = total_size / (1024 * 1024)
+#                 
+#                 col1, col2, col3 = st.columns(3)
+#                 with col1:
+#                     st.metric("Cache Files", len(cache_files))
+#                 with col2:
+#                     st.metric("Total Size", f"{total_size_mb:.1f} MB")
+#                 with col3:
+#                     # Show newest cache file age
+#                     if cache_files:
+#                         newest_file = max(cache_files, key=lambda f: f.stat().st_mtime)
+#                         current_time = datetime.now().timestamp()
+#                         age_hours = (current_time - newest_file.stat().st_mtime) / 3600
+#                         st.metric("Newest Cache", f"{age_hours:.1f} hours ago")
+#             except Exception as e:
+#                 st.warning(f"Could not read cache information: {e}")
+#         
+#         # Data Source Test
+#         st.markdown("---")
+#         st.write("**Test Data Sources**")
+#         
+#         test_ticker = st.text_input("Test ticker:", value="AAPL")
+#         
+#         if st.button("Test All Data Sources"):
+#             with st.spinner("Testing data sources..."):
+#                 results = {}
+#                 
+#                 # Test price data
+#                 try:
+#                     if hasattr(st.session_state.data_provider, 'get_price_history_enhanced'):
+#                         price_data = st.session_state.data_provider.get_price_history_enhanced(
+#                             test_ticker, "2024-01-01", "2024-12-31"
+#                         )
+#                     else:
+#                         price_data = st.session_state.data_provider.get_price_history(
+#                             test_ticker, "2024-01-01", "2024-12-31"
+#                         )
+#                     
+#                     if not price_data.empty:
+#                         results['Price Data'] = f"{len(price_data)} days of data"
+#                         if 'SYNTHETIC_DATA' in price_data.columns:
+#                             results['Price Data'] += " (Synthetic)"
+#                     else:
+#                         results['Price Data'] = "No data"
+#                         
+#                 except Exception as e:
+#                     results['Price Data'] = f"Error: {str(e)}"
+#                 
+#                 # Test fundamentals
+#                 try:
+#                     if hasattr(st.session_state.data_provider, 'get_fundamentals_enhanced'):
+#                         fund_data = st.session_state.data_provider.get_fundamentals_enhanced(test_ticker)
+#                     else:
+#                         fund_data = st.session_state.data_provider.get_fundamentals(test_ticker)
+#                     
+#                     if fund_data:
+#                         results['Fundamentals'] = f"{len(fund_data)} data points"
+#                         if fund_data.get('estimated'):
+#                             results['Fundamentals'] += " (Estimated)"
+#                     else:
+#                         results['Fundamentals'] = "No data"
+#                         
+#                 except Exception as e:
+#                     results['Fundamentals'] = f"Error: {str(e)}"
+#                 
+#                 # Display results
+#                 for source, result in results.items():
+#                     st.write(f"**{source}:** {result}")
+#         
+#         # Clear Cache
+#         if st.button("Clear Cache", help="Clear cached data to force fresh API calls"):
+#             cache_dir = Path("data/cache")
+#             if cache_dir.exists():
+#                 import shutil
+#                 shutil.rmtree(cache_dir)
+#                 cache_dir.mkdir(parents=True, exist_ok=True)
+#                 st.success("Cache cleared!")
+#             else:
+#                 st.info("No cache to clear")
+#     
+#     with tab2:
+#         st.subheader("AI Usage Disclosure")
+#         
+#         disclosure_logger = get_disclosure_logger()
+#         summary = disclosure_logger.get_disclosure_summary()
+#         
+#         col1, col2, col3 = st.columns(3)
+#         with col1:
+#             st.metric("Total API Calls", summary['total_calls'])
+#         with col2:
+#             st.metric("Total Tokens", f"{summary['total_tokens']:,}")
+#         with col3:
+#             st.metric("Estimated Cost", f"${summary['total_cost_usd']:.2f}")
+#         
+#         st.write(f"**Tools Used:** {', '.join(summary.get('tools_used', []))}")
+#         st.write(f"**Log File:** `{summary.get('log_file', 'N/A')}`")
+#         
+#         # Download log
+#         log_file = summary.get('log_file', '')
+#         if log_file and Path(log_file).exists():
+#             with open(log_file, 'r') as f:
+#                 log_data = f.read()
+#             
+#             st.download_button(
+#                 label="Download Disclosure Log",
+#                 data=log_data,
+#                 file_name="ai_disclosure_log.jsonl",
+#                 mime="application/json"
+#             )
+#         
+#         st.info("""
+#         **For Works Cited:**
+#         
+#         This system uses the following APIs/tools:
+#         - OpenAI o3 for agent reasoning and portfolio selection, Gemini 2.5 Pro for AI-powered ticker discovery and real-time data synthesis. 
+#         - Polygon.io for market data
+#         - Alpha Vantage for fundamental data and macroeconomic indicators
+#         - NewsAPI for news sentiment analysis 
+#         
+#         All API calls are logged with timestamps, purposes, and token usage for full disclosure.
+#         """)
+#         
+#         # Premium Setup Guide
+#         st.markdown("---")
+#         st.subheader("Premium Setup Guide")
+#         
+#         with st.expander("View Premium API Setup Instructions"):
+#             st.markdown("""
+#             ### Recommended Premium APIs for Production
+#             
+#             **For reliable data access without rate limits:**
+#             
+#             1. **IEX Cloud** ($9/month) - Excellent US stock data
+#                - Add to .env: `IEX_TOKEN=your_token_here`
+#                - Get token: https://iexcloud.io/
+#             
+#             2. **Alpha Vantage Premium** ($49.99/month) - Comprehensive fundamentals  
+#                - Upgrade your existing key at: https://www.alphavantage.co/premium/
+#                - 1200 calls/minute vs 5 calls/minute free
+#             
+#             3. **Polygon.io** ($99/month) - Professional grade data
+#                - Add to .env: `POLYGON_API_KEY=your_key_here` 
+#                - Get key: https://polygon.io/
+#             
+#             **Total recommended cost: ~$60/month for rock-solid data access**
+#             
+#             ### Current Free Tier Limitations:
+#             - Alpha Vantage: 5 calls/minute, 500/day
+#             - NewsAPI: 100 requests/day
+#             
+#             ### Testing vs Production:
+#             - Free tier works fine for testing and development
+#             - Premium recommended for live trading or intensive analysis
+#             """)
 
-    with tab1:
-        st.subheader("Analysis Configuration")
-        st.write("Configure analysis constraints and parameters.")
-        
-        # Load current IPS
-        ips = st.session_state.config_loader.load_ips()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Position & Sector Constraints:**")
-            max_position = st.number_input(
-                "Max Single Position (%)", 
-                value=float(ips.get('position_limits', {}).get('max_position_pct', 10.0)), 
-                min_value=1.0, 
-                max_value=50.0
-            )
-            max_sector = st.number_input(
-                "Max Sector Allocation (%)", 
-                value=float(ips.get('position_limits', {}).get('max_sector_pct', 30.0)), 
-                min_value=10.0, 
-                max_value=100.0
-            )
-            
-            st.write("**Price & Market Cap:**")
-            min_price = st.number_input(
-                "Min Stock Price ($)", 
-                value=float(ips.get('universe', {}).get('min_price', 1.0)), 
-                min_value=0.0
-            )
-            min_market_cap = st.number_input(
-                "Min Market Cap ($B)", 
-                value=float(ips.get('universe', {}).get('min_market_cap', 1000000000)) / 1000000000, 
-                min_value=0.0
-            )
-        
-        with col2:
-            st.write("**Risk Parameters:**")
-            min_beta = st.number_input(
-                "Min Beta", 
-                value=float(ips.get('portfolio_constraints', {}).get('beta_min', 0.7)), 
-                min_value=0.0, 
-                max_value=3.0
-            )
-            max_beta = st.number_input(
-                "Max Beta", 
-                value=float(ips.get('portfolio_constraints', {}).get('beta_max', 1.3)), 
-                min_value=0.0, 
-                max_value=3.0
-            )
-            max_volatility = st.number_input(
-                "Max Portfolio Volatility (%)", 
-                value=float(ips.get('portfolio_constraints', {}).get('max_portfolio_volatility', 18.0)), 
-                min_value=0.0, 
-                max_value=50.0
-            )
-        
-        st.write("**Excluded Sectors:**")
-        current_exclusions = ips.get('exclusions', {}).get('sectors', [])
-        excluded_sectors = st.multiselect(
-            "Select sectors to exclude",
-            options=["Energy", "Financials", "Healthcare", "Technology", "Consumer Staples", "Consumer Discretionary", 
-                    "Industrials", "Materials", "Real Estate", "Utilities", "Communication Services", "Tobacco", "Weapons"],
-            default=current_exclusions
-        )
-        
-        if st.button("Save Configuration"):
-            # Update IPS with proper structure
-            if 'position_limits' not in ips:
-                ips['position_limits'] = {}
-            ips['position_limits']['max_position_pct'] = max_position
-            ips['position_limits']['max_sector_pct'] = max_sector
-            
-            if 'universe' not in ips:
-                ips['universe'] = {}
-            ips['universe']['min_price'] = min_price
-            ips['universe']['min_market_cap'] = min_market_cap * 1000000000
-            
-            if 'portfolio_constraints' not in ips:
-                ips['portfolio_constraints'] = {}
-            ips['portfolio_constraints']['beta_min'] = min_beta
-            ips['portfolio_constraints']['beta_max'] = max_beta
-            ips['portfolio_constraints']['max_portfolio_volatility'] = max_volatility
-            
-            if 'exclusions' not in ips:
-                ips['exclusions'] = {}
-            ips['exclusions']['sectors'] = excluded_sectors
 
-            st.session_state.config_loader.save_ips(ips)
-            st.success("Configuration saved!")
-
-    with tab2:
-        st.subheader("Agent Weights")
-        st.write("Adjust how much each agent influences the final score.")
-        
-        # Load current weights
-        model_config = st.session_state.config_loader.load_model_config()
-        weights = model_config['agent_weights']
-        
-        new_weights = {}
-        for agent, weight in weights.items():
-            new_weights[agent] = st.slider(
-                f"{agent.replace('_', ' ').title()}",
-                min_value=0.0,
-                max_value=3.0,
-                value=float(weight),
-                step=0.1,
-                help=f"Current weight: {weight}"
-            )
-        
-        if st.button("Save Agent Weights"):
-            st.session_state.config_loader.update_model_weights(new_weights)
-            st.success("Agent weights updated!")
-            st.info("System will be reinitialized on next analysis.")
-            st.session_state.initialized = False
-    
-    with tab3:
-        st.subheader("Analysis Timing Analytics")
-        st.write("Deep insights into step-level timing data collected from all analyses.")
-        
-        if hasattr(st.session_state, 'step_time_manager'):
-            manager = st.session_state.step_time_manager
-            
-            # Summary statistics
-            col1, col2, col3 = st.columns(3)
-            
-            total_samples = sum(len(manager.step_times.get(i, [])) for i in range(1, 11))
-            all_stats = manager.get_all_stats()
-            
-            with col1:
-                st.metric("Total Data Points", f"{total_samples:,}")
-            
-            with col2:
-                steps_tracked = len(all_stats)
-                st.metric("Steps Tracked", f"{steps_tracked}/10")
-            
-            with col3:
-                if all_stats:
-                    avg_analysis_time = sum(s['avg'] for s in all_stats.values())
-                    st.metric("Est. Analysis Time", f"{avg_analysis_time:.1f}s")
-                else:
-                    st.metric("Est. Analysis Time", "No data")
-            
-            st.markdown("---")
-            
-            # Detailed step breakdown
-            st.subheader("Step-by-Step Breakdown")
-            
-            step_names = {
-                1: "Data Gathering - Fundamentals",
-                2: "Data Gathering - Market Data",
-                3: "Value Agent Analysis",
-                4: "Growth Agent Analysis",
-                5: "Macro Regime Agent Analysis",
-                6: "Risk Agent Analysis",
-                7: "Sentiment Agent Analysis",
-                8: "Score Blending",
-                9: "Finalizing",
-                10: "Final Analysis"
-            }
-            
-            if all_stats:
-                for step in sorted(all_stats.keys()):
-                    stats = all_stats[step]
-                    name = step_names.get(step, f"Step {step}")
-                    
-                    with st.expander(f"**{name}**", expanded=False):
-                        col1, col2, col3, col4 = st.columns(4)
-                        
-                        with col1:
-                            st.metric("Samples", stats['count'])
-                            st.metric("Average", f"{stats['avg']:.2f}s")
-                        
-                        with col2:
-                            st.metric("Median", f"{stats['median']:.2f}s")
-                            st.metric("Std Dev", f"{stats['std_dev']:.2f}s")
-                        
-                        with col3:
-                            st.metric("Minimum", f"{stats['min']:.2f}s")
-                            st.metric("Maximum", f"{stats['max']:.2f}s")
-                        
-                        with col4:
-                            st.metric("25th %ile", f"{stats['p25']:.2f}s")
-                            st.metric("75th %ile", f"{stats['p75']:.2f}s")
-                
-                st.markdown("---")
-                
-                # Export option
-                if st.button("Export Timing Data"):
-                    import pandas as pd
-                    from datetime import datetime
-                    
-                    export_data = []
-                    for step, stats in all_stats.items():
-                        export_data.append({
-                            'Step': step,
-                            'Name': step_names.get(step, f"Step {step}"),
-                            'Count': stats['count'],
-                            'Average': stats['avg'],
-                            'Median': stats['median'],
-                            'Std_Dev': stats['std_dev'],
-                            'Min': stats['min'],
-                            'Max': stats['max'],
-                            'P25': stats['p25'],
-                            'P75': stats['p75']
-                        })
-                    
-                    df = pd.DataFrame(export_data)
-                    csv_data = df.to_csv(index=False)
-                    
-                    st.download_button(
-                        label="Download Timing Data CSV",
-                        data=csv_data,
-                        file_name=f"timing_analytics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-            else:
-                st.info("No timing data available yet. Run some analyses to collect timing statistics.")
-        else:
-            st.warning("Step time manager not initialized.")
+# def configuration_page():
+#     """Configuration management page."""
+#     st.header("System Configuration")
+#     st.write("Manage analysis constraints and model parameters.")
+#     st.markdown("---")
+# 
+#     tab1, tab2, tab3 = st.tabs(["Analysis Configuration", "Agent Weights", "Timing Analytics"])
+# 
+#     with tab1:
+#         st.subheader("Analysis Configuration")
+#         st.write("Configure analysis constraints and parameters.")
+#         
+#         # Load current IPS
+#         ips = st.session_state.config_loader.load_ips()
+#         
+#         col1, col2 = st.columns(2)
+#         
+#         with col1:
+#             st.write("**Position & Sector Constraints:**")
+#             max_position = st.number_input(
+#                 "Max Single Position (%)", 
+#                 value=float(ips.get('position_limits', {}).get('max_position_pct', 10.0)), 
+#                 min_value=1.0, 
+#                 max_value=50.0
+#             )
+#             max_sector = st.number_input(
+#                 "Max Sector Allocation (%)", 
+#                 value=float(ips.get('position_limits', {}).get('max_sector_pct', 30.0)), 
+#                 min_value=10.0, 
+#                 max_value=100.0
+#             )
+#             
+#             st.write("**Price & Market Cap:**")
+#             min_price = st.number_input(
+#                 "Min Stock Price ($)", 
+#                 value=float(ips.get('universe', {}).get('min_price', 1.0)), 
+#                 min_value=0.0
+#             )
+#             min_market_cap = st.number_input(
+#                 "Min Market Cap ($B)", 
+#                 value=float(ips.get('universe', {}).get('min_market_cap', 1000000000)) / 1000000000, 
+#                 min_value=0.0
+#             )
+#         
+#         with col2:
+#             st.write("**Risk Parameters:**")
+#             min_beta = st.number_input(
+#                 "Min Beta", 
+#                 value=float(ips.get('portfolio_constraints', {}).get('beta_min', 0.7)), 
+#                 min_value=0.0, 
+#                 max_value=3.0
+#             )
+#             max_beta = st.number_input(
+#                 "Max Beta", 
+#                 value=float(ips.get('portfolio_constraints', {}).get('beta_max', 1.3)), 
+#                 min_value=0.0, 
+#                 max_value=3.0
+#             )
+#             max_volatility = st.number_input(
+#                 "Max Portfolio Volatility (%)", 
+#                 value=float(ips.get('portfolio_constraints', {}).get('max_portfolio_volatility', 18.0)), 
+#                 min_value=0.0, 
+#                 max_value=50.0
+#             )
+#         
+#         st.write("**Excluded Sectors:**")
+#         current_exclusions = ips.get('exclusions', {}).get('sectors', [])
+#         excluded_sectors = st.multiselect(
+#             "Select sectors to exclude",
+#             options=["Energy", "Financials", "Healthcare", "Technology", "Consumer Staples", "Consumer Discretionary", 
+#                     "Industrials", "Materials", "Real Estate", "Utilities", "Communication Services", "Tobacco", "Weapons"],
+#             default=current_exclusions
+#         )
+#         
+#         if st.button("Save Configuration"):
+#             # Update IPS with proper structure
+#             if 'position_limits' not in ips:
+#                 ips['position_limits'] = {}
+#             ips['position_limits']['max_position_pct'] = max_position
+#             ips['position_limits']['max_sector_pct'] = max_sector
+#             
+#             if 'universe' not in ips:
+#                 ips['universe'] = {}
+#             ips['universe']['min_price'] = min_price
+#             ips['universe']['min_market_cap'] = min_market_cap * 1000000000
+#             
+#             if 'portfolio_constraints' not in ips:
+#                 ips['portfolio_constraints'] = {}
+#             ips['portfolio_constraints']['beta_min'] = min_beta
+#             ips['portfolio_constraints']['beta_max'] = max_beta
+#             ips['portfolio_constraints']['max_portfolio_volatility'] = max_volatility
+#             
+#             if 'exclusions' not in ips:
+#                 ips['exclusions'] = {}
+#             ips['exclusions']['sectors'] = excluded_sectors
+# 
+#             st.session_state.config_loader.save_ips(ips)
+#             st.success("Configuration saved!")
+# 
+#     with tab2:
+#         st.subheader("Agent Weights")
+#         st.write("Adjust how much each agent influences the final score.")
+#         
+#         # Load current weights
+#         model_config = st.session_state.config_loader.load_model_config()
+#         weights = model_config['agent_weights']
+#         
+#         new_weights = {}
+#         for agent, weight in weights.items():
+#             new_weights[agent] = st.slider(
+#                 f"{agent.replace('_', ' ').title()}",
+#                 min_value=0.0,
+#                 max_value=3.0,
+#                 value=float(weight),
+#                 step=0.1,
+#                 help=f"Current weight: {weight}"
+#             )
+#         
+#         if st.button("Save Agent Weights"):
+#             st.session_state.config_loader.update_model_weights(new_weights)
+#             st.success("Agent weights updated!")
+#             st.info("System will be reinitialized on next analysis.")
+#             st.session_state.initialized = False
+#     
+#     with tab3:
+#         st.subheader("Analysis Timing Analytics")
+#         st.write("Deep insights into step-level timing data collected from all analyses.")
+#         
+#         if hasattr(st.session_state, 'step_time_manager'):
+#             manager = st.session_state.step_time_manager
+#             
+#             # Summary statistics
+#             col1, col2, col3 = st.columns(3)
+#             
+#             total_samples = sum(len(manager.step_times.get(i, [])) for i in range(1, 11))
+#             all_stats = manager.get_all_stats()
+#             
+#             with col1:
+#                 st.metric("Total Data Points", f"{total_samples:,}")
+#             
+#             with col2:
+#                 steps_tracked = len(all_stats)
+#                 st.metric("Steps Tracked", f"{steps_tracked}/10")
+#             
+#             with col3:
+#                 if all_stats:
+#                     avg_analysis_time = sum(s['avg'] for s in all_stats.values())
+#                     st.metric("Est. Analysis Time", f"{avg_analysis_time:.1f}s")
+#                 else:
+#                     st.metric("Est. Analysis Time", "No data")
+#             
+#             st.markdown("---")
+#             
+#             # Detailed step breakdown
+#             st.subheader("Step-by-Step Breakdown")
+#             
+#             step_names = {
+#                 1: "Data Gathering - Fundamentals",
+#                 2: "Data Gathering - Market Data",
+#                 3: "Value Agent Analysis",
+#                 4: "Growth Agent Analysis",
+#                 5: "Macro Regime Agent Analysis",
+#                 6: "Risk Agent Analysis",
+#                 7: "Sentiment Agent Analysis",
+#                 8: "Score Blending",
+#                 9: "Finalizing",
+#                 10: "Final Analysis"
+#             }
+#             
+#             if all_stats:
+#                 for step in sorted(all_stats.keys()):
+#                     stats = all_stats[step]
+#                     name = step_names.get(step, f"Step {step}")
+#                     
+#                     with st.expander(f"**{name}**", expanded=False):
+#                         col1, col2, col3, col4 = st.columns(4)
+#                         
+#                         with col1:
+#                             st.metric("Samples", stats['count'])
+#                             st.metric("Average", f"{stats['avg']:.2f}s")
+#                         
+#                         with col2:
+#                             st.metric("Median", f"{stats['median']:.2f}s")
+#                             st.metric("Std Dev", f"{stats['std_dev']:.2f}s")
+#                         
+#                         with col3:
+#                             st.metric("Minimum", f"{stats['min']:.2f}s")
+#                             st.metric("Maximum", f"{stats['max']:.2f}s")
+#                         
+#                         with col4:
+#                             st.metric("25th %ile", f"{stats['p25']:.2f}s")
+#                             st.metric("75th %ile", f"{stats['p75']:.2f}s")
+#                 
+#                 st.markdown("---")
+#                 
+#                 # Export option
+#                 if st.button("Export Timing Data"):
+#                     import pandas as pd
+#                     from datetime import datetime
+#                     
+#                     export_data = []
+#                     for step, stats in all_stats.items():
+#                         export_data.append({
+#                             'Step': step,
+#                             'Name': step_names.get(step, f"Step {step}"),
+#                             'Count': stats['count'],
+#                             'Average': stats['avg'],
+#                             'Median': stats['median'],
+#                             'Std_Dev': stats['std_dev'],
+#                             'Min': stats['min'],
+#                             'Max': stats['max'],
+#                             'P25': stats['p25'],
+#                             'P75': stats['p75']
+#                         })
+#                     
+#                     df = pd.DataFrame(export_data)
+#                     csv_data = df.to_csv(index=False)
+#                     
+#                     st.download_button(
+#                         label="Download Timing Data CSV",
+#                         data=csv_data,
+#                         file_name=f"timing_analytics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+#                         mime="text/csv"
+#                     )
+#             else:
+#                 st.info("No timing data available yet. Run some analyses to collect timing statistics.")
+#         else:
+#             st.warning("Step time manager not initialized.")
 
 
 
