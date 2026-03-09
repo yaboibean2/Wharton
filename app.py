@@ -1054,9 +1054,9 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         if remaining_secs is not None and bar_pct < 100:
             rs = max(0, int(remaining_secs))
             if rs >= 60:
-                time_label = f"{rs // 60}m {rs % 60:02d}s remaining"
+                time_label = f"~{rs // 60}m {rs % 60:02d}s remaining"
             else:
-                time_label = f"{rs}s remaining" if rs > 0 else "finishing up..."
+                time_label = f"~{rs}s remaining" if rs > 0 else "finishing up..."
         elif bar_pct >= 100:
             time_label = "Complete"
         else:
@@ -2331,13 +2331,9 @@ def stock_analysis_page():
 #         pass
 # 
 # 
-# def _cleanup_display_result_backup():
-#     """Remove the backup file after it's no longer needed."""
-#     try:
-#         if os.path.exists(_OAUTH_DISPLAY_RESULT_PATH):
-#             os.remove(_OAUTH_DISPLAY_RESULT_PATH)
-#     except Exception:
-#         pass
+def _cleanup_display_result_backup():
+    """No-op stub — OAuth backup file logic is disabled."""
+    pass
 # 
 # 
 # def _save_oauth_token_to_disk(token, user_info=None):
@@ -3531,7 +3527,9 @@ def generate_pdf_report(result: dict) -> bytes:
     # ---- Data extraction ----
     ticker        = result.get('ticker', '')
     fund          = result.get('fundamentals', {})
-    company_name  = fund.get('name', ticker)
+    # Use only the first line / first 80 chars of the name to avoid overflow
+    _raw_name     = str(fund.get('name', ticker) or ticker)
+    company_name  = _raw_name.split('\n')[0][:80]
     final_score   = float(result.get('final_score', 0))
     agent_scores  = result.get('agent_scores', {})
     agent_rats    = result.get('agent_rationales', {})
@@ -3552,8 +3550,8 @@ def generate_pdf_report(result: dict) -> bytes:
     S = lambda name, **kw: ParagraphStyle(name, parent=styles['Normal'], **kw)
 
     sTitle   = S('sTitle',   fontSize=22, fontName='Helvetica-Bold',
-                 textColor=C_DARK,  spaceAfter=2)
-    sSub     = S('sSub',     fontSize=11, textColor=C_GRAY_MID, spaceAfter=2)
+                 textColor=C_DARK,  leading=28, spaceAfter=6)
+    sSub     = S('sSub',     fontSize=11, textColor=C_GRAY_MID, leading=16, spaceAfter=3)
     sDate    = S('sDate',    fontSize=9,  textColor=C_GRAY_MID, spaceAfter=8)
     sSecHdr  = S('sSecHdr',  fontSize=13, fontName='Helvetica-Bold',
                  textColor=C_BRAND, spaceBefore=14, spaceAfter=4)
