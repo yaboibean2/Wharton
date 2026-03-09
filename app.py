@@ -959,17 +959,6 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # Purpose description & privacy link (required for Google OAuth verification)
-    st.markdown(
-        '<div style="color:#6b7280;font-size:0.85rem;margin:-4px 0 12px 0;line-height:1.5;">'
-        'Total Insights Investing is a multi-agent investment research '
-        'platform that analyzes stocks using AI-powered value, growth, macro, risk, '
-        'and sentiment agents. Results can be exported to Google Docs and Sheets. '
-        '<a href="?page=privacy" target="_self" style="color:#3b5998;">Privacy Policy</a>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
     # Top navigation tabs
 #     tab_stock, tab_portfolio, tab_config, tab_status = st.tabs([
 #         "Stock Analysis",
@@ -990,6 +979,16 @@ def main():
     # Only Stock Analysis mode (other tabs commented out)
     stock_analysis_page()
 
+    # Purpose description & privacy link (required for Google OAuth verification)
+    st.markdown(
+        '<div style="color:#6b7280;font-size:0.85rem;margin:24px 0 12px 0;line-height:1.5;text-align:center;">'
+        'Total Insights Investing is a multi-agent investment research '
+        'platform that analyzes stocks using AI-powered value, growth, macro, risk, '
+        'and sentiment agents. It is designed for educational and informational purposes only, and does not provide financial advice. '
+        '<a href="?page=privacy" target="_self" style="color:#3b5998;">Privacy Policy</a>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 
 
@@ -3490,6 +3489,281 @@ def stock_analysis_page():
 #                         st.error(f"Export failed: {e}")
 # 
 # 
+def generate_pdf_report(result: dict) -> bytes:
+    """Generate a formatted PDF investment analysis report using ReportLab."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor, white, black
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether
+    )
+
+    # ---- Colour palette ----
+    C_DARK      = HexColor('#1a1a2e')
+    C_BRAND     = HexColor('#3b5998')
+    C_GREEN     = HexColor('#059669')
+    C_L_GREEN   = HexColor('#10b981')
+    C_YELLOW    = HexColor('#d97706')
+    C_ORANGE    = HexColor('#f97316')
+    C_RED       = HexColor('#ef4444')
+    C_GRAY_BG   = HexColor('#f8f9fa')
+    C_GRAY_LINE = HexColor('#e5e7eb')
+    C_GRAY_MID  = HexColor('#6b7280')
+
+    def score_color(s):
+        if s >= 75:   return C_GREEN
+        if s >= 65:   return C_L_GREEN
+        if s >= 55:   return C_YELLOW
+        if s >= 45:   return C_ORANGE
+        return C_RED
+
+    def score_label(s):
+        if s >= 75:   return 'STRONG BUY'
+        if s >= 65:   return 'BUY'
+        if s >= 55:   return 'HOLD'
+        if s >= 45:   return 'UNDERPERFORM'
+        return 'SELL'
+
+    # ---- Data extraction ----
+    ticker        = result.get('ticker', '')
+    fund          = result.get('fundamentals', {})
+    company_name  = fund.get('name', ticker)
+    final_score   = float(result.get('final_score', 0))
+    agent_scores  = result.get('agent_scores', {})
+    agent_rats    = result.get('agent_rationales', {})
+    recommendation = score_label(final_score)
+    s_color       = score_color(final_score)
+    report_date   = datetime.now().strftime('%B %d, %Y')
+
+    agent_display = {
+        'value_agent':           'Value',
+        'growth_momentum_agent': 'Growth / Momentum',
+        'macro_regime_agent':    'Macro Regime',
+        'risk_agent':            'Risk',
+        'sentiment_agent':       'Sentiment',
+    }
+
+    # ---- Styles ----
+    styles = getSampleStyleSheet()
+    S = lambda name, **kw: ParagraphStyle(name, parent=styles['Normal'], **kw)
+
+    sTitle   = S('sTitle',   fontSize=22, fontName='Helvetica-Bold',
+                 textColor=C_DARK,  spaceAfter=2)
+    sSub     = S('sSub',     fontSize=11, textColor=C_GRAY_MID, spaceAfter=2)
+    sDate    = S('sDate',    fontSize=9,  textColor=C_GRAY_MID, spaceAfter=8)
+    sSecHdr  = S('sSecHdr',  fontSize=13, fontName='Helvetica-Bold',
+                 textColor=C_BRAND, spaceBefore=14, spaceAfter=4)
+    sBody    = S('sBody',    fontSize=9,  leading=13, spaceAfter=4)
+    sCaption = S('sCaption', fontSize=8,  textColor=C_GRAY_MID, spaceAfter=2)
+    sAssess  = S('sAssess',  fontSize=14, fontName='Helvetica-Bold',
+                 textColor=white, alignment=TA_CENTER)
+    sAgentHdr= S('sAgentHdr',fontSize=10, fontName='Helvetica-Bold',
+                 textColor=C_DARK, spaceBefore=10, spaceAfter=2)
+
+    # ---- Document ----
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=0.75*inch, rightMargin=0.75*inch,
+        topMargin=0.75*inch,  bottomMargin=0.75*inch,
+        title=f"{ticker} Investment Analysis",
+    )
+
+    story = []
+
+    # === HEADER ===
+    story.append(Paragraph(f"{ticker} — Investment Analysis", sTitle))
+    story.append(Paragraph(company_name, sSub))
+    story.append(Paragraph(f"Report generated: {report_date}", sDate))
+    story.append(HRFlowable(width='100%', thickness=2, color=C_BRAND, spaceAfter=10))
+
+    # === OVERALL ASSESSMENT BANNER ===
+    banner_data = [[
+        Paragraph(
+            f"Overall Assessment: <b>{recommendation}</b>"
+            f"&nbsp;&nbsp;|&nbsp;&nbsp;Score: <b>{final_score:.1f} / 100</b>",
+            sAssess
+        )
+    ]]
+    banner = Table(banner_data, colWidths=[7*inch])
+    banner.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), s_color),
+        ('TOPPADDING',    (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+        ('ROUNDEDCORNERS', [6]),
+    ]))
+    story.append(banner)
+    story.append(Spacer(1, 12))
+
+    # === KEY METRICS TABLE ===
+    story.append(Paragraph("Key Metrics", sSecHdr))
+
+    def fmt_val(v, prefix='', suffix='', decimals=2, scale=1):
+        if v and v != 0:
+            return f"{prefix}{v*scale:.{decimals}f}{suffix}"
+        return 'N/A'
+
+    price     = fund.get('price')
+    pe        = fund.get('pe_ratio')
+    beta      = fund.get('beta')
+    eps       = fund.get('eps')
+    div_yield = fund.get('dividend_yield')
+    low52     = fund.get('week_52_low')
+    high52    = fund.get('week_52_high')
+    mktcap    = fund.get('market_cap')
+
+    if div_yield and div_yield != 0:
+        div_str = f"{div_yield*100:.2f}%" if div_yield < 1 else f"{div_yield:.2f}%"
+    else:
+        div_str = 'N/A'
+
+    if mktcap:
+        if mktcap >= 1e12:   mkt_str = f"${mktcap/1e12:.1f}T"
+        elif mktcap >= 1e9:  mkt_str = f"${mktcap/1e9:.1f}B"
+        else:                 mkt_str = f"${mktcap/1e6:.0f}M"
+    else:
+        mkt_str = 'N/A'
+
+    metrics = [
+        ['Metric', 'Value', 'Metric', 'Value'],
+        ['Current Price',   fmt_val(price, '$'), 'P/E Ratio',      fmt_val(pe, decimals=1)],
+        ['EPS',             fmt_val(eps, '$'),   'Beta',           fmt_val(beta)],
+        ['Dividend Yield',  div_str,             'Market Cap',     mkt_str],
+        ['52-Week Low',     fmt_val(low52, '$'), '52-Week High',   fmt_val(high52, '$')],
+    ]
+
+    col_w = [2.0*inch, 1.5*inch, 2.0*inch, 1.5*inch]
+    m_table = Table(metrics, colWidths=col_w)
+    m_table.setStyle(TableStyle([
+        # Header row
+        ('BACKGROUND',    (0, 0), (-1, 0), C_BRAND),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), white),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        # Data rows
+        ('FONTSIZE',      (0, 1), (-1, -1), 9),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [C_GRAY_BG, white]),
+        # Label columns bold
+        ('FONTNAME',      (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME',      (2, 1), (2, -1), 'Helvetica-Bold'),
+        ('TEXTCOLOR',     (0, 1), (0, -1), C_DARK),
+        ('TEXTCOLOR',     (2, 1), (2, -1), C_DARK),
+        # Grid
+        ('GRID',          (0, 0), (-1, -1), 0.4, C_GRAY_LINE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+    ]))
+    story.append(m_table)
+    story.append(Spacer(1, 12))
+
+    # === AGENT SCORES TABLE ===
+    story.append(Paragraph("Agent Scores", sSecHdr))
+
+    score_rows = [['Agent', 'Score', 'Signal']]
+    for key, label in agent_display.items():
+        s = float(agent_scores.get(key, 50))
+        lbl = score_label(s)
+        score_rows.append([label, f"{s:.1f}", lbl])
+
+    s_col_w = [3.5*inch, 1.5*inch, 2.0*inch]
+    s_table = Table(score_rows, colWidths=s_col_w)
+
+    s_style = [
+        ('BACKGROUND',    (0, 0), (-1, 0), C_BRAND),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), white),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        ('FONTSIZE',      (0, 1), (-1, -1), 9),
+        ('GRID',          (0, 0), (-1, -1), 0.4, C_GRAY_LINE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+    ]
+    # Colour the signal cell per score
+    for i, key in enumerate(agent_display.keys(), start=1):
+        s = float(agent_scores.get(key, 50))
+        c = score_color(s)
+        s_style += [
+            ('BACKGROUND',  (2, i), (2, i), c),
+            ('TEXTCOLOR',   (2, i), (2, i), white),
+            ('FONTNAME',    (2, i), (2, i), 'Helvetica-Bold'),
+        ]
+        # Score column: colour text
+        s_style += [('TEXTCOLOR', (1, i), (1, i), c),
+                    ('FONTNAME',  (1, i), (1, i), 'Helvetica-Bold')]
+        # Alternating row bg for agent name col
+        bg = C_GRAY_BG if i % 2 == 0 else white
+        s_style.append(('BACKGROUND', (0, i), (0, i), bg))
+        s_style.append(('BACKGROUND', (1, i), (1, i), bg))
+
+    s_table.setStyle(TableStyle(s_style))
+    story.append(s_table)
+    story.append(Spacer(1, 14))
+
+    # === AGENT RATIONALES ===
+    story.append(Paragraph("Agent Analysis Details", sSecHdr))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=C_GRAY_LINE, spaceAfter=6))
+
+    for key, label in agent_display.items():
+        s = float(agent_scores.get(key, 50))
+        rat = agent_rats.get(key, '')
+        if not rat:
+            continue
+
+        c = score_color(s)
+        # Agent header bar
+        hdr_data = [[
+            Paragraph(f"<b>{label}</b>", S('ah', fontSize=10, fontName='Helvetica-Bold', textColor=white)),
+            Paragraph(f"<b>{s:.1f} / 100 — {score_label(s)}</b>",
+                      S('as', fontSize=10, fontName='Helvetica-Bold',
+                        textColor=white, alignment=TA_CENTER)),
+        ]]
+        hdr_table = Table(hdr_data, colWidths=[3.5*inch, 3.5*inch])
+        hdr_table.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), c),
+            ('TOPPADDING',    (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+        ]))
+        story.append(KeepTogether([hdr_table]))
+
+        # Rationale text
+        rat_clean = str(rat).replace("\\n", "\n").strip()
+        for line in rat_clean.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            # Bold markdown lines
+            if line.startswith('**') and line.endswith('**'):
+                line_text = line.strip('*')
+                story.append(Paragraph(f"<b>{line_text}</b>",
+                                       S('rl', fontSize=9, leading=13,
+                                         textColor=C_DARK, spaceBefore=3)))
+            else:
+                story.append(Paragraph(line,
+                                       S('rb', fontSize=9, leading=13,
+                                         textColor=C_DARK, spaceAfter=1)))
+        story.append(Spacer(1, 8))
+
+    # === FOOTER ===
+    story.append(HRFlowable(width='100%', thickness=0.5, color=C_GRAY_LINE, spaceBefore=12, spaceAfter=4))
+    story.append(Paragraph(
+        "This report is generated by the Total Insights Investment Analysis System. "
+        "For informational purposes only — not financial advice.",
+        S('footer', fontSize=7, textColor=C_GRAY_MID, alignment=TA_CENTER)
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 def display_stock_analysis(result: dict):
     """Display detailed stock analysis results with enhanced rationales."""
     
@@ -3760,10 +4034,13 @@ def display_stock_analysis(result: dict):
         st.markdown(f"**{position_text}** - {price_position*100:.1f}% of 52-week range")
     
     # ========== COMPREHENSIVE SCORE ANALYSIS SECTION ==========
-    st.markdown("---")
-    st.markdown("### Score Analysis & Agent Breakdown")
-    
-    with st.expander("Detailed Breakdown", expanded=False):
+    _weight_preset_display = st.session_state.get('weight_preset', 'equal_weights')
+    if _weight_preset_display != 'equal_weights':
+        st.markdown("---")
+        st.markdown("### Score Analysis & Agent Breakdown")
+
+    if _weight_preset_display != 'equal_weights':
+     with st.expander("Detailed Breakdown", expanded=False):
         # Get agent scores and weights
         agent_scores = result.get('agent_scores', {})
         blended_score = result.get('blended_score', result.get('final_score', 0))
@@ -3782,19 +4059,15 @@ def display_stock_analysis(result: dict):
             weights_used = st.session_state.locked_custom_weights
             weights_source = "Custom Weights"
         else:
-            # Get default weights from orchestrator
-            orchestrator = st.session_state.get('orchestrator')
-            if orchestrator:
-                weights_used = orchestrator.agent_weights
-            else:
-                weights_used = {
-                    'value_agent': 0.25,
-                    'growth_momentum_agent': 0.20,
-                    'macro_regime_agent': 0.15,
-                    'risk_agent': 0.25,
-                    'sentiment_agent': 0.15
-                }
-            weights_source = "Default Weights"
+            # Equal weights: every agent has the same weight
+            weights_used = {
+                'value': 1.0,
+                'growth_momentum': 1.0,
+                'macro_regime': 1.0,
+                'risk': 1.0,
+                'sentiment': 1.0
+            }
+            weights_source = "Equal Weights"
         
         st.write(f"**Weights Source:** {weights_source}")
         st.write("---")
@@ -3950,6 +4223,25 @@ Formula: Blended Score = Weighted Sum / Total Weight
     
 #     # Google Sheets / Docs export
 #     _render_google_export(result)
+
+    # ---- PDF Download ----
+    st.markdown("---")
+    st.markdown("### Download Report")
+    try:
+        pdf_bytes = generate_pdf_report(result)
+        ticker_safe = result.get('ticker', 'analysis').upper()
+        pdf_filename = f"{ticker_safe}_Investment_Report_{datetime.now().strftime('%Y%m%d')}.pdf"
+        st.download_button(
+            label="Download PDF Report",
+            data=pdf_bytes,
+            file_name=pdf_filename,
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True,
+            key="download_pdf_report",
+        )
+    except Exception as _pdf_err:
+        st.warning(f"PDF generation unavailable: {_pdf_err}")
 
     # Back to home
     st.markdown("---")
