@@ -142,14 +142,16 @@ class SentimentAgent(BaseAgent):
             details['key_events'] = []
         
         # Composite score - only calculate if we have a valid sentiment score
+        _sentiment_failed = False
         if scores.get('news_sentiment_score') is not None:
             composite_score = (
                 scores['news_sentiment_score'] * 0.7 +
                 scores['event_score'] * 0.3
             )
         else:
-            # Default to neutral when news is unavailable
+            # Flag as failed so the orchestrator can exclude from blending
             composite_score = 50.0
+            _sentiment_failed = True
             logger.warning(f"Using neutral default score (50) for {ticker} - news retrieval unsuccessful")
 
         # Build the best available article list for rationale generation.
@@ -182,7 +184,8 @@ class SentimentAgent(BaseAgent):
             'score': round(composite_score, 2),
             'rationale': rationale,
             'details': details,
-            'component_scores': scores
+            'component_scores': scores,
+            'data_unavailable': _sentiment_failed,
         }
     
     def _analyze_news_sentiment(self, news_items: List[Dict], ticker: str) -> float:

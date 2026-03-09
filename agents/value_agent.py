@@ -46,50 +46,48 @@ class ValueAgent(BaseAgent):
         scores = {}
         details = {}
         
-        # 1. P/E ratio vs sector (lower is better) - EXTREMELY GENEROUS SCORING
+        # 1. P/E ratio vs sector (lower is better)
         if pe_ratio and pe_ratio > 0:
-            # Use a much more generous P/E scoring system aligned with your examples
-            # Base score starts at 75 (perfectly valued) and adjusts from there
-            base_score = 75
-            
-            # P/E ranges based on your examples: 23-40 is reasonable range
-            if pe_ratio <= 25:
-                pe_score = min(95, base_score + 20)  # Great value (like GOOGL at 23)
-            elif pe_ratio <= 30:
-                pe_score = min(85, base_score + 10)  # Good value (like AMD at 27)
+            # Centered scoring: 50 = fair value (market-average ~22x P/E)
+            if pe_ratio <= 12:
+                pe_score = 90   # Deep value
+            elif pe_ratio <= 18:
+                pe_score = 75   # Good value
+            elif pe_ratio <= 25:
+                pe_score = 60   # Slightly cheap to fair
             elif pe_ratio <= 35:
-                pe_score = base_score  # Fair value (perfectly valued)
-            elif pe_ratio <= 40:
-                pe_score = max(65, base_score - 10)  # Slight premium (like NVDA at 39)
+                pe_score = 45   # Slightly expensive
+            elif pe_ratio <= 50:
+                pe_score = 30   # Expensive
             else:
-                pe_score = max(55, base_score - 20)  # High premium but not terrible
-            
+                pe_score = 15   # Very expensive
+
             scores['pe_score'] = pe_score
             details['pe_ratio'] = pe_ratio
             details['sector_pe'] = sector_data.get('avg_pe', 25)
             details['pe_discount_pct'] = ((25 - pe_ratio) / 25 * 100)
         else:
-            scores['pe_score'] = 70  # Generous neutral if missing
+            scores['pe_score'] = 50  # Neutral if missing
         
-        # 2. EV/EBITDA (lower is better) - EXTREMELY GENEROUS SCORING
+        # 2. EV/EBITDA (lower is better)
         if ev_ebitda and ev_ebitda > 0:
-            # Very generous EV/EBITDA scoring - most large caps are reasonable
-            base_score = 75
-            if ev_ebitda <= 15:
-                ev_score = min(95, base_score + 20)  # Excellent value
-            elif ev_ebitda <= 25:
-                ev_score = min(85, base_score + 10)  # Good value
+            if ev_ebitda <= 8:
+                ev_score = 90   # Deep value
+            elif ev_ebitda <= 14:
+                ev_score = 70   # Good value
+            elif ev_ebitda <= 22:
+                ev_score = 55   # Fair
             elif ev_ebitda <= 35:
-                ev_score = base_score  # Fair value
+                ev_score = 40   # Expensive
             elif ev_ebitda <= 50:
-                ev_score = max(65, base_score - 10)  # Pricey but acceptable
+                ev_score = 25   # Very expensive
             else:
-                ev_score = max(55, base_score - 20)  # Expensive but not terrible
-            
+                ev_score = 10   # Extreme premium
+
             scores['ev_ebitda_score'] = ev_score
             details['ev_ebitda'] = ev_ebitda
         else:
-            scores['ev_ebitda_score'] = 70  # Generous neutral
+            scores['ev_ebitda_score'] = 50  # Neutral
         
         # 3. FCF Yield (higher is better)
         # Use real FCF yield from Perplexity data provider (CLEAN METHOD 10)
@@ -99,35 +97,33 @@ class ValueAgent(BaseAgent):
             profit_margin = fundamentals.get('profit_margin', 0) or 0
             fcf_yield = profit_margin * 100 if profit_margin else 0
         
-        # 3. FCF Yield - EXTREMELY GENEROUS (based on your examples where 1.6-2.5% is reasonable)
-        base_score = 75
-        if fcf_yield >= 3.0:
-            fcf_score = min(95, base_score + 20)  # Excellent FCF yield
+        # 3. FCF Yield (higher is better)
+        if fcf_yield >= 5.0:
+            fcf_score = 90   # Excellent cash generation
+        elif fcf_yield >= 3.0:
+            fcf_score = 70   # Good
         elif fcf_yield >= 2.0:
-            fcf_score = min(85, base_score + 10)  # Good FCF yield (like AAPL ~2.5%)
-        elif fcf_yield >= 1.5:
-            fcf_score = base_score  # Fair FCF yield (like NVDA ~1.6%)
+            fcf_score = 55   # Fair
         elif fcf_yield >= 1.0:
-            fcf_score = max(65, base_score - 10)  # Low but acceptable
+            fcf_score = 40   # Low
         else:
-            fcf_score = max(60, base_score - 15)  # Very low but not penalized heavily
+            fcf_score = 25   # Poor / reinvesting everything
         
         scores['fcf_yield_score'] = fcf_score
         details['fcf_yield_pct'] = fcf_yield
         
-        # 4. Dividend/Shareholder yield - EXTREMELY GENEROUS
+        # 4. Dividend/Shareholder yield
         shareholder_yield = dividend_yield * 100 if dividend_yield else 0
-        base_score = 75
-        if shareholder_yield >= 3.0:
-            yield_score = min(95, base_score + 20)  # High dividend yield
-        elif shareholder_yield >= 2.0:
-            yield_score = min(85, base_score + 10)  # Good dividend yield
+        if shareholder_yield >= 4.0:
+            yield_score = 85   # High income
+        elif shareholder_yield >= 2.5:
+            yield_score = 70   # Good income
         elif shareholder_yield >= 1.0:
-            yield_score = base_score  # Moderate dividend yield
+            yield_score = 55   # Moderate
         elif shareholder_yield >= 0.5:
-            yield_score = max(70, base_score - 5)  # Low dividend but ok for growth
+            yield_score = 45   # Low
         else:
-            yield_score = max(65, base_score - 10)  # No dividend but not heavily penalized
+            yield_score = 35   # No dividend (growth company)
         
         scores['shareholder_yield_score'] = yield_score
         details['dividend_yield_pct'] = shareholder_yield
@@ -244,17 +240,17 @@ class ValueAgent(BaseAgent):
         else:
             explanation += "No dividend - typical for growth companies, not penalized heavily\n"
         
-        explanation += f"\n**Value Assessment (75 = perfectly valued):**\n"
-        if final_score >= 85:
-            explanation += "**Excellent value** - Multiple metrics suggest undervaluation (like GOOGL/AMD range).\n"
-        elif final_score >= 75:
-            explanation += "**Good value to fair** - Reasonable valuation for quality company.\n"
-        elif final_score >= 65:
-            explanation += "**Slight premium but acceptable** - Paying modest premium (like MSFT/AAPL range).\n"
-        elif final_score >= 55:
-            explanation += "**Moderately expensive** - Premium valuation requires strong growth execution.\n"
+        explanation += f"\n**Value Assessment (50 = fairly valued):**\n"
+        if final_score >= 75:
+            explanation += "**Strong value** - Multiple metrics suggest undervaluation.\n"
+        elif final_score >= 60:
+            explanation += "**Good value** - Reasonably priced with some margin of safety.\n"
+        elif final_score >= 45:
+            explanation += "**Fair value** - Trading near intrinsic value.\n"
+        elif final_score >= 30:
+            explanation += "**Expensive** - Premium valuation requires strong growth execution.\n"
         else:
-            explanation += "**Expensive but not unreasonable** - High premium for exceptional growth potential.\n"
+            explanation += "**Very expensive** - Significant premium to fundamentals.\n"
         
         explanation += f"\n**To improve score:**\n"
         improvements = []

@@ -4128,39 +4128,50 @@ def display_stock_analysis(result: dict):
         }
         
         for agent_key in agent_order:
+            # Check if the agent was skipped (ETF) or data was unavailable
+            agent_result = result.get('agent_results', {}).get(agent_key)
+            _agent_skipped = agent_result is None
+            _data_unavailable = (agent_result or {}).get('data_unavailable', False)
+
             score = agent_scores.get(agent_key, 50)
-            
-            # Map agent key to weight key
-            if agent_key == 'value_agent':
-                weight_key = 'value_agent'
-            elif agent_key == 'growth_momentum_agent':
-                weight_key = 'growth_momentum_agent'
-            elif agent_key == 'macro_regime_agent':
-                weight_key = 'macro_regime_agent'
-            elif agent_key == 'risk_agent':
-                weight_key = 'risk_agent'
-            elif agent_key == 'sentiment_agent':
-                weight_key = 'sentiment_agent'
-            else:
-                weight_key = agent_key
-            
+
+            weight_key = agent_key
             # Get weight - try exact key first, then simplified key
             weight = weights_used.get(weight_key, 1.0)
             if weight == 1.0 and '_agent' in weight_key:
                 simplified_key = weight_key.replace('_agent', '')
                 weight = weights_used.get(simplified_key, 1.0)
-            
-            weighted_contribution = score * weight
-            total_weighted_score += weighted_contribution
-            total_weight += weight
-            
-            breakdown_data.append({
-                'Agent': agent_labels.get(agent_key, agent_key),
-                'Score': f"{score:.1f}",
-                'Weight': f"{weight:.2f}x",
-                'Weighted Score': f"{weighted_contribution:.2f}",
-                'Influence': f"{(weight/sum(w for w in [weights_used.get(k, 1.0) for k in agent_order]))*100:.1f}%"
-            })
+
+            if _agent_skipped:
+                # Agent was not run (e.g. Value/Growth for ETFs)
+                breakdown_data.append({
+                    'Agent': agent_labels.get(agent_key, agent_key),
+                    'Score': 'N/A',
+                    'Weight': '0.00x',
+                    'Weighted Score': '—',
+                    'Influence': '—'
+                })
+            elif _data_unavailable:
+                # Agent ran but data was unavailable (sentiment fallback)
+                breakdown_data.append({
+                    'Agent': agent_labels.get(agent_key, agent_key) + ' (no data)',
+                    'Score': '—',
+                    'Weight': '0.00x',
+                    'Weighted Score': '—',
+                    'Influence': 'redistributed'
+                })
+            else:
+                weighted_contribution = score * weight
+                total_weighted_score += weighted_contribution
+                total_weight += weight
+
+                breakdown_data.append({
+                    'Agent': agent_labels.get(agent_key, agent_key),
+                    'Score': f"{score:.1f}",
+                    'Weight': f"{weight:.2f}x",
+                    'Weighted Score': f"{weighted_contribution:.2f}",
+                    'Influence': f"{(weight/sum(w for w in [weights_used.get(k, 1.0) for k in agent_order]))*100:.1f}%"
+                })
         
         # Display breakdown table
         st.write("**Individual Agent Contributions:**")

@@ -294,22 +294,163 @@ class EnhancedDataProvider:
         logger.info(f"Final metrics for {ticker}: {list(combined_metrics.keys())}")
         return combined_metrics
     
+    def _get_perplexity_metrics_consolidated(self, ticker: str, is_etf: bool = False) -> Dict[str, Any]:
+        """Fetch all key financial metrics in a SINGLE Perplexity call.
+
+        Returns a dict with the same keys as the individual clean methods:
+        price, pe_ratio, beta, eps, dividend_yield, market_cap, description,
+        sector, volatility, volatility_score, fcf_yield, ev_to_ebitda,
+        profit_margin, week_52_low, week_52_high, earnings_growth,
+        revenue_growth.
+        """
+        import re
+        perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+        if not perplexity_key:
+            return {}
+
+        self._rate_limit_check('perplexity')
+
+        if is_etf:
+            query = (
+                f"Provide current financial data for {ticker} ETF as of {datetime.now().strftime('%B %d, %Y')}.\n"
+                "Return ONLY a JSON object with these keys (use null if unavailable):\n"
+                '{"price": <USD number>, "market_cap_billions": <number>, '
+                '"week_52_low": <USD>, "week_52_high": <USD>, '
+                '"dividend_yield_pct": <number or 0>, '
+                '"description": "<1-2 sentence description>", '
+                '"sector": "<sector name>"}\n'
+                "No commentary — JSON only."
+            )
+        else:
+            query = (
+                f"Provide current financial data for {ticker} stock as of {datetime.now().strftime('%B %d, %Y')}.\n"
+                "Return ONLY a JSON object with these keys (use null if unavailable):\n"
+                '{"price": <USD number>, "pe_ratio": <TTM trailing P/E>, '
+                '"beta": <5yr monthly vs S&P 500>, "eps": <TTM diluted EPS>, '
+                '"market_cap_billions": <number>, '
+                '"dividend_yield_pct": <annual yield % or 0>, '
+                '"fcf_yield_pct": <FCF/market cap * 100>, '
+                '"ev_ebitda": <EV/EBITDA ratio>, '
+                '"profit_margin_pct": <net margin %>, '
+                '"week_52_low": <USD>, "week_52_high": <USD>, '
+                '"earnings_growth_pct": <YoY EPS growth %>, '
+                '"revenue_growth_pct": <YoY revenue growth %>, '
+                '"description": "<1-2 sentence description>", '
+                '"sector": "<GICS sector name>"}\n'
+                "No commentary — JSON only."
+            )
+
+        try:
+            response = self._simple_perplexity_query(query, perplexity_key)
+            if not response:
+                return {}
+
+            # Extract JSON from response
+            import json as _json
+            json_match = re.search(r'\{[^{}]*\}', response, re.DOTALL)
+            if not json_match:
+                logger.warning(f"CONSOLIDATED: No JSON found in response for {ticker}")
+                return {}
+
+            raw = _json.loads(json_match.group(0))
+            logger.info(f"CONSOLIDATED: Parsed {len(raw)} fields for {ticker}")
+
+            # Map to internal key names
+            metrics: Dict[str, Any] = {}
+
+            def _safe_float(val, lo=None, hi=None):
+                if val is None:
+                    return None
+                try:
+                    v = float(val)
+                    if lo is not None and v < lo:
+                        return None
+                    if hi is not None and v > hi:
+                        return None
+                    return v
+                except (TypeError, ValueError):
+                    return None
+
+            metrics['price'] = _safe_float(raw.get('price'), 0.01, 50000)
+            metrics['pe_ratio'] = _safe_float(raw.get('pe_ratio'), 0, 500) if not is_etf else None
+            metrics['beta'] = _safe_float(raw.get('beta'), -5, 5) if not is_etf else None
+            metrics['eps'] = _safe_float(raw.get('eps'), -200, 1000) if not is_etf else None
+
+            mcap_b = _safe_float(raw.get('market_cap_billions'), 0.001, 10000)
+            if mcap_b is not None:
+                metrics['market_cap'] = mcap_b * 1e9
+
+            div_pct = _safe_float(raw.get('dividend_yield_pct'), 0, 20)
+            if div_pct is not None and div_pct > 0:
+                metrics['dividend_yield'] = div_pct / 100.0
+
+            metrics['week_52_low'] = _safe_float(raw.get('week_52_low'), 0.01, 50000)
+            metrics['week_52_high'] = _safe_float(raw.get('week_52_high'), 0.01, 50000)
+
+            if not is_etf:
+                metrics['fcf_yield'] = _safe_float(raw.get('fcf_yield_pct'), -30, 50)
+                metrics['ev_to_ebitda'] = _safe_float(raw.get('ev_ebitda'), 0, 500)
+                pm_pct = _safe_float(raw.get('profit_margin_pct'), -100, 80)
+                if pm_pct is not None:
+                    metrics['profit_margin'] = pm_pct / 100.0
+
+                eg_pct = _safe_float(raw.get('earnings_growth_pct'), -500, 1000)
+                if eg_pct is not None:
+                    metrics['earnings_growth'] = eg_pct / 100.0
+                rg_pct = _safe_float(raw.get('revenue_growth_pct'), -500, 1000)
+                if rg_pct is not None:
+                    metrics['revenue_growth'] = rg_pct / 100.0
+
+            desc = raw.get('description')
+            if desc and isinstance(desc, str) and len(desc) > 5:
+                metrics['description'] = desc.strip()
+            sector = raw.get('sector')
+            if sector and isinstance(sector, str) and len(sector) > 1:
+                metrics['sector'] = sector.strip()
+
+            # Remove None entries
+            metrics = {k: v for k, v in metrics.items() if v is not None}
+            logger.info(f"CONSOLIDATED: Returning {len(metrics)} validated metrics for {ticker}")
+            return metrics
+
+        except Exception as e:
+            logger.error(f"CONSOLIDATED: Failed for {ticker}: {e}")
+            return {}
+
     def _get_perplexity_metrics(self, ticker: str, is_etf: bool = False) -> Dict[str, Any]:
-        """Get financial metrics from Perplexity."""
+        """Get financial metrics from Perplexity.
+
+        Tries a single consolidated query first. Falls back to individual
+        clean-method queries only for fields that are still missing.
+        """
+        # ── Fast path: single consolidated call ──
+        all_metrics = self._get_perplexity_metrics_consolidated(ticker, is_etf)
+
+        # Determine which critical fields are still missing
+        critical_stock_fields = ['price', 'pe_ratio', 'beta', 'market_cap']
+        critical_etf_fields = ['price', 'market_cap']
+        required = critical_etf_fields if is_etf else critical_stock_fields
+        missing = [f for f in required if f not in all_metrics]
+
+        if not missing:
+            logger.info(f"CONSOLIDATED call sufficient for {ticker} — skipping individual queries")
+            return all_metrics
+
+        logger.info(f"CONSOLIDATED missing {missing} for {ticker} — running individual fallback queries")
+
+        # ── Slow fallback: individual clean methods for missing fields only ──
         try:
             import requests
             import re
-            
+
             # Check if we have the API key
             perplexity_key = os.getenv('PERPLEXITY_API_KEY')
             if not perplexity_key:
                 logger.warning("Perplexity API key not found")
-                return {}
-            
+                return all_metrics
+
             self._rate_limit_check('perplexity')
-            
-            all_metrics = {}
-            
+
             # CLEAN METHOD 1: Get Price - Direct and Simple
             try:
                 price_query = f"""What is the current stock price of {ticker} as of {datetime.now().strftime('%B %d, %Y')}? 
@@ -2037,12 +2178,16 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
             metrics['pct_from_52w_high'] = ((price / w52_high) - 1) * 100
             logger.info(f"Computed pct_from_52w_high for {ticker}: {metrics['pct_from_52w_high']:.1f}%")
         
-        # Get earnings and revenue growth rates from Perplexity
+        # Get earnings and revenue growth rates — skip if already present from
+        # the consolidated Perplexity call (saves an extra API round-trip).
         if not is_etf:
-            growth_rates = self._get_growth_rates_from_perplexity(ticker)
-            metrics['earnings_growth'] = growth_rates.get('earnings_growth')
-            metrics['revenue_growth'] = growth_rates.get('revenue_growth')
-            logger.info(f"Growth rates for {ticker}: EPS={growth_rates.get('earnings_growth')}, Revenue={growth_rates.get('revenue_growth')}")
+            if metrics.get('earnings_growth') is None and metrics.get('revenue_growth') is None:
+                growth_rates = self._get_growth_rates_from_perplexity(ticker)
+                metrics['earnings_growth'] = growth_rates.get('earnings_growth')
+                metrics['revenue_growth'] = growth_rates.get('revenue_growth')
+                logger.info(f"Growth rates for {ticker}: EPS={growth_rates.get('earnings_growth')}, Revenue={growth_rates.get('revenue_growth')}")
+            else:
+                logger.info(f"Growth rates for {ticker} already present from consolidated call — skipping extra query")
         
         logger.info(f"MULTI-SOURCE VALIDATED METRICS FOR {ticker}: Price=${metrics.get('price')}, P/E={metrics.get('pe_ratio')}, Beta={metrics.get('beta')}")
         
@@ -2052,9 +2197,64 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
             metrics['beta'] = None
             metrics['risk_level'] = 'low-moderate'
         
+        # ── Plausibility validation: null out metrics outside reasonable ranges ──
+        metrics = self._validate_metric_ranges(ticker, metrics)
+
         logger.info(f"FINAL METRICS FOR {ticker}: {metrics}")
         return metrics
-    
+
+    @staticmethod
+    def _validate_metric_ranges(ticker: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Reject extracted values that fall outside plausible ranges.
+
+        Each rule maps a metric key to (min, max).  Values outside the range
+        are set to None so downstream agents treat them as missing rather
+        than scoring on garbage data.
+        """
+        RULES: Dict[str, Tuple[float, float]] = {
+            'price':          (0.01, 50_000),     # Berkshire A is ~$600k but Perplexity returns per-share
+            'pe_ratio':       (0, 500),            # Negative P/E means losses; treat as None
+            'beta':           (-2, 5),
+            'eps':            (-200, 1000),
+            'market_cap':     (1e6, 20e12),        # $1 M – $20 T
+            'fcf_yield':      (-30, 50),           # Percent
+            'ev_to_ebitda':   (0, 500),
+            'profit_margin':  (-5, 1),             # Stored as decimal
+            'dividend_yield': (0, 0.30),           # Stored as decimal (30% max)
+            'earnings_growth': (-5, 10),           # Stored as decimal (-500% to +1000%)
+            'revenue_growth':  (-5, 10),
+            'week_52_low':    (0.01, 50_000),
+            'week_52_high':   (0.01, 50_000),
+        }
+
+        for key, (lo, hi) in RULES.items():
+            val = metrics.get(key)
+            if val is None:
+                continue
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                logger.warning(f"[VALIDATE] {ticker}: {key}={metrics[key]!r} is not numeric — clearing")
+                metrics[key] = None
+                continue
+            if not (lo <= val <= hi):
+                logger.warning(
+                    f"[VALIDATE] {ticker}: {key}={val} outside plausible range "
+                    f"[{lo}, {hi}] — clearing"
+                )
+                metrics[key] = None
+
+        # Cross-check: 52-week low should be <= high
+        w52_lo = metrics.get('week_52_low')
+        w52_hi = metrics.get('week_52_high')
+        if w52_lo is not None and w52_hi is not None and w52_lo > w52_hi:
+            logger.warning(f"[VALIDATE] {ticker}: 52w low ({w52_lo}) > high ({w52_hi}) — clearing both")
+            metrics['week_52_low'] = None
+            metrics['week_52_high'] = None
+            metrics['pct_from_52w_high'] = None
+
+        return metrics
+
     def _get_guaranteed_openai_metrics(self, ticker: str, is_etf: bool = False) -> Dict[str, Any]:
         """Get guaranteed financial metrics from OpenAI - never returns None values."""
         logger.info(f"=== CALLING OPENAI FOR {ticker} ===")

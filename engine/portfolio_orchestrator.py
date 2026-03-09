@@ -340,9 +340,21 @@ class PortfolioOrchestrator:
         
         update_progress(f"Data ready: ${price} price, {pe_ratio} P/E, {market_cap_str} mkt cap", 42)
 
-        # 2. Phase 2: Run all agents IN PARALLEL (42-98%)
+        # 2. Phase 2: Run agents IN PARALLEL (42-98%)
+        # For ETFs, skip Value and Growth agents (P/E, EPS growth are meaningless)
+        is_etf = data.get('fundamentals', {}).get('is_etf', False)
+        _etf_skip = {'value_agent', 'growth_momentum_agent'} if is_etf else set()
+
+        agents_to_run = {
+            name: agent for name, agent in self.agents.items()
+            if name not in _etf_skip
+        }
+
+        if _etf_skip:
+            logger.info(f"ETF detected ({ticker}) — skipping agents: {_etf_skip}")
+
         agent_results = {}
-        total_agents = len(self.agents)
+        total_agents = len(agents_to_run)
 
         agent_labels_map = {
             'value_agent': 'Value',
@@ -352,12 +364,12 @@ class PortfolioOrchestrator:
             'sentiment_agent': 'Sentiment'
         }
 
-        update_progress("Running all 5 agents in parallel...", 43)
+        update_progress(f"Running {total_agents} agents in parallel...", 43)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_agent = {}
             _agent_start_times = {}
-            for i, (agent_name, agent) in enumerate(self.agents.items()):
+            for i, (agent_name, agent) in enumerate(agents_to_run.items()):
                 # Small stagger between agent launches to avoid API burst
                 if i > 0:
                     time.sleep(0.2)
@@ -590,12 +602,22 @@ class PortfolioOrchestrator:
             self._last_regime_adjusted_weights = None
 
         # Calculate base weighted score
+        # Exclude agents that flagged data_unavailable (e.g. sentiment with
+        # no news) — their weight is automatically redistributed because
+        # we normalise by total_weight.
         total_score = 0
         total_weight = 0
 
         for agent_name, weight in effective_weights.items():
             if agent_name in agent_results:
-                score = agent_results[agent_name].get('score') or 50
+                result = agent_results[agent_name]
+                if result.get('data_unavailable'):
+                    logger.info(
+                        f"Excluding {agent_name} from blend — data unavailable, "
+                        f"redistributing {weight:.0%} weight to remaining agents"
+                    )
+                    continue
+                score = result.get('score') or 50
                 total_score += score * weight
                 total_weight += weight
 
@@ -607,54 +629,48 @@ class PortfolioOrchestrator:
             return base_score
 
         # ========== UPSIDE POTENTIAL MULTIPLIER (non-theory-based presets only) ==========
-        # This is THE KEY: boost stocks with high upside potential
+        # Tighter bounds now that agent scores are properly centered around 50
 
         upside_multiplier = 1.0  # Start at neutral
         upside_factors = []
 
-        # Factor 1: Growth/Momentum score (40% weight - most important!)
+        # Factor 1: Growth/Momentum score
         if 'growth_momentum_agent' in agent_results:
             growth_score = agent_results['growth_momentum_agent'].get('score', 50)
-            if growth_score >= 80:
-                upside_multiplier += 0.15  # +15% boost for exceptional growth
-                upside_factors.append(f"Exceptional growth ({growth_score:.0f}/100) \u2192 +15% boost")
-            elif growth_score >= 70:
-                upside_multiplier += 0.10  # +10% boost for strong growth
-                upside_factors.append(f"Strong growth ({growth_score:.0f}/100) \u2192 +10% boost")
+            if growth_score >= 75:
+                upside_multiplier += 0.08
+                upside_factors.append(f"Strong growth ({growth_score:.0f}/100) \u2192 +8% boost")
             elif growth_score >= 60:
-                upside_multiplier += 0.05  # +5% boost for good growth
-                upside_factors.append(f"Good growth ({growth_score:.0f}/100) \u2192 +5% boost")
-            elif growth_score < 40:
-                upside_multiplier -= 0.05  # -5% penalty for weak growth
-                upside_factors.append(f"Weak growth ({growth_score:.0f}/100) \u2192 -5% penalty")
+                upside_multiplier += 0.04
+                upside_factors.append(f"Good growth ({growth_score:.0f}/100) \u2192 +4% boost")
+            elif growth_score < 30:
+                upside_multiplier -= 0.06
+                upside_factors.append(f"Weak growth ({growth_score:.0f}/100) \u2192 -6% penalty")
 
-        # Factor 2: Sentiment (market recognizing upside)
+        # Factor 2: Sentiment
         if 'sentiment_agent' in agent_results:
             sentiment_score = agent_results['sentiment_agent'].get('score') or 50
-            if sentiment_score >= 75:
-                upside_multiplier += 0.08  # +8% boost for very positive sentiment
-                upside_factors.append(f"Very positive sentiment ({sentiment_score:.0f}/100) \u2192 +8% boost")
-            elif sentiment_score >= 65:
-                upside_multiplier += 0.05  # +5% boost for positive sentiment
+            if sentiment_score >= 70:
+                upside_multiplier += 0.05
                 upside_factors.append(f"Positive sentiment ({sentiment_score:.0f}/100) \u2192 +5% boost")
 
-        # Factor 3: Value (reasonable entry point amplifies upside)
+        # Factor 3: Value (good value = more runway)
         if 'value_agent' in agent_results:
             value_score = agent_results['value_agent'].get('score', 50)
-            if value_score >= 75:
-                upside_multiplier += 0.05  # +5% boost - good value = more upside runway
-                upside_factors.append(f"Attractive valuation ({value_score:.0f}/100) \u2192 +5% boost")
+            if value_score >= 70:
+                upside_multiplier += 0.04
+                upside_factors.append(f"Attractive valuation ({value_score:.0f}/100) \u2192 +4% boost")
 
-        # Factor 4: Penalize very high risk (extreme risk reduces realizable upside)
+        # Factor 4: Penalize extreme risk
         if 'risk_agent' in agent_results:
             risk_score = agent_results['risk_agent'].get('score', 50)
-            if risk_score < 30:  # Very high risk
-                upside_multiplier -= 0.10  # -10% penalty for extreme risk
-                upside_factors.append(f"Extreme risk ({risk_score:.0f}/100) \u2192 -10% penalty")
+            if risk_score < 25:
+                upside_multiplier -= 0.08
+                upside_factors.append(f"Extreme risk ({risk_score:.0f}/100) \u2192 -8% penalty")
 
-        # Apply the multiplier (cap at 1.35 to prevent over-inflation)
-        upside_multiplier = min(upside_multiplier, 1.35)
-        upside_multiplier = max(upside_multiplier, 0.85)  # Floor at 0.85
+        # Tighter cap: +/-15% max swing
+        upside_multiplier = min(upside_multiplier, 1.15)
+        upside_multiplier = max(upside_multiplier, 0.85)
 
         final_score = base_score * upside_multiplier
 

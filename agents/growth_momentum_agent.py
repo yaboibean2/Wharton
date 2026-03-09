@@ -40,146 +40,141 @@ class GrowthMomentumAgent(BaseAgent):
         scores = {}
         details = {}
         
-        # 1. EPS Growth - HEAVILY REWARD UPSIDE POTENTIAL
+        # 1. EPS Growth
         earnings_growth = fundamentals.get('earnings_growth')
         if earnings_growth:
             earnings_growth_pct = earnings_growth * 100
-            # AGGRESSIVE scoring to capture upside potential
-            # Any positive growth is good, high growth is exceptional
             if earnings_growth_pct >= 30:
-                scores['eps_growth_score'] = 95  # Exceptional growth = massive upside
+                scores['eps_growth_score'] = 90   # Exceptional
             elif earnings_growth_pct >= 20:
-                scores['eps_growth_score'] = 85  # Strong growth = great upside
-            elif earnings_growth_pct >= 15:
-                scores['eps_growth_score'] = 75  # Good growth = solid upside
+                scores['eps_growth_score'] = 75   # Strong
             elif earnings_growth_pct >= 10:
-                scores['eps_growth_score'] = 70  # Decent growth = upside potential
+                scores['eps_growth_score'] = 60   # Solid
             elif earnings_growth_pct >= 5:
-                scores['eps_growth_score'] = 65  # Modest growth = some upside
+                scores['eps_growth_score'] = 50   # Moderate
             elif earnings_growth_pct >= 0:
-                scores['eps_growth_score'] = 55  # Flat = limited upside
+                scores['eps_growth_score'] = 40   # Flat
+            elif earnings_growth_pct >= -10:
+                scores['eps_growth_score'] = 25   # Declining
             else:
-                scores['eps_growth_score'] = 40  # Negative = no upside
+                scores['eps_growth_score'] = 10   # Severe decline
             details['earnings_growth_pct'] = earnings_growth_pct
         else:
-            scores['eps_growth_score'] = 60  # Neutral when missing (benefit of doubt)
+            scores['eps_growth_score'] = 50  # Neutral when missing
             details['earnings_growth_pct'] = None
         
-        # 2. Revenue Growth - REWARD TOP-LINE EXPANSION (upside driver)
+        # 2. Revenue Growth
         revenue_growth = fundamentals.get('revenue_growth')
         if revenue_growth:
             revenue_growth_pct = revenue_growth * 100
-            # Revenue growth = market share gains = upside potential
             if revenue_growth_pct >= 25:
-                scores['revenue_growth_score'] = 95  # Explosive growth
+                scores['revenue_growth_score'] = 90   # Explosive
             elif revenue_growth_pct >= 15:
-                scores['revenue_growth_score'] = 85  # Strong growth
+                scores['revenue_growth_score'] = 75   # Strong
             elif revenue_growth_pct >= 10:
-                scores['revenue_growth_score'] = 75  # Good growth
+                scores['revenue_growth_score'] = 60   # Solid
             elif revenue_growth_pct >= 5:
-                scores['revenue_growth_score'] = 65  # Steady growth
+                scores['revenue_growth_score'] = 50   # Moderate
             elif revenue_growth_pct >= 0:
-                scores['revenue_growth_score'] = 55  # Flat
+                scores['revenue_growth_score'] = 40   # Flat
+            elif revenue_growth_pct >= -10:
+                scores['revenue_growth_score'] = 25   # Declining
             else:
-                scores['revenue_growth_score'] = 40  # Declining
+                scores['revenue_growth_score'] = 10   # Severe decline
             details['revenue_growth_pct'] = revenue_growth_pct
         else:
-            scores['revenue_growth_score'] = 60  # Neutral when missing
+            scores['revenue_growth_score'] = 50  # Neutral when missing
             details['revenue_growth_pct'] = None
         
-        # 3. Price Momentum - POSITIVE MOMENTUM = UPSIDE CONTINUATION
+        # 3. Price Momentum
         if not price_history.empty and len(price_history) > 0:
             current_price = price_history['Close'].iloc[-1]
-            
-            # 3-month momentum - REWARD upward trends heavily
-            if len(price_history) >= 63:  # ~3 months trading days
+
+            # 3-month momentum
+            if len(price_history) >= 63:
                 price_3m_ago = price_history['Close'].iloc[-63]
                 momentum_3m = ((current_price / price_3m_ago) - 1) * 100
-                # Positive momentum = upside continuation potential
                 if momentum_3m >= 20:
-                    scores['momentum_3m_score'] = 90  # Strong upward trend
+                    scores['momentum_3m_score'] = 85
                 elif momentum_3m >= 10:
-                    scores['momentum_3m_score'] = 80  # Good momentum
+                    scores['momentum_3m_score'] = 70
                 elif momentum_3m >= 5:
-                    scores['momentum_3m_score'] = 70  # Positive trend
+                    scores['momentum_3m_score'] = 60
                 elif momentum_3m >= 0:
-                    scores['momentum_3m_score'] = 60  # Stable
+                    scores['momentum_3m_score'] = 50
                 elif momentum_3m >= -10:
-                    scores['momentum_3m_score'] = 50  # Slight pullback (buying opportunity?)
+                    scores['momentum_3m_score'] = 35
                 else:
-                    scores['momentum_3m_score'] = 40  # Downtrend
+                    scores['momentum_3m_score'] = 20
                 details['momentum_3m_pct'] = momentum_3m
             else:
-                scores['momentum_3m_score'] = 60
+                scores['momentum_3m_score'] = 50
                 details['momentum_3m_pct'] = None
-            
-            # 6-month momentum - MEDIUM-TERM upside trajectory
+
+            # 6-month momentum
             if len(price_history) >= 126:
                 price_6m_ago = price_history['Close'].iloc[-126]
                 momentum_6m = ((current_price / price_6m_ago) - 1) * 100
                 if momentum_6m >= 30:
-                    scores['momentum_6m_score'] = 90  # Exceptional run
+                    scores['momentum_6m_score'] = 85
                 elif momentum_6m >= 15:
-                    scores['momentum_6m_score'] = 80  # Strong trend
+                    scores['momentum_6m_score'] = 70
                 elif momentum_6m >= 5:
-                    scores['momentum_6m_score'] = 70  # Positive
+                    scores['momentum_6m_score'] = 55
                 elif momentum_6m >= 0:
-                    scores['momentum_6m_score'] = 60  # Stable
+                    scores['momentum_6m_score'] = 45
                 elif momentum_6m >= -15:
-                    scores['momentum_6m_score'] = 50  # Pullback
+                    scores['momentum_6m_score'] = 30
                 else:
-                    scores['momentum_6m_score'] = 40  # Downtrend
+                    scores['momentum_6m_score'] = 15
                 details['momentum_6m_pct'] = momentum_6m
             else:
-                scores['momentum_6m_score'] = 60
+                scores['momentum_6m_score'] = 50
                 details['momentum_6m_pct'] = None
-            
-            # 12-month momentum - LONG-TERM upside validation
+
+            # 12-month momentum
             if len(price_history) >= 252:
                 price_12m_ago = price_history['Close'].iloc[-252]
                 momentum_12m = ((current_price / price_12m_ago) - 1) * 100
                 if momentum_12m >= 50:
-                    scores['momentum_12m_score'] = 95  # Multi-bagger potential
+                    scores['momentum_12m_score'] = 90
                 elif momentum_12m >= 30:
-                    scores['momentum_12m_score'] = 85  # Strong year
+                    scores['momentum_12m_score'] = 75
                 elif momentum_12m >= 15:
-                    scores['momentum_12m_score'] = 75  # Good year
+                    scores['momentum_12m_score'] = 60
                 elif momentum_12m >= 5:
-                    scores['momentum_12m_score'] = 65  # Positive
+                    scores['momentum_12m_score'] = 50
                 elif momentum_12m >= 0:
-                    scores['momentum_12m_score'] = 55  # Flat
+                    scores['momentum_12m_score'] = 40
                 elif momentum_12m >= -20:
-                    scores['momentum_12m_score'] = 45  # Pullback (value entry?)
+                    scores['momentum_12m_score'] = 25
                 else:
-                    scores['momentum_12m_score'] = 35  # Poor performance
+                    scores['momentum_12m_score'] = 10
                 details['momentum_12m_pct'] = momentum_12m
             else:
-                scores['momentum_12m_score'] = 60
+                scores['momentum_12m_score'] = 50
                 details['momentum_12m_pct'] = None
         else:
             scores['momentum_3m_score'] = 50
             scores['momentum_6m_score'] = 50
             scores['momentum_12m_score'] = 50
         
-        # 4. Proximity to 52-week high - BALANCED VIEW (breakouts vs pullbacks)
+        # 4. Proximity to 52-week high
         pct_from_high = fundamentals.get('pct_from_52w_high')
         if pct_from_high is not None:
-            # Two perspectives on upside:
-            # - Near highs = momentum continuation (breakout potential)
-            # - Off highs = room to recover (mean reversion upside)
             if pct_from_high >= -5:
-                scores['high_proximity_score'] = 90  # At/near highs = breakout potential
+                scores['high_proximity_score'] = 80   # Near highs, strong momentum
             elif pct_from_high >= -15:
-                scores['high_proximity_score'] = 80  # Slight pullback = healthy consolidation
+                scores['high_proximity_score'] = 65   # Healthy consolidation
             elif pct_from_high >= -25:
-                scores['high_proximity_score'] = 75  # Good pullback = recovery upside
+                scores['high_proximity_score'] = 50   # Moderate pullback
             elif pct_from_high >= -35:
-                scores['high_proximity_score'] = 65  # Deeper pullback = substantial upside if recovers
+                scores['high_proximity_score'] = 35   # Significant decline
             else:
-                scores['high_proximity_score'] = 55  # Far from highs = uncertain upside
+                scores['high_proximity_score'] = 20   # Deep drawdown
             details['pct_from_52w_high'] = pct_from_high
         else:
-            scores['high_proximity_score'] = 60
+            scores['high_proximity_score'] = 50
             details['pct_from_52w_high'] = None
         
         # Weighted composite score - HEAVILY WEIGHT GROWTH METRICS
