@@ -1813,10 +1813,10 @@ Be SPECIFIC. Include dates and numbers in every root cause."""
         
         if avg_confidence > 75:
             threshold_changes['upside_minimum'] = 0.12  # Lower from 0.15 (more aggressive)
-            threshold_changes['conviction_threshold'] = 65  # Lower from 70 (more aggressive)
+            threshold_changes['conviction_threshold'] = 50  # Lower from 55 (more aggressive)
         elif avg_confidence < 50:
             threshold_changes['upside_minimum'] = 0.20  # Raise from 0.15 (more conservative)
-            threshold_changes['conviction_threshold'] = 75  # Raise from 70 (more conservative)
+            threshold_changes['conviction_threshold'] = 62  # Raise from 55 (more conservative)
         
         return threshold_changes
     

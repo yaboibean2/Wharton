@@ -131,4 +131,4 @@ backtest:
     embargo_days: 2
 thresholds:
   upside_minimum: 0.12
-  conviction_threshold: 65
+  conviction_threshold: 55

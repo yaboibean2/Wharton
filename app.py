@@ -3554,17 +3554,17 @@ def generate_pdf_report(result: dict) -> bytes:
     C_GRAY_MID  = HexColor('#6b7280')
 
     def score_color(s):
-        if s >= 75:   return C_GREEN
-        if s >= 65:   return C_L_GREEN
-        if s >= 55:   return C_YELLOW
-        if s >= 45:   return C_ORANGE
+        if s >= 65:   return C_GREEN
+        if s >= 55:   return C_L_GREEN
+        if s >= 45:   return C_YELLOW
+        if s >= 35:   return C_ORANGE
         return C_RED
 
     def score_label(s):
-        if s >= 75:   return 'STRONG BUY'
-        if s >= 65:   return 'BUY'
-        if s >= 55:   return 'HOLD'
-        if s >= 45:   return 'UNDERPERFORM'
+        if s >= 65:   return 'STRONG BUY'
+        if s >= 55:   return 'BUY'
+        if s >= 45:   return 'HOLD'
+        if s >= 35:   return 'UNDERPERFORM'
         return 'SELL'
 
     # ---- Data extraction ----
@@ -3818,9 +3818,9 @@ def display_stock_analysis(result: dict):
     with col2:
         # Score badge
         final_score = result['final_score']
-        if final_score >= 70:
+        if final_score >= 65:
             st.success(f"Score: {final_score:.1f}")
-        elif final_score >= 50:
+        elif final_score >= 45:
             st.info(f"Score: {final_score:.1f}")
         else:
             st.warning(f"Score: {final_score:.1f}")
@@ -3828,19 +3828,19 @@ def display_stock_analysis(result: dict):
     # --- Overall Assessment ---
     final_score = result['final_score']
     recommendation = result.get('recommendation', '')
-    if final_score >= 75:
+    if final_score >= 65:
         _assess_label = 'STRONG BUY'
         _assess_color = '#059669'
         _assess_desc = f'Strong score of {final_score:.1f} indicating excellent investment potential with favorable risk/reward profile.'
-    elif final_score >= 65:
+    elif final_score >= 55:
         _assess_label = 'BUY'
         _assess_color = '#10b981'
         _assess_desc = f'Solid score of {final_score:.1f} indicating good investment potential with acceptable risk/reward profile.'
-    elif final_score >= 55:
+    elif final_score >= 45:
         _assess_label = 'HOLD'
         _assess_color = '#f59e0b'
         _assess_desc = f'Moderate score of {final_score:.1f} suggesting a neutral outlook. Monitor for changes before acting.'
-    elif final_score >= 45:
+    elif final_score >= 35:
         _assess_label = 'UNDERPERFORM'
         _assess_color = '#f97316'
         _assess_desc = f'Below-average score of {final_score:.1f} indicating limited upside and elevated risk.'
@@ -3971,7 +3971,7 @@ def display_stock_analysis(result: dict):
     
     with col1:
         final_score = result['final_score']
-        delta_color = "normal" if final_score >= 70 else "inverse" if final_score < 50 else "off"
+        delta_color = "normal" if final_score >= 65 else "inverse" if final_score < 45 else "off"
         st.metric("Final Score", f"{final_score:.1f}/100")
     with col2:
         price_value = result['fundamentals'].get('price')

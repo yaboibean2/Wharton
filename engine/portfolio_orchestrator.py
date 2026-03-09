@@ -763,13 +763,13 @@ class PortfolioOrchestrator:
 
     def _generate_recommendation(self, score: float) -> str:
         """Generate investment recommendation based on score."""
-        if score >= 80:
+        if score >= 65:
             return "STRONG BUY"
-        elif score >= 70:
+        elif score >= 55:
             return "BUY"
-        elif score >= 60:
+        elif score >= 45:
             return "HOLD"
-        elif score >= 40:
+        elif score >= 35:
             return "WEAK HOLD"
         else:
             return "SELL"
