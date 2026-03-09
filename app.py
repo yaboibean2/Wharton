@@ -1525,7 +1525,10 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             progress_slot.empty()
 
             if 'error' in result:
-                st.error(f"{result['error']}")
+                if result['error'] == 'ticker_not_found':
+                    _render_ticker_not_found(result.get('ticker', params.get('ticker', '')))
+                else:
+                    st.error(f"{result['error']}")
                 return
 
             # Persist results so page survives widget-triggered reruns
@@ -1905,7 +1908,10 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         st.success(f"Batch complete — {len(results)}/{total_stocks} stocks analyzed in {bm}m {bs:02d}s")
         if failed_tickers:
             for ft, fe in failed_tickers:
-                st.error(f"**{ft}**: {fe}")
+                if fe == 'ticker_not_found':
+                    _render_ticker_not_found(ft)
+                else:
+                    st.error(f"**{ft}**: {fe}")
         time.sleep(0.5)
         
         # Display results summary
@@ -3485,6 +3491,43 @@ def _cleanup_display_result_backup():
 #                         st.error(f"Export failed: {e}")
 # 
 # 
+def _render_ticker_not_found(ticker: str):
+    """Render a friendly, informative error when a ticker has no real data."""
+    st.markdown(
+        f"""
+        <div style="
+            background:#fff8f8;border:1.5px solid #fca5a5;border-radius:12px;
+            padding:22px 26px;margin:16px 0;
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+        ">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <span style="font-size:22px;">⚠️</span>
+            <span style="font-size:17px;font-weight:700;color:#b91c1c;">
+              No data found for &ldquo;{ticker}&rdquo;
+            </span>
+          </div>
+          <p style="color:#374151;margin:0 0 10px 0;font-size:14px;">
+            We couldn&rsquo;t retrieve reliable market data for this ticker.
+            This typically happens because:
+          </p>
+          <ul style="color:#374151;font-size:13px;margin:0 0 12px 0;padding-left:20px;line-height:1.8;">
+            <li>The ticker symbol is <strong>misspelled</strong> (e.g. <code>APPL</code> instead of <code>AAPL</code>)</li>
+            <li>The stock is <strong>delisted</strong> or no longer actively trading</li>
+            <li>It&rsquo;s an <strong>OTC / pink-sheet / penny stock</strong> with limited data coverage</li>
+            <li>It&rsquo;s a <strong>very new listing</strong> or a private company</li>
+            <li>The symbol belongs to a <strong>non-US exchange</strong> not covered by our data providers</li>
+          </ul>
+          <p style="color:#6b7280;font-size:13px;margin:0;">
+            <strong>Try:</strong> &nbsp;
+            Double-check the symbol on a site like Yahoo Finance or Google Finance,
+            or use a well-known US stock (e.g. AAPL, MSFT, GOOGL, JPM) to verify the system is working.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def generate_pdf_report(result: dict) -> bytes:
     """Generate a formatted PDF investment analysis report using ReportLab."""
     from io import BytesIO

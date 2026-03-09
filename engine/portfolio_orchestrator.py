@@ -295,8 +295,31 @@ class PortfolioOrchestrator:
                 'eligible': False
             }
         
-        # Show specific extracted values
+        # ── Data quality gate: reject synthetic / no-data results ──
         fundamentals = data.get('fundamentals', {})
+        _fund_sources = fundamentals.get('data_sources', [])
+        _is_synthetic = isinstance(_fund_sources, list) and 'synthetic' in _fund_sources
+        _fund_price   = fundamentals.get('price')
+        _has_price    = isinstance(_fund_price, (int, float)) and _fund_price > 0
+        if _is_synthetic or not _has_price:
+            logger.warning(
+                f"No real market data for {ticker} "
+                f"(synthetic={_is_synthetic}, price={_fund_price})"
+            )
+            return {
+                'ticker': ticker,
+                'error': 'ticker_not_found',
+                'fundamentals': {},
+                'price_history': {},
+                'agent_results': {},
+                'agent_scores': {},
+                'agent_rationales': {},
+                'blended_score': 0,
+                'final_score': 0,
+                'eligible': False,
+            }
+
+        # Show specific extracted values
         price = fundamentals.get('price', 'N/A')
         eps = fundamentals.get('eps', 'N/A')
         pe_ratio = fundamentals.get('pe_ratio', 'N/A')
