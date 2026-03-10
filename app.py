@@ -643,6 +643,36 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
     background: #3b5998 !important;
     border-color: #3b5998 !important;
 }
+
+/* ===== Help / Tooltip Icon — clean dark circle ===== */
+[data-testid="stTooltipHoverTarget"],
+button[data-testid="stTooltipHoverTarget"] {
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 0 !important;
+    border-radius: 50% !important;
+    background: transparent !important;
+    border: 1.5px solid #374151 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: help !important;
+    padding: 0 !important;
+    margin-left: 4px !important;
+    opacity: 0.5 !important;
+    transition: opacity 0.15s ease !important;
+    vertical-align: middle !important;
+}
+[data-testid="stTooltipHoverTarget"]:hover {
+    opacity: 1 !important;
+    border-color: #111827 !important;
+}
+[data-testid="stTooltipHoverTarget"] svg {
+    color: #374151 !important;
+    fill: #374151 !important;
+    width: 8px !important;
+    height: 8px !important;
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -4315,6 +4345,13 @@ def display_stock_analysis(result: dict, show_back_button: bool = True):
     if weight_preset == 'theory_based' and 'locked_theory_weights' in st.session_state:
         with st.expander("Theory Based Weights Used in This Analysis", expanded=True):
             theory_s = st.session_state.get('theory_settings', {})
+
+            st.caption(
+                "Theory mode automatically derives agent weights from academic research "
+                "(Fama–French, Carhart, Ang & Bekaert) based on your chosen horizon, "
+                "risk framework, and macro regime — no manual slider tuning needed."
+            )
+            st.markdown("---")
 
             # ── Settings row ──────────────────────────────────────────────
             _hz_map = {
