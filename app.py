@@ -1670,6 +1670,9 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         # Multiple stocks analysis — use the same progress card as single stock
         # but with an outer wrapper showing overall batch progress.
 
+        # Clear the outer progress_slot rendered before the mode check
+        progress_slot.empty()
+
         # Validate all tickers upfront before running any analysis
         _invalid_tickers = []
         _valid_tickers = []
@@ -1704,6 +1707,10 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             avg_time_per_stock = _lp.get('avg_total', 30.0)
 
         total_stocks = len(tickers)
+
+        # Create slots ONCE outside the loop so no extra placeholders accumulate
+        _batch_header_slot = st.empty()
+        _stock_detail_slot = st.empty()
 
         for idx, stock_ticker in enumerate(tickers):
             stock_start_time = time.time()
@@ -1806,10 +1813,6 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                     step_pct=step_pct,
                     completed_steps=completed_steps
                 )
-
-            # Create slots for this stock
-            _batch_header_slot = st.empty()
-            _stock_detail_slot = st.empty()
 
             # Initial render
             _render_multi_progress(_batch_header_slot, 0, "Initializing analysis…",
