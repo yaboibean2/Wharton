@@ -4788,35 +4788,32 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
     # Sort by final score (descending)
     comparison_data = sorted(comparison_data, key=lambda x: x['Final Score'], reverse=True)
 
-    # Add rank badges after sorting
-    _rank_badges = ['\U0001f947', '\U0001f948', '\U0001f949'] + [f'#{i}' for i in range(4, len(comparison_data) + 1)]
+    # Add numeric rank after sorting
     for _ri, _rrow in enumerate(comparison_data):
-        _rrow['Rank'] = _rank_badges[_ri]
+        _rrow['Rank'] = _ri + 1
 
     # Create DataFrame
     import pandas as pd
     df = pd.DataFrame(comparison_data)
 
-    # Build display dataframe: string-format Price and Market Cap, keep scores numeric for ProgressColumn
+    # Format Price and Market Cap as strings; keep scores numeric for ProgressColumn
     df_display = df.copy()
     df_display['Price'] = df_display['Price'].apply(lambda x: f"${x:,.2f}" if x and x > 0 else 'N/A')
     df_display['Market Cap'] = df_display['Market Cap'].apply(
         lambda x: f"${x/1e9:.1f}B" if x and x >= 1e9 else f"${x/1e6:.0f}M" if x and x > 0 else 'N/A'
     )
 
-    # Column order: Rank first, then core info, then score bars
     _col_order = ['Rank', 'Ticker', 'Final Score', 'Recommendation', 'Sector',
                   'Price', 'Market Cap', 'Value Score', 'Growth Score',
                   'Macro Score', 'Risk Score', 'Sentiment Score']
     df_display = df_display[_col_order]
 
-    # Display table with ProgressColumn score bars + built-in click-to-sort
     st.dataframe(
         df_display,
         use_container_width=True,
         hide_index=True,
         column_config={
-            'Rank': st.column_config.TextColumn('Rank', width='small'),
+            'Rank': st.column_config.NumberColumn('Rank', format='%d', width='small'),
             'Final Score': st.column_config.ProgressColumn(
                 'Final Score', min_value=0, max_value=100, format='%.1f'
             ),
@@ -4838,14 +4835,14 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
         },
     )
 
-    # Export buttons: CSV + PDF side by side
+    # Export buttons
     csv = df_display.to_csv(index=False)
     _btn_col1, _btn_col2 = st.columns(2)
     with _btn_col1:
         st.download_button(
-            label='\u2b07\ufe0f  Download Comparison (CSV)',
+            label='Download CSV',
             data=csv,
-            file_name=f"stock_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"comparison_{datetime.now().strftime('%Y%m%d')}.csv",
             mime='text/csv',
             use_container_width=True,
         )
@@ -4853,7 +4850,7 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
         try:
             _multi_pdf = generate_multi_stock_pdf_report(results)
             st.download_button(
-                label='\u2b07\ufe0f  Download Comparison PDF',
+                label='Download PDF Report',
                 data=_multi_pdf,
                 file_name=f"comparison_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime='application/pdf',
