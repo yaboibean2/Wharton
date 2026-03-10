@@ -4315,50 +4315,136 @@ def display_stock_analysis(result: dict, show_back_button: bool = True):
     if weight_preset == 'theory_based' and 'locked_theory_weights' in st.session_state:
         with st.expander("Theory Based Weights Used in This Analysis", expanded=True):
             theory_s = st.session_state.get('theory_settings', {})
-            horizon_labels = {"short": "Short-term (3\u20136 mo)", "medium": "Medium-term (6\u201318 mo)", "long": "Long-term (18+ mo)"}
-            risk_labels = {"capital": "Capital-weighted", "risk_contribution": "Risk-contribution-weighted"}
-            sens_labels = {"conservative": "Conservative (\u00b15pp)", "moderate": "Moderate (\u00b110pp)", "aggressive": "Aggressive (\u00b115pp)"}
-            _dash = "\u2014"
-            _hz = horizon_labels.get(theory_s.get('horizon'), _dash)
-            _rf = risk_labels.get(theory_s.get('risk_framework'), _dash)
-            _rs = sens_labels.get(theory_s.get('regime_sensitivity'), _dash)
-            st.markdown(
-                f"**Settings:** {_hz} \u00b7 "
-                f"{_rf} \u00b7 "
-                f"{_rs}"
-            )
 
+            # ── Settings row ──────────────────────────────────────────────
+            _hz_map = {
+                "short":  "Short-term (3–6 mo)",
+                "medium": "Medium-term (6–18 mo)",
+                "long":   "Long-term (18+ mo)",
+            }
+            _rf_map = {
+                "capital":           "Capital-weighted",
+                "risk_contribution": "Risk-contribution-weighted",
+            }
+            _rs_map = {
+                "conservative": "Conservative (±5pp)",
+                "moderate":     "Moderate (±10pp)",
+                "aggressive":   "Aggressive (±15pp)",
+            }
+            _hz = _hz_map.get(theory_s.get('horizon'), "—")
+            _rf = _rf_map.get(theory_s.get('risk_framework'), "—")
+            _rs = _rs_map.get(theory_s.get('regime_sensitivity'), "—")
+
+            _sc1, _sc2, _sc3 = st.columns(3)
+            with _sc1:
+                st.metric(
+                    label="Investment Horizon",
+                    value=_hz,
+                    help="How far ahead this analysis is optimized for. "
+                         "Longer horizons favor value and quality factors; "
+                         "shorter horizons lean on momentum and sentiment.",
+                )
+            with _sc2:
+                st.metric(
+                    label="Weighting Method",
+                    value=_rf,
+                    help="How agent weights are sized relative to each other. "
+                         "Capital-weighted gives equal budget to each agent. "
+                         "Risk-contribution-weighted scales each agent so that "
+                         "higher-volatility signals have less influence on the final score.",
+                )
+            with _sc3:
+                st.metric(
+                    label="Regime Sensitivity",
+                    value=_rs,
+                    help="How much the macro regime is allowed to shift agent weights. "
+                         "±5pp (conservative) makes small adjustments; "
+                         "±15pp (aggressive) can significantly re-tilt toward growth "
+                         "in expansions or toward value/risk in downturns.",
+                )
+
+            st.markdown("---")
+
+            # ── Agent descriptions for tooltips ───────────────────────────
+            _agent_help = {
+                'value':          "Scores the stock on traditional valuation metrics — P/E ratio, EV/EBITDA, and free cash flow yield. A high weight here means cheap stocks score better.",
+                'growth_momentum':"Scores earnings and revenue growth plus recent price momentum. A high weight here rewards fast-growing companies with rising share prices.",
+                'macro_regime':   "Adjusts the score based on the current economic environment (expansion, recession, high inflation, etc.). Its base weight is small because it mainly shifts the other agents via regime detection.",
+                'risk':           "Penalizes high volatility, high beta, and large drawdowns. A high weight here makes the final score more conservative and safety-focused.",
+                'sentiment':      "Scores based on recent news, analyst revisions, and earnings surprises. A high weight here means market narrative and near-term catalysts matter more.",
+            }
+
+            # ── Base weights ──────────────────────────────────────────────
             base_weights = st.session_state.get('locked_theory_weights', {})
-            agent_labels_map = {'value': 'Value', 'growth_momentum': 'Growth/Momentum',
-                                'macro_regime': 'Macro Regime', 'risk': 'Risk', 'sentiment': 'Sentiment'}
-
-            # Base weights
-            st.markdown("**Base Allocation (before regime shift):**")
             base_total = sum(base_weights.values()) or 1
-            bcols = st.columns(5)
-            for i, (k, lbl) in enumerate(agent_labels_map.items()):
-                with bcols[i]:
-                    st.metric(lbl, f"{(base_weights.get(k, 0) / base_total) * 100:.0f}%")
+            _agent_labels = {
+                'value':          'Value',
+                'growth_momentum':'Growth & Momentum',
+                'macro_regime':   'Macro Regime',
+                'risk':           'Risk',
+                'sentiment':      'Sentiment',
+            }
 
-            # Regime-adjusted weights (from analysis result)
+            st.markdown("**Base Allocation** — how each agent is weighted before any macro adjustment")
+            _bcols = st.columns(5)
+            for i, (k, lbl) in enumerate(_agent_labels.items()):
+                with _bcols[i]:
+                    st.metric(
+                        label=lbl,
+                        value=f"{(base_weights.get(k, 0) / base_total) * 100:.0f}%",
+                        help=_agent_help[k],
+                    )
+
+            # ── Regime-adjusted weights ───────────────────────────────────
             detected_regime = result.get('detected_regime')
             adj_weights = result.get('regime_adjusted_weights')
             if detected_regime and adj_weights:
                 regime_display = detected_regime.replace('_', ' ').title()
-                st.markdown(f"**Detected Macro Regime:** `{regime_display}`")
-                st.markdown("**Regime-Adjusted Allocation:**")
+                _regime_help = {
+                    'Expansion':     "The economy is growing — GDP and employment are rising. The system tilts toward growth and momentum.",
+                    'Recession':     "Economic contraction — GDP is falling. The system tilts toward value and defensive/low-risk stocks.",
+                    'Stagflation':   "High inflation with slow growth. The system favors value and real assets over growth.",
+                    'High Inflation':"Prices rising fast. The system reduces growth exposure and increases value weight.",
+                }.get(regime_display, "The detected macro environment that drove the weight adjustment below.")
+
+                st.markdown("---")
+                _reg_col, _ = st.columns([2, 3])
+                with _reg_col:
+                    st.metric(
+                        label="Detected Macro Regime",
+                        value=regime_display,
+                        help=_regime_help,
+                    )
+
                 adj_total = sum(adj_weights.values()) or 1
-                agent_key_map = {'value_agent': 'Value', 'growth_momentum_agent': 'Growth/Momentum',
-                                 'macro_regime_agent': 'Macro Regime', 'risk_agent': 'Risk', 'sentiment_agent': 'Sentiment'}
-                acols = st.columns(5)
-                for i, (k, lbl) in enumerate(agent_key_map.items()):
-                    with acols[i]:
-                        st.metric(lbl, f"{(adj_weights.get(k, 0) / adj_total) * 100:.1f}%")
+                _adj_key_map = {
+                    'value_agent':           'value',
+                    'growth_momentum_agent': 'growth_momentum',
+                    'macro_regime_agent':    'macro_regime',
+                    'risk_agent':            'risk',
+                    'sentiment_agent':       'sentiment',
+                }
+                st.markdown("**Regime-Adjusted Allocation** — final weights used to compute the score")
+                _acols = st.columns(5)
+                for i, (ak, sk) in enumerate(_adj_key_map.items()):
+                    with _acols[i]:
+                        base_pct = (base_weights.get(sk, 0) / base_total) * 100
+                        adj_pct  = (adj_weights.get(ak, 0) / adj_total) * 100
+                        delta    = adj_pct - base_pct
+                        st.metric(
+                            label=_agent_labels[sk],
+                            value=f"{adj_pct:.1f}%",
+                            delta=f"{delta:+.1f}pp vs base",
+                            help=f"{_agent_help[sk]}\n\n"
+                                 f"Base: {base_pct:.0f}% → Regime-adjusted: {adj_pct:.1f}% "
+                                 f"({'increased' if delta > 0 else 'decreased' if delta < 0 else 'unchanged'} "
+                                 f"by {abs(delta):.1f}pp due to {regime_display} regime).",
+                        )
 
             st.caption(
-                "Weights derived from Fama\u2013French (1992), Carhart (1997), and regime-switching "
-                "research (Ang & Bekaert, 2002). Upside multiplier is disabled \u2014 the score is a "
-                "pure weighted average reflecting the theoretical factor allocation."
+                "Weights derived from Fama–French (1992), Carhart (1997), and regime-switching "
+                "research (Ang & Bekaert, 2002). The final score is a pure weighted average — "
+                "no upside multiplier is applied in theory mode."
             )
 
     elif weight_preset == 'custom_weights' and 'locked_custom_weights' in st.session_state:
