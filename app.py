@@ -3614,6 +3614,295 @@ def _render_ticker_not_found(ticker: str):
     )
 
 
+def generate_multi_stock_pdf_report(results: list) -> bytes:
+    """Generate a multi-stock comparison PDF report using ReportLab."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether,
+    )
+
+    # ---- Colour palette ----
+    C_DARK      = HexColor('#1a1a2e')
+    C_BRAND     = HexColor('#3b5998')
+    C_GREEN     = HexColor('#059669')
+    C_L_GREEN   = HexColor('#10b981')
+    C_YELLOW    = HexColor('#d97706')
+    C_ORANGE    = HexColor('#f97316')
+    C_RED       = HexColor('#ef4444')
+    C_GRAY_BG   = HexColor('#f8f9fa')
+    C_GRAY_LINE = HexColor('#e5e7eb')
+    C_GRAY_MID  = HexColor('#6b7280')
+
+    def _sc(s):
+        if s >= 65:   return C_GREEN
+        if s >= 55:   return C_L_GREEN
+        if s >= 45:   return C_YELLOW
+        if s >= 35:   return C_ORANGE
+        return C_RED
+
+    def _sl(s):
+        if s >= 65:   return 'STRONG BUY'
+        if s >= 55:   return 'BUY'
+        if s >= 45:   return 'HOLD'
+        if s >= 35:   return 'UNDERPERFORM'
+        return 'SELL'
+
+    def _fmt_price(p):
+        return f'${p:,.2f}' if p and p > 0 else 'N/A'
+
+    def _fmt_cap(mc):
+        if mc and mc >= 1e12: return f'${mc/1e12:.1f}T'
+        if mc and mc >= 1e9:  return f'${mc/1e9:.1f}B'
+        if mc and mc > 0:     return f'${mc/1e6:.0f}M'
+        return 'N/A'
+
+    sorted_results = sorted(results, key=lambda r: float(r.get('final_score', 0)), reverse=True)
+    report_date = datetime.now().strftime('%B %d, %Y')
+    n = len(sorted_results)
+
+    # ---- Styles ----
+    styles = getSampleStyleSheet()
+    S = lambda name, **kw: ParagraphStyle(name, parent=styles['Normal'], **kw)
+    sTitle      = S('msTitle',   fontSize=20, fontName='Helvetica-Bold', textColor=C_DARK, leading=26, spaceAfter=4)
+    sSub        = S('msSub',     fontSize=10, textColor=C_GRAY_MID, leading=14, spaceAfter=3)
+    sDate       = S('msDate',    fontSize=9,  textColor=C_GRAY_MID, spaceAfter=8)
+    sSecHdr     = S('msSecHdr',  fontSize=13, fontName='Helvetica-Bold', textColor=C_BRAND, spaceBefore=14, spaceAfter=4)
+    sWhiteBold  = S('msWB',      fontSize=12, fontName='Helvetica-Bold', textColor=white)
+    sWhiteBoldR = S('msWBR',     fontSize=12, fontName='Helvetica-Bold', textColor=white, alignment=TA_RIGHT)
+    sWhiteSub   = S('msWSub',    fontSize=9,  textColor=white, leading=12)
+
+    # ---- Document ----
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=0.75*inch, rightMargin=0.75*inch,
+        topMargin=0.75*inch,  bottomMargin=0.75*inch,
+        title='Multi-Stock Comparison Report',
+    )
+    story = []
+
+    # === HEADER ===
+    story.append(Paragraph('Multi-Stock Comparison Report', sTitle))
+    story.append(Paragraph(f'{n} stock{"s" if n != 1 else ""} analyzed', sSub))
+    story.append(Paragraph(f'Report generated: {report_date}', sDate))
+    story.append(HRFlowable(width='100%', thickness=2, color=C_BRAND, spaceAfter=10))
+
+    # === RANKING TABLE ===
+    story.append(Paragraph('Rankings', sSecHdr))
+    rank_badges = ['#1', '#2', '#3'] + [f'#{i}' for i in range(4, n + 1)]
+    rank_rows = [['Rank', 'Ticker', 'Score', 'Signal', 'Sector', 'Price', 'Market Cap']]
+    for i, r in enumerate(sorted_results):
+        fs  = float(r.get('final_score', 0))
+        fund = r.get('fundamentals', {})
+        rank_rows.append([
+            rank_badges[i],
+            r.get('ticker', ''),
+            f'{fs:.1f}',
+            _sl(fs),
+            str(fund.get('sector', 'N/A') or 'N/A')[:20],
+            _fmt_price(fund.get('price')),
+            _fmt_cap(fund.get('market_cap')),
+        ])
+    rk_col_w = [0.5*inch, 0.75*inch, 0.6*inch, 1.2*inch, 1.85*inch, 0.9*inch, 1.2*inch]
+    rk_table  = Table(rank_rows, colWidths=rk_col_w)
+    rk_style  = [
+        ('BACKGROUND',    (0, 0), (-1, 0), C_BRAND),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), white),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        ('FONTSIZE',      (0, 1), (-1, -1), 9),
+        ('GRID',          (0, 0), (-1, -1), 0.4, C_GRAY_LINE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 5),
+        ('FONTNAME',      (1, 1), (1, -1), 'Helvetica-Bold'),
+        ('TEXTCOLOR',     (1, 1), (1, -1), C_DARK),
+    ]
+    for i, r in enumerate(sorted_results, start=1):
+        fs  = float(r.get('final_score', 0))
+        c   = _sc(fs)
+        bg  = C_GRAY_BG if i % 2 == 0 else white
+        rk_style += [
+            ('BACKGROUND', (3, i), (3, i), c),
+            ('TEXTCOLOR',  (3, i), (3, i), white),
+            ('FONTNAME',   (3, i), (3, i), 'Helvetica-Bold'),
+            ('TEXTCOLOR',  (2, i), (2, i), c),
+            ('FONTNAME',   (2, i), (2, i), 'Helvetica-Bold'),
+        ]
+        for col in [0, 1, 4, 5, 6]:
+            rk_style.append(('BACKGROUND', (col, i), (col, i), bg))
+    rk_table.setStyle(TableStyle(rk_style))
+    story.append(rk_table)
+    story.append(Spacer(1, 12))
+
+    # === FINAL SCORE BAR CHART ===
+    story.append(Paragraph('Final Score Comparison', sSecHdr))
+    try:
+        from reportlab.graphics.shapes import Drawing
+        from reportlab.graphics.charts.barcharts import VerticalBarChart
+        _cw = 7 * inch
+        _ch = 2.0 * inch
+        _d  = Drawing(_cw, _ch)
+        _bc = VerticalBarChart()
+        _bc.x      = 48
+        _bc.y      = 30
+        _bc.width  = _cw - 68
+        _bc.height = _ch - 46
+        _tickers_chart = [r.get('ticker', '') for r in sorted_results]
+        _fscores_chart = [float(r.get('final_score', 0)) for r in sorted_results]
+        _bc.data = [_fscores_chart]
+        _bc.categoryAxis.categoryNames = _tickers_chart
+        _bc.valueAxis.valueMin  = 0
+        _bc.valueAxis.valueMax  = 100
+        _bc.valueAxis.valueStep = 25
+        _bar_w = max(12, min(35, int((_cw - 120) / max(n, 1))))
+        _bc.barWidth = _bar_w
+        for _bi, _bs in enumerate(_fscores_chart):
+            _bc.bars[0, _bi].fillColor = _sc(_bs)
+        _bc.categoryAxis.labels.fontName = 'Helvetica-Bold'
+        _bc.categoryAxis.labels.fontSize = 9
+        _bc.valueAxis.labels.fontName    = 'Helvetica'
+        _bc.valueAxis.labels.fontSize    = 8
+        _d.add(_bc)
+        story.append(_d)
+        story.append(Spacer(1, 8))
+    except Exception:
+        pass  # chart optional
+
+    # === AGENT SCORES COMPARISON TABLE ===
+    story.append(Paragraph('Agent Scores by Stock', sSecHdr))
+    _agent_keys_ms = [
+        ('value_agent',           'Value'),
+        ('growth_momentum_agent', 'Growth / Momentum'),
+        ('macro_regime_agent',    'Macro Regime'),
+        ('risk_agent',            'Risk'),
+        ('sentiment_agent',       'Sentiment'),
+    ]
+    _ticker_hdrs = [r.get('ticker', '') for r in sorted_results]
+    agent_tbl_rows = [['Agent'] + _ticker_hdrs]
+    for key, label in _agent_keys_ms:
+        row = [label]
+        for r in sorted_results:
+            s = float(r.get('agent_scores', {}).get(key, 0))
+            row.append(f'{s:.1f}')
+        agent_tbl_rows.append(row)
+    _label_col_w = 1.5 * inch
+    _score_col_w = (7.0 * inch - _label_col_w) / max(n, 1)
+    at_col_w   = [_label_col_w] + [_score_col_w] * n
+    agent_tbl  = Table(agent_tbl_rows, colWidths=at_col_w)
+    at_style   = [
+        ('BACKGROUND',    (0, 0), (-1, 0), C_BRAND),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), white),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        ('FONTNAME',      (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 1), (-1, -1), 9),
+        ('GRID',          (0, 0), (-1, -1), 0.4, C_GRAY_LINE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 5),
+        ('ALIGN',         (1, 1), (-1, -1), 'CENTER'),
+    ]
+    for ri, (key, _) in enumerate(_agent_keys_ms, start=1):
+        bg = C_GRAY_BG if ri % 2 == 0 else white
+        at_style.append(('BACKGROUND', (0, ri), (0, ri), bg))
+        for ci, r in enumerate(sorted_results, start=1):
+            s  = float(r.get('agent_scores', {}).get(key, 0))
+            at_style += [
+                ('TEXTCOLOR',  (ci, ri), (ci, ri), _sc(s)),
+                ('FONTNAME',   (ci, ri), (ci, ri), 'Helvetica-Bold'),
+                ('BACKGROUND', (ci, ri), (ci, ri), bg),
+            ]
+    agent_tbl.setStyle(TableStyle(at_style))
+    story.append(agent_tbl)
+    story.append(Spacer(1, 14))
+
+    # === INDIVIDUAL STOCK CARDS ===
+    story.append(Paragraph('Individual Stock Summaries', sSecHdr))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=C_GRAY_LINE, spaceAfter=6))
+    for r in sorted_results:
+        ticker_ms   = r.get('ticker', '')
+        fund_ms     = r.get('fundamentals', {})
+        fs_ms       = float(r.get('final_score', 0))
+        c_ms        = _sc(fs_ms)
+        _raw_ms     = str(fund_ms.get('name', ticker_ms) or ticker_ms)
+        company_ms  = _raw_ms.split('\n')[0][:70]
+        rationale_ms = str(r.get('rationale', '')).strip()
+        # Truncate rationale to ~600 chars
+        if len(rationale_ms) > 600:
+            rationale_ms = rationale_ms[:597] + '...'
+        # Header banner
+        card_hdr = Table([[
+            Paragraph(f'<b>{ticker_ms}</b>', sWhiteBold),
+            Paragraph(f'<b>{fs_ms:.1f} / 100 \u2014 {_sl(fs_ms)}</b>', sWhiteBoldR),
+        ]], colWidths=[3.5*inch, 3.5*inch])
+        card_hdr.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), c_ms),
+            ('TOPPADDING',    (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+        ]))
+        # Mini metrics row
+        pe_ms   = fund_ms.get('pe_ratio')
+        beta_ms = fund_ms.get('beta')
+        mini_data = [[
+            'P/E',   f'{pe_ms:.1f}'   if pe_ms   else 'N/A',
+            'Beta',  f'{beta_ms:.2f}' if beta_ms  else 'N/A',
+            'Price', _fmt_price(fund_ms.get('price')),
+            'Mkt Cap', _fmt_cap(fund_ms.get('market_cap')),
+        ]]
+        mini_tbl = Table(mini_data, colWidths=[
+            0.55*inch, 0.85*inch, 0.55*inch, 0.85*inch,
+            0.55*inch, 1.15*inch, 0.75*inch, 1.75*inch
+        ])
+        mini_tbl.setStyle(TableStyle([
+            ('FONTSIZE',      (0, 0), (-1, -1), 8),
+            ('FONTNAME',      (0, 0), (0, 0),   'Helvetica-Bold'),
+            ('FONTNAME',      (2, 0), (2, 0),   'Helvetica-Bold'),
+            ('FONTNAME',      (4, 0), (4, 0),   'Helvetica-Bold'),
+            ('FONTNAME',      (6, 0), (6, 0),   'Helvetica-Bold'),
+            ('TEXTCOLOR',     (0, 0), (0, 0),   C_GRAY_MID),
+            ('TEXTCOLOR',     (2, 0), (2, 0),   C_GRAY_MID),
+            ('TEXTCOLOR',     (4, 0), (4, 0),   C_GRAY_MID),
+            ('TEXTCOLOR',     (6, 0), (6, 0),   C_GRAY_MID),
+            ('BACKGROUND',    (0, 0), (-1, -1), C_GRAY_BG),
+            ('TOPPADDING',    (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 5),
+        ]))
+        rat_para = Paragraph(
+            rationale_ms,
+            S(f'rat_{ticker_ms}', fontSize=9, leading=13, textColor=C_DARK, spaceAfter=2)
+        )
+        story.append(KeepTogether([
+            card_hdr,
+            Spacer(1, 2),
+            Paragraph(company_ms, S(f'cn_{ticker_ms}', fontSize=9, textColor=C_GRAY_MID,
+                                    spaceBefore=2, spaceAfter=4)),
+            mini_tbl,
+            Spacer(1, 5),
+            rat_para,
+            Spacer(1, 12),
+        ]))
+
+    # === FOOTER ===
+    story.append(HRFlowable(width='100%', thickness=0.5, color=C_GRAY_LINE, spaceBefore=8, spaceAfter=4))
+    story.append(Paragraph(
+        'This report is generated by the Total Insights Investment Analysis System. '
+        'For informational purposes only \u2014 not financial advice.',
+        S('ms_footer', fontSize=7, textColor=C_GRAY_MID, alignment=TA_CENTER)
+    ))
+    doc.build(story)
+    return buf.getvalue()
+
+
 def generate_pdf_report(result: dict) -> bytes:
     """Generate a formatted PDF investment analysis report using ReportLab."""
     from io import BytesIO
@@ -3833,6 +4122,43 @@ def generate_pdf_report(result: dict) -> bytes:
     s_table.setStyle(TableStyle(s_style))
     story.append(s_table)
     story.append(Spacer(1, 14))
+
+    # === AGENT SCORE BAR CHART ===
+    story.append(Paragraph("Agent Score Overview", sSecHdr))
+    try:
+        from reportlab.graphics.shapes import Drawing
+        from reportlab.graphics.charts.barcharts import VerticalBarChart
+        _cw = 7 * inch
+        _ch = 1.85 * inch
+        _d = Drawing(_cw, _ch)
+        _bc = VerticalBarChart()
+        _bc.x = 45
+        _bc.y = 28
+        _bc.width = _cw - 65
+        _bc.height = _ch - 40
+        _agent_keys_chart = [
+            'value_agent', 'growth_momentum_agent', 'macro_regime_agent',
+            'risk_agent', 'sentiment_agent'
+        ]
+        _agent_labels_chart = ['Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
+        _scores_chart = [float(agent_scores.get(k, 0)) for k in _agent_keys_chart]
+        _bc.data = [_scores_chart]
+        _bc.categoryAxis.categoryNames = _agent_labels_chart
+        _bc.valueAxis.valueMin = 0
+        _bc.valueAxis.valueMax = 100
+        _bc.valueAxis.valueStep = 25
+        for _bi, _bs in enumerate(_scores_chart):
+            _bc.bars[0, _bi].fillColor = score_color(_bs)
+        _bc.barWidth = 30
+        _bc.categoryAxis.labels.fontName = 'Helvetica'
+        _bc.categoryAxis.labels.fontSize = 9
+        _bc.valueAxis.labels.fontName = 'Helvetica'
+        _bc.valueAxis.labels.fontSize = 8
+        _d.add(_bc)
+        story.append(_d)
+        story.append(Spacer(1, 8))
+    except Exception:
+        pass  # chart is optional – skip silently if drawing fails
 
     # === AGENT RATIONALES ===
     story.append(Paragraph("Agent Analysis Details", sSecHdr))
@@ -4446,47 +4772,96 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
     for result in results:
         row = {
             'Ticker': result['ticker'],
-            'Final Score': result['final_score'],
+            'Final Score': round(float(result['final_score']), 1),
             'Recommendation': result.get('recommendation', 'N/A'),
             'Price': result['fundamentals'].get('price', 0),
             'Market Cap': result['fundamentals'].get('market_cap', 0),
             'Sector': result['fundamentals'].get('sector', 'N/A'),
-            'Value Score': result.get('agent_scores', {}).get('value_agent', 0),
-            'Growth Score': result.get('agent_scores', {}).get('growth_momentum_agent', 0),
-            'Macro Score': result.get('agent_scores', {}).get('macro_regime_agent', 0),
-            'Risk Score': result.get('agent_scores', {}).get('risk_agent', 0),
-            'Sentiment Score': result.get('agent_scores', {}).get('sentiment_agent', 0),
+            'Value Score': round(float(result.get('agent_scores', {}).get('value_agent', 0)), 1),
+            'Growth Score': round(float(result.get('agent_scores', {}).get('growth_momentum_agent', 0)), 1),
+            'Macro Score': round(float(result.get('agent_scores', {}).get('macro_regime_agent', 0)), 1),
+            'Risk Score': round(float(result.get('agent_scores', {}).get('risk_agent', 0)), 1),
+            'Sentiment Score': round(float(result.get('agent_scores', {}).get('sentiment_agent', 0)), 1),
         }
         comparison_data.append(row)
-    
+
     # Sort by final score (descending)
     comparison_data = sorted(comparison_data, key=lambda x: x['Final Score'], reverse=True)
-    
+
+    # Add rank badges after sorting
+    _rank_badges = ['\U0001f947', '\U0001f948', '\U0001f949'] + [f'#{i}' for i in range(4, len(comparison_data) + 1)]
+    for _ri, _rrow in enumerate(comparison_data):
+        _rrow['Rank'] = _rank_badges[_ri]
+
     # Create DataFrame
     import pandas as pd
     df = pd.DataFrame(comparison_data)
-    
-    # Format numeric columns
-    df['Final Score'] = df['Final Score'].round(1)
-    df['Price'] = df['Price'].apply(lambda x: f"${x:,.2f}")
-    df['Market Cap'] = df['Market Cap'].apply(lambda x: f"${x/1e9:.1f}B" if x >= 1e9 else f"${x/1e6:.0f}M" if x > 0 else "N/A")
-    df['Value Score'] = df['Value Score'].round(1)
-    df['Growth Score'] = df['Growth Score'].round(1)
-    df['Macro Score'] = df['Macro Score'].round(1)
-    df['Risk Score'] = df['Risk Score'].round(1)
-    df['Sentiment Score'] = df['Sentiment Score'].round(1)
-    
-    # Display table
-    st.dataframe(df, use_container_width=True, hide_index=True)
-    
-    # Export to CSV button
-    csv = df.to_csv(index=False)
-    st.download_button(
-        label="Download Comparison (CSV)",
-        data=csv,
-        file_name=f"stock_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
+
+    # Build display dataframe: string-format Price and Market Cap, keep scores numeric for ProgressColumn
+    df_display = df.copy()
+    df_display['Price'] = df_display['Price'].apply(lambda x: f"${x:,.2f}" if x and x > 0 else 'N/A')
+    df_display['Market Cap'] = df_display['Market Cap'].apply(
+        lambda x: f"${x/1e9:.1f}B" if x and x >= 1e9 else f"${x/1e6:.0f}M" if x and x > 0 else 'N/A'
     )
+
+    # Column order: Rank first, then core info, then score bars
+    _col_order = ['Rank', 'Ticker', 'Final Score', 'Recommendation', 'Sector',
+                  'Price', 'Market Cap', 'Value Score', 'Growth Score',
+                  'Macro Score', 'Risk Score', 'Sentiment Score']
+    df_display = df_display[_col_order]
+
+    # Display table with ProgressColumn score bars + built-in click-to-sort
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            'Rank': st.column_config.TextColumn('Rank', width='small'),
+            'Final Score': st.column_config.ProgressColumn(
+                'Final Score', min_value=0, max_value=100, format='%.1f'
+            ),
+            'Value Score': st.column_config.ProgressColumn(
+                'Value', min_value=0, max_value=100, format='%.1f'
+            ),
+            'Growth Score': st.column_config.ProgressColumn(
+                'Growth', min_value=0, max_value=100, format='%.1f'
+            ),
+            'Macro Score': st.column_config.ProgressColumn(
+                'Macro', min_value=0, max_value=100, format='%.1f'
+            ),
+            'Risk Score': st.column_config.ProgressColumn(
+                'Risk', min_value=0, max_value=100, format='%.1f'
+            ),
+            'Sentiment Score': st.column_config.ProgressColumn(
+                'Sentiment', min_value=0, max_value=100, format='%.1f'
+            ),
+        },
+    )
+
+    # Export buttons: CSV + PDF side by side
+    csv = df_display.to_csv(index=False)
+    _btn_col1, _btn_col2 = st.columns(2)
+    with _btn_col1:
+        st.download_button(
+            label='\u2b07\ufe0f  Download Comparison (CSV)',
+            data=csv,
+            file_name=f"stock_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime='text/csv',
+            use_container_width=True,
+        )
+    with _btn_col2:
+        try:
+            _multi_pdf = generate_multi_stock_pdf_report(results)
+            st.download_button(
+                label='\u2b07\ufe0f  Download Comparison PDF',
+                data=_multi_pdf,
+                file_name=f"comparison_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime='application/pdf',
+                use_container_width=True,
+                key='download_multi_pdf',
+            )
+        except Exception as _mpdf_err:
+            st.warning(f'PDF export unavailable: {_mpdf_err}')
     
     # Visual comparison
     st.markdown("---")
