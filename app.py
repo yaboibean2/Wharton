@@ -4772,68 +4772,60 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
     for result in results:
         row = {
             'Ticker': result['ticker'],
-            'Final Score': round(float(result['final_score']), 1),
-            'Recommendation': result.get('recommendation', 'N/A'),
-            'Price': result['fundamentals'].get('price', 0),
-            'Market Cap': result['fundamentals'].get('market_cap', 0),
-            'Sector': result['fundamentals'].get('sector', 'N/A'),
-            'Value Score': round(float(result.get('agent_scores', {}).get('value_agent', 0)), 1),
-            'Growth Score': round(float(result.get('agent_scores', {}).get('growth_momentum_agent', 0)), 1),
-            'Macro Score': round(float(result.get('agent_scores', {}).get('macro_regime_agent', 0)), 1),
-            'Risk Score': round(float(result.get('agent_scores', {}).get('risk_agent', 0)), 1),
-            'Sentiment Score': round(float(result.get('agent_scores', {}).get('sentiment_agent', 0)), 1),
+            'Score': round(float(result['final_score']), 1),
+            'Signal': result.get('recommendation', 'N/A'),
+            'Value': round(float(result.get('agent_scores', {}).get('value_agent', 0)), 1),
+            'Growth': round(float(result.get('agent_scores', {}).get('growth_momentum_agent', 0)), 1),
+            'Macro': round(float(result.get('agent_scores', {}).get('macro_regime_agent', 0)), 1),
+            'Risk': round(float(result.get('agent_scores', {}).get('risk_agent', 0)), 1),
+            'Sentiment': round(float(result.get('agent_scores', {}).get('sentiment_agent', 0)), 1),
         }
         comparison_data.append(row)
 
-    # Sort by final score (descending)
-    comparison_data = sorted(comparison_data, key=lambda x: x['Final Score'], reverse=True)
+    comparison_data = sorted(comparison_data, key=lambda x: x['Score'], reverse=True)
 
-    # Add numeric rank after sorting
-    for _ri, _rrow in enumerate(comparison_data):
-        _rrow['Rank'] = _ri + 1
-
-    # Create DataFrame
     import pandas as pd
-    df = pd.DataFrame(comparison_data)
-
-    # Format Price and Market Cap as strings; keep scores numeric for ProgressColumn
-    df_display = df.copy()
-    df_display['Price'] = df_display['Price'].apply(lambda x: f"${x:,.2f}" if x and x > 0 else 'N/A')
-    df_display['Market Cap'] = df_display['Market Cap'].apply(
-        lambda x: f"${x/1e9:.1f}B" if x and x >= 1e9 else f"${x/1e6:.0f}M" if x and x > 0 else 'N/A'
-    )
-
-    _col_order = ['Rank', 'Ticker', 'Final Score', 'Recommendation', 'Sector',
-                  'Price', 'Market Cap', 'Value Score', 'Growth Score',
-                  'Macro Score', 'Risk Score', 'Sentiment Score']
-    df_display = df_display[_col_order]
+    df_display = pd.DataFrame(comparison_data)
 
     st.dataframe(
         df_display,
         use_container_width=True,
         hide_index=True,
         column_config={
-            'Rank': st.column_config.NumberColumn('Rank', format='%d', width='small'),
-            'Final Score': st.column_config.ProgressColumn(
-                'Final Score', min_value=0, max_value=100, format='%.1f'
-            ),
-            'Value Score': st.column_config.ProgressColumn(
-                'Value', min_value=0, max_value=100, format='%.1f'
-            ),
-            'Growth Score': st.column_config.ProgressColumn(
-                'Growth', min_value=0, max_value=100, format='%.1f'
-            ),
-            'Macro Score': st.column_config.ProgressColumn(
-                'Macro', min_value=0, max_value=100, format='%.1f'
-            ),
-            'Risk Score': st.column_config.ProgressColumn(
-                'Risk', min_value=0, max_value=100, format='%.1f'
-            ),
-            'Sentiment Score': st.column_config.ProgressColumn(
-                'Sentiment', min_value=0, max_value=100, format='%.1f'
-            ),
+            'Score': st.column_config.ProgressColumn('Score', min_value=0, max_value=100, format='%.1f'),
+            'Value': st.column_config.ProgressColumn('Value', min_value=0, max_value=100, format='%.1f'),
+            'Growth': st.column_config.ProgressColumn('Growth', min_value=0, max_value=100, format='%.1f'),
+            'Macro': st.column_config.ProgressColumn('Macro', min_value=0, max_value=100, format='%.1f'),
+            'Risk': st.column_config.ProgressColumn('Risk', min_value=0, max_value=100, format='%.1f'),
+            'Sentiment': st.column_config.ProgressColumn('Sentiment', min_value=0, max_value=100, format='%.1f'),
         },
     )
+
+    # Agent scores comparison chart
+    st.markdown("---")
+    _agent_categories = ['Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
+    _agent_keys = ['value_agent', 'growth_momentum_agent', 'macro_regime_agent', 'risk_agent', 'sentiment_agent']
+    fig_bar = go.Figure()
+    for result in results:
+        fig_bar.add_trace(go.Bar(
+            name=result['ticker'],
+            x=_agent_categories,
+            y=[result['agent_scores'].get(k, 0) for k in _agent_keys],
+            text=[f"{result['agent_scores'].get(k, 0):.1f}" for k in _agent_keys],
+            textposition='auto',
+        ))
+    fig_bar.update_layout(
+        barmode='group',
+        yaxis_range=[0, 100],
+        yaxis_title='Score',
+        height=360,
+        showlegend=True,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        paper_bgcolor='#ffffff',
+        plot_bgcolor='#ffffff',
+        margin=dict(l=40, r=20, t=30, b=40),
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
 
     # Export buttons
     csv = df_display.to_csv(index=False)
@@ -4859,226 +4851,7 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
             )
         except Exception as _mpdf_err:
             st.warning(f'PDF export unavailable: {_mpdf_err}')
-    
-    # Visual comparison
-    st.markdown("---")
-    st.markdown("### Charts")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Agent Scores Comparison Bar Chart
-        st.write("**Agent Scores Comparison**")
-        agent_categories = ['Value', 'Growth', 'Macro', 'Risk', 'Sentiment']
-        
-        fig_bar = go.Figure()
-        for result in results:
-            scores = [
-                result['agent_scores'].get('value_agent', 0),
-                result['agent_scores'].get('growth_momentum_agent', 0),
-                result['agent_scores'].get('macro_regime_agent', 0),
-                result['agent_scores'].get('risk_agent', 0),
-                result['agent_scores'].get('sentiment_agent', 0)
-            ]
-            fig_bar.add_trace(go.Bar(
-                name=result['ticker'],
-                x=agent_categories,
-                y=scores,
-                text=[f"{s:.1f}" for s in scores],
-                textposition='auto'
-            ))
-        
-        fig_bar.update_layout(
-            barmode='group',
-            yaxis_range=[0, 100],
-            yaxis_title="Score",
-            height=400,
-            showlegend=True,
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-    
-    with col2:
-        # Radar Chart for Multi-Stock Comparison
-        st.write("**Multi-Dimensional Comparison**")
-        
-        fig_radar = go.Figure()
-        
-        for result in results:
-            scores = [
-                result['agent_scores'].get('value_agent', 0),
-                result['agent_scores'].get('growth_momentum_agent', 0),
-                result['agent_scores'].get('macro_regime_agent', 0),
-                result['agent_scores'].get('risk_agent', 0),
-                result['agent_scores'].get('sentiment_agent', 0),
-                result['agent_scores'].get('value_agent', 0)  # Close the polygon
-            ]
-            
-            fig_radar.add_trace(go.Scatterpolar(
-                r=scores,
-                theta=['Value', 'Growth', 'Macro', 'Risk', 'Sentiment', 'Value'],
-                fill='toself',
-                name=result['ticker']
-            ))
-        
-        fig_radar.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100]
-                ),
-                bgcolor="#ffffff"
-            ),
-            showlegend=True,
-            height=400,
-            paper_bgcolor="#ffffff"
-        )
-        st.plotly_chart(fig_radar, use_container_width=True)
-    
-    # Final Score Ranking
-    st.write("**Final Score Ranking**")
-    fig_final = go.Figure()
-    
-    tickers = [r['ticker'] for r in results]
-    final_scores = [r['final_score'] for r in results]
-    colors = [get_gradient_color(score) for score in final_scores]
-    
-    fig_final.add_trace(go.Bar(
-        x=tickers,
-        y=final_scores,
-        marker_color=colors,
-        text=[f"{s:.1f}" for s in final_scores],
-        textposition='auto',
-        name='Final Score'
-    ))
-    
-    fig_final.update_layout(
-        yaxis_range=[0, 100],
-        yaxis_title="Final Score",
-        xaxis_title="Stock",
-        height=350,
-        showlegend=False,
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#ffffff"
-    )
-    st.plotly_chart(fig_final, use_container_width=True)
-    
-    # Portfolio insights
-    st.markdown("---")
-    st.markdown("### Insights")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Sector Diversification**")
-        
-        # Calculate sector distribution
-        sector_counts = {}
-        sector_scores = {}
-        for result in results:
-            sector = result['fundamentals'].get('sector', 'Unknown')
-            sector_counts[sector] = sector_counts.get(sector, 0) + 1
-            if sector not in sector_scores:
-                sector_scores[sector] = []
-            sector_scores[sector].append(result['final_score'])
-        
-        # Create pie chart
-        fig_sector = go.Figure(data=[go.Pie(
-            labels=list(sector_counts.keys()),
-            values=list(sector_counts.values()),
-            hole=.3,
-            textinfo='label+percent',
-            marker=dict(colors=CHART_COLORS)
-        )])
-        
-        fig_sector.update_layout(height=350, showlegend=True,
-                                   paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
-        st.plotly_chart(fig_sector, use_container_width=True)
-        
-        # Sector concentration warning
-        max_sector_pct = max(sector_counts.values()) / len(results) * 100
-        if max_sector_pct > 40:
-            st.warning(f"High concentration: {max_sector_pct:.0f}% in one sector")
-        elif max_sector_pct > 30:
-            st.info(f"Moderate concentration: {max_sector_pct:.0f}% in one sector")
-        else:
-            st.success(f"Well diversified: Max {max_sector_pct:.0f}% in any sector")
-    
-    with col2:
-        st.write("**Risk Distribution Matrix**")
-        
-        # Create risk/score scatter plot
-        risk_scores = [r['agent_scores'].get('risk_agent', 50) for r in results]
-        final_scores = [r['final_score'] for r in results]
-        tickers = [r['ticker'] for r in results]
-        market_caps = [r['fundamentals'].get('market_cap', 0) for r in results]
-        
-        fig_risk = go.Figure()
-        
-        fig_risk.add_trace(go.Scatter(
-            x=risk_scores,
-            y=final_scores,
-            mode='markers+text',
-            text=tickers,
-            textposition='top center',
-            marker=dict(
-                size=[max(10, min(30, mc/1e10)) for mc in market_caps],  # Size by market cap
-                color=final_scores,
-                colorscale='RdYlGn',
-                showscale=True,
-                colorbar=dict(title="Score")
-            ),
-            hovertemplate='<b>%{text}</b><br>Risk: %{x:.1f}<br>Score: %{y:.1f}<extra></extra>'
-        ))
-        
-        # Add quadrant lines
-        fig_risk.add_hline(y=70, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_risk.add_vline(x=70, line_dash="dash", line_color="gray", opacity=0.5)
-        
-        # Add quadrant labels
-        fig_risk.add_annotation(x=85, y=85, text="High Score<br>Low Risk", showarrow=False, opacity=0.5)
-        fig_risk.add_annotation(x=55, y=85, text="High Score<br>High Risk", showarrow=False, opacity=0.5)
-        fig_risk.add_annotation(x=85, y=55, text="Low Score<br>Low Risk", showarrow=False, opacity=0.5)
-        fig_risk.add_annotation(x=55, y=55, text="Low Score<br>High Risk", showarrow=False, opacity=0.5)
-        
-        fig_risk.update_layout(
-            xaxis_title="Risk Score (Higher = Safer)",
-            yaxis_title="Final Score",
-            xaxis_range=[0, 100],
-            yaxis_range=[0, 100],
-            height=350,
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff"
-        )
-        st.plotly_chart(fig_risk, use_container_width=True)
-        
-        # Risk summary
-        high_risk_count = sum(1 for r in risk_scores if r < 50)
-        if high_risk_count > len(results) * 0.5:
-            st.warning(f"{high_risk_count}/{len(results)} stocks are high risk")
-        else:
-            st.success(f"Balanced risk: {high_risk_count}/{len(results)} high risk stocks")
-    
-    # Sector performance breakdown
-    st.write("**Sector Performance Summary**")
-    sector_summary = []
-    for sector, scores in sector_scores.items():
-        sector_summary.append({
-            'Sector': sector,
-            'Count': len(scores),
-            'Avg Score': sum(scores) / len(scores),
-            'Max Score': max(scores),
-            'Min Score': min(scores)
-        })
-    
-    sector_df = pd.DataFrame(sector_summary).sort_values('Avg Score', ascending=False)
-    sector_df['Avg Score'] = sector_df['Avg Score'].round(1)
-    sector_df['Max Score'] = sector_df['Max Score'].round(1)
-    sector_df['Min Score'] = sector_df['Min Score'].round(1)
-    
-    st.dataframe(sector_df, use_container_width=True, hide_index=True)
-    
+
     # Individual stock details
     st.markdown("---")
     st.markdown("### Stock Details")
