@@ -1,0 +1,26 @@
+UI touchups, configurable scoring thresholds, data provider and timer improvements
+
+UI fixes:
+- Fix IA to TI logo bug in results display header
+- Remove redundant Stock Analysis page header (branding header already present)
+- Replace primitive score badge with styled HTML badge matching design system
+- Fix duplicate widget key error: display_stock_analysis takes show_back_button param
+- Multi-stock tab calls pass show_back_button=False so back buttons stay out of tabs
+- Add consistent arrow to all back-to-home buttons for consistency
+- Remove use_container_width from PDF download button (was unnecessarily full-width)
+- Downgrade multi-stock slowness warning from st.info to st.caption (less intrusive)
+
+Progress card:
+- Show live per-agent running status during parallel phase
+- Sidebar: Recent Analyses history and Compare Stocks feature for 2+ cached results
+
+Scoring thresholds (value_agent):
+- Move P/E, EV/EBITDA, FCF thresholds out of hard-coded if/elif into config-driven
+  _score_with_thresholds; values now live in config/model.yaml scoring_thresholds
+
+Data provider and timer:
+- Recalibrate learned-phase defaults for yfinance as primary source (data ~10s not 45s)
+- Add _recent_avg(n=5) helper so timer adapts faster to pipeline changes
+- Update .env.example to reflect new 5-tier provider hierarchy including FRED
+
+Other: requirements.txt, base_agent, growth/macro/risk/sentiment agents minor fixes

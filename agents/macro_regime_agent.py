@@ -96,11 +96,18 @@ class MacroRegimeAgent(BaseAgent):
             'supporting_articles': articles
         }
         
+        # data_quality: based on how many macro data points are available
+        macro_fields = ['yield_curve_slope', 'inflation_yoy', 'unemployment_rate']
+        available = sum(1 for f in macro_fields if macro_data.get(f) is not None)
+        data_quality = available / len(macro_fields)
+        details['data_quality'] = round(data_quality, 2)
+
         return {
             'score': round(final_score, 2),
             'rationale': rationale,
             'details': details,
-            'regime': regime
+            'regime': regime,
+            'data_quality': round(data_quality, 2),
         }
     
     def _classify_regime(self, macro_data: Dict) -> str:

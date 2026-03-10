@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 _PERPLEXITY_SEMAPHORE = threading.Semaphore(2)
 _PERPLEXITY_LAST_CALL = threading.local()
 
+# Session-level cache for validated article URLs to avoid repeat HTTP checks.
+# Maps URL -> True (reachable) or False (unreachable).
+_VALIDATED_URL_CACHE: Dict[str, bool] = {}
+
 
 class BaseAgent(ABC):
     """
@@ -305,6 +309,14 @@ class BaseAgent(ABC):
             url = article.get('url', '')
             if not url:
                 return None
+
+            # Return cached result without making an HTTP request
+            if url in _VALIDATED_URL_CACHE:
+                if _VALIDATED_URL_CACHE[url]:
+                    article['verified'] = True
+                    return article
+                return None
+
             try:
                 # HEAD first (fast); fall back to GET with stream for sites
                 # that block HEAD (e.g. some news paywalls)
@@ -315,6 +327,7 @@ class BaseAgent(ABC):
                     headers={'User-Agent': 'Mozilla/5.0 (compatible; InvestmentBot/1.0)'},
                 )
                 if resp.status_code < 400:
+                    _VALIDATED_URL_CACHE[url] = True
                     article['verified'] = True
                     return article
 
@@ -328,13 +341,16 @@ class BaseAgent(ABC):
                 )
                 resp.close()
                 if resp.status_code < 400:
+                    _VALIDATED_URL_CACHE[url] = True
                     article['verified'] = True
                     return article
 
                 logger.debug(f"{self.name}: URL returned {resp.status_code}: {url}")
+                _VALIDATED_URL_CACHE[url] = False
                 return None
             except Exception as e:
                 logger.debug(f"{self.name}: URL unreachable ({e}): {url}")
+                _VALIDATED_URL_CACHE[url] = False
                 return None
 
         verified: List[Dict] = []

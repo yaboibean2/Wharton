@@ -30,10 +30,11 @@ class EnhancedDataProvider:
     Enhanced data provider with multiple fallbacks and premium options.
     
     Data Sources (in order of preference):
-    1. Polygon.io (premium with upgraded tier)
-    2. Perplexity AI (real-time analysis)
-    3. Alpha Vantage (free tier)
-    4. Synthetic/estimated data as last resort
+    1. Yahoo Finance via yfinance (free, structured, no API key)
+    2. Polygon.io (premium with upgraded tier)
+    3. Perplexity AI (real-time LLM fallback for missing fields)
+    4. Alpha Vantage (free tier)
+    5. Synthetic/estimated data as last resort
     """
     
     def __init__(
@@ -49,6 +50,7 @@ class EnhancedDataProvider:
         self.polygon_key = polygon_key or os.getenv("POLYGON_API_KEY")
         self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
         self.openai_key = os.getenv("OPENAI_API_KEY")
+        self.fred_key = os.getenv("FRED_API_KEY")
         
         # Cache setup
         self.cache_dir = Path(cache_dir)
@@ -275,22 +277,345 @@ class EnhancedDataProvider:
             logger.warning(f"Perplexity analysis failed for {ticker} after retries: {e}")
             return None
     
+    def _get_yfinance_metrics(self, ticker: str, is_etf: bool = False) -> Dict[str, Any]:
+        """Tier 1: Get structured financial metrics from Yahoo Finance via yfinance.
+
+        Free, no API key needed. Returns deterministic structured data (no LLM parsing).
+        Single call to yf.Ticker(ticker).info fetches ~100+ fields.
+        """
+        try:
+            import yfinance as yf
+            logger.info(f"Fetching yfinance metrics for {ticker}")
+
+            t = yf.Ticker(ticker)
+            info = t.info
+
+            if not info or info.get('trailingPegRatio') is None and info.get('currentPrice') is None and info.get('regularMarketPrice') is None:
+                # yfinance returns a nearly-empty dict for invalid tickers
+                if not info.get('shortName') and not info.get('longName'):
+                    logger.warning(f"yfinance returned no useful data for {ticker}")
+                    return {}
+
+            metrics = {}
+
+            # Price
+            price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('navPrice')
+            if price is not None:
+                try:
+                    metrics['price'] = float(price)
+                except (ValueError, TypeError):
+                    pass
+
+            # Company name
+            name = info.get('shortName') or info.get('longName')
+            if name:
+                metrics['name'] = str(name)
+
+            # P/E ratio (not applicable for ETFs)
+            if not is_etf:
+                pe = info.get('trailingPE')
+                if pe is not None:
+                    try:
+                        pe_val = float(pe)
+                        if -100 <= pe_val <= 1000:
+                            metrics['pe_ratio'] = pe_val
+                    except (ValueError, TypeError):
+                        pass
+
+            # Beta
+            if not is_etf:
+                beta = info.get('beta')
+                if beta is not None:
+                    try:
+                        beta_val = float(beta)
+                        if -5 <= beta_val <= 10:
+                            metrics['beta'] = beta_val
+                    except (ValueError, TypeError):
+                        pass
+
+            # EPS
+            if not is_etf:
+                eps = info.get('trailingEps')
+                if eps is not None:
+                    try:
+                        metrics['eps'] = float(eps)
+                    except (ValueError, TypeError):
+                        pass
+
+            # Dividend yield (yfinance returns as decimal, e.g. 0.024 for 2.4%)
+            div_yield = info.get('dividendYield')
+            if div_yield is not None:
+                try:
+                    div_val = float(div_yield)
+                    if 0 <= div_val <= 0.5:
+                        metrics['dividend_yield'] = div_val
+                except (ValueError, TypeError):
+                    pass
+
+            # Market cap
+            mcap = info.get('marketCap')
+            if mcap is not None:
+                try:
+                    mcap_val = float(mcap)
+                    if mcap_val >= 1e6:
+                        metrics['market_cap'] = mcap_val
+                except (ValueError, TypeError):
+                    pass
+
+            # 52-week range
+            low52 = info.get('fiftyTwoWeekLow')
+            high52 = info.get('fiftyTwoWeekHigh')
+            if low52 is not None:
+                try:
+                    metrics['week_52_low'] = float(low52)
+                except (ValueError, TypeError):
+                    pass
+            if high52 is not None:
+                try:
+                    metrics['week_52_high'] = float(high52)
+                except (ValueError, TypeError):
+                    pass
+
+            # Sector and industry
+            sector = info.get('sector')
+            if sector and sector != 'N/A':
+                metrics['sector'] = str(sector)
+
+            industry = info.get('industry')
+            if industry and industry != 'N/A':
+                metrics['industry'] = str(industry)
+
+            # Description
+            desc = info.get('longBusinessSummary')
+            if desc and len(str(desc)) > 10:
+                metrics['description'] = str(desc)
+
+            # Enterprise value
+            ev = info.get('enterpriseValue')
+            if ev is not None:
+                try:
+                    metrics['enterprise_value'] = float(ev)
+                except (ValueError, TypeError):
+                    pass
+
+            # Profit margin (yfinance returns as decimal, e.g. 0.25 for 25%)
+            pm = info.get('profitMargins')
+            if pm is not None:
+                try:
+                    pm_val = float(pm)
+                    if -1.0 <= pm_val <= 1.0:
+                        metrics['profit_margin'] = pm_val
+                except (ValueError, TypeError):
+                    pass
+
+            # EV/EBITDA
+            ev_ebitda = info.get('enterpriseToEbitda')
+            if ev_ebitda is not None:
+                try:
+                    ev_ebitda_val = float(ev_ebitda)
+                    if 0 < ev_ebitda_val <= 500:
+                        metrics['ev_to_ebitda'] = ev_ebitda_val
+                except (ValueError, TypeError):
+                    pass
+
+            # FCF yield (calculated from freeCashflow / marketCap)
+            fcf = info.get('freeCashflow')
+            if fcf is not None and mcap is not None and mcap > 0:
+                try:
+                    fcf_yield = (float(fcf) / float(mcap)) * 100  # as percentage
+                    if -20 <= fcf_yield <= 50:
+                        metrics['fcf_yield'] = fcf_yield
+                except (ValueError, TypeError, ZeroDivisionError):
+                    pass
+
+            # Volume
+            vol = info.get('volume') or info.get('averageVolume')
+            if vol is not None:
+                try:
+                    metrics['volume'] = int(vol)
+                except (ValueError, TypeError):
+                    pass
+
+            # Growth rates (yfinance returns as decimal, e.g. 0.18 for 18%)
+            eg = info.get('earningsGrowth')
+            if eg is not None:
+                try:
+                    metrics['earnings_growth'] = float(eg)
+                except (ValueError, TypeError):
+                    pass
+
+            rg = info.get('revenueGrowth')
+            if rg is not None:
+                try:
+                    metrics['revenue_growth'] = float(rg)
+                except (ValueError, TypeError):
+                    pass
+
+            logger.info(f"yfinance returned {len(metrics)} metrics for {ticker}: {list(metrics.keys())}")
+            return metrics
+
+        except Exception as e:
+            logger.warning(f"yfinance metrics failed for {ticker}: {e}")
+            return {}
+
+    def _get_yfinance_prices(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """Tier 1: Get price history from Yahoo Finance via yfinance.
+
+        Free, no API key needed. Returns structured OHLCV DataFrame.
+        """
+        try:
+            import yfinance as yf
+            logger.info(f"Fetching yfinance price history for {ticker}")
+
+            df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=True, progress=False)
+
+            if df is None or df.empty:
+                logger.warning(f"yfinance returned empty price history for {ticker}")
+                return pd.DataFrame()
+
+            # Handle MultiIndex columns (yfinance sometimes returns MultiIndex for single ticker)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            # Ensure expected columns exist
+            expected_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+            for col in expected_cols:
+                if col not in df.columns:
+                    logger.warning(f"yfinance price data missing column: {col}")
+                    return pd.DataFrame()
+
+            df['Returns'] = df['Close'].pct_change()
+
+            logger.info(f"yfinance returned {len(df)} price rows for {ticker}")
+            return df[['Open', 'High', 'Low', 'Close', 'Volume', 'Returns']]
+
+        except Exception as e:
+            logger.warning(f"yfinance price history failed for {ticker}: {e}")
+            return pd.DataFrame()
+
+    def _get_fred_macro_indicators(self) -> Dict[str, Any]:
+        """Fetch real macro economic data from FRED (Federal Reserve Economic Data).
+
+        Requires FRED_API_KEY (free from https://fred.stlouisfed.org/docs/api/api_key.html).
+        Results are cached for 24 hours since macro data changes slowly.
+        """
+        cache_key = "fred_macro_indicators"
+        cached = self._load_cache(cache_key, max_age_hours=24)
+        if cached is not None:
+            logger.info("Using cached FRED macro data")
+            return cached
+
+        if not self.fred_key:
+            logger.info("No FRED API key configured, skipping FRED macro data")
+            return {}
+
+        try:
+            from fredapi import Fred
+            fred = Fred(api_key=self.fred_key)
+            result = {}
+
+            # 10Y-2Y Treasury spread (yield curve slope)
+            try:
+                t10y2y = fred.get_series('T10Y2Y')
+                if t10y2y is not None and len(t10y2y) > 0:
+                    latest = t10y2y.dropna().iloc[-1]
+                    result['yield_curve_slope'] = round(float(latest), 2)
+                    logger.info(f"FRED yield curve slope: {result['yield_curve_slope']}")
+            except Exception as e:
+                logger.warning(f"FRED T10Y2Y fetch failed: {e}")
+
+            # CPI Year-over-Year inflation rate
+            try:
+                cpi = fred.get_series('CPIAUCSL')
+                if cpi is not None and len(cpi) >= 13:
+                    cpi_latest = cpi.dropna().iloc[-1]
+                    cpi_year_ago = cpi.dropna().iloc[-13]
+                    if cpi_year_ago > 0:
+                        inflation_yoy = ((cpi_latest / cpi_year_ago) - 1) * 100
+                        result['inflation_yoy'] = round(float(inflation_yoy), 1)
+                        logger.info(f"FRED inflation YoY: {result['inflation_yoy']}%")
+            except Exception as e:
+                logger.warning(f"FRED CPIAUCSL fetch failed: {e}")
+
+            # Unemployment rate
+            try:
+                unrate = fred.get_series('UNRATE')
+                if unrate is not None and len(unrate) > 0:
+                    result['unemployment_rate'] = round(float(unrate.dropna().iloc[-1]), 1)
+                    logger.info(f"FRED unemployment rate: {result['unemployment_rate']}%")
+            except Exception as e:
+                logger.warning(f"FRED UNRATE fetch failed: {e}")
+
+            # Fed funds rate
+            try:
+                fedfunds = fred.get_series('FEDFUNDS')
+                if fedfunds is not None and len(fedfunds) > 0:
+                    result['fed_funds_rate'] = round(float(fedfunds.dropna().iloc[-1]), 2)
+                    logger.info(f"FRED fed funds rate: {result['fed_funds_rate']}%")
+            except Exception as e:
+                logger.warning(f"FRED FEDFUNDS fetch failed: {e}")
+
+            if result:
+                self._save_cache(cache_key, result)
+                logger.info(f"FRED macro data: {result}")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"FRED API failed entirely: {e}")
+            return {}
+
+    def _check_missing_critical_fields(self, yfinance_data: Dict, polygon_data: Dict) -> bool:
+        """Check if critical fields are missing from yfinance and Polygon data.
+
+        Returns True if Perplexity fallback should be invoked.
+        """
+        critical_fields = ['price', 'pe_ratio', 'beta', 'eps', 'market_cap']
+
+        for field in critical_fields:
+            has_yfinance = field in yfinance_data and yfinance_data[field] is not None
+            has_polygon = field in polygon_data and polygon_data[field] is not None
+            if not has_yfinance and not has_polygon:
+                logger.info(f"Critical field '{field}' missing from both yfinance and Polygon — will invoke Perplexity fallback")
+                return True
+
+        return False
+
     def get_comprehensive_metrics(self, ticker: str, is_etf: bool = False) -> Dict[str, Any]:
-        """Get comprehensive financial metrics using multi-source validation."""
+        """Get comprehensive financial metrics using multi-source validation.
+
+        Fallback chain:
+          Tier 1: yfinance (free, structured, no API key)
+          Tier 2: Polygon.io (needs API key)
+          Tier 3: Perplexity AI (LLM fallback — only if Tier 1+2 are missing critical fields)
+        """
         logger.info(f"Getting comprehensive metrics for {ticker} (ETF: {is_etf})")
-        
-        # Get data from all sources
-        perplexity_data = self._get_perplexity_metrics(ticker, is_etf)
+
+        # Tier 1: yfinance (free, structured, deterministic)
+        yfinance_data = self._get_yfinance_metrics(ticker, is_etf)
+
+        # Tier 2: Polygon (existing)
         polygon_data = self._get_polygon_metrics(ticker, is_etf)
-        
+
+        # Tier 3: Perplexity (only if critical fields still missing after Tier 1+2)
+        perplexity_data = {}
+        if self._check_missing_critical_fields(yfinance_data, polygon_data):
+            logger.info(f"Invoking Perplexity fallback for {ticker} — yfinance+Polygon missing critical fields")
+            perplexity_data = self._get_perplexity_metrics(ticker, is_etf)
+        else:
+            logger.info(f"Skipping Perplexity for {ticker} — yfinance+Polygon provided all critical fields")
+
         # Log what we got from each source
         logger.info(f"Data sources for {ticker}:")
-        logger.info(f"  Perplexity: {list(perplexity_data.keys())}")
+        logger.info(f"  yfinance: {list(yfinance_data.keys())}")
         logger.info(f"  Polygon: {list(polygon_data.keys())}")
-        
-        # Validate and combine the data
-        combined_metrics = self._validate_and_combine_metrics(ticker, perplexity_data, polygon_data)
-        
+        logger.info(f"  Perplexity: {list(perplexity_data.keys())}")
+
+        # Validate and combine with 3-tier priority
+        combined_metrics = self._validate_and_combine_metrics(
+            ticker, yfinance_data, polygon_data, perplexity_data
+        )
+
         logger.info(f"Final metrics for {ticker}: {list(combined_metrics.keys())}")
         return combined_metrics
     
@@ -795,16 +1120,9 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
                 except Exception as e:
                     logger.error(f"CLEAN: Valuation metrics extraction failed: {e}")
 
-            logger.info(f"CLEAN: All metrics collected for {ticker}: {all_metrics}")
-            
-            # CRITICAL DEBUG: Make sure we're returning the right data
+            logger.debug(f"CLEAN: All metrics collected for {ticker}: {all_metrics}")
             if not all_metrics:
-                logger.error(f"NO CLEAN METRICS COLLECTED for {ticker}!")
-            else:
-                logger.info(f"CLEAN: RETURNING {len(all_metrics)} metrics for {ticker}")
-                for key, value in all_metrics.items():
-                    logger.info(f"   → CLEAN: {key}: {value} (type: {type(value).__name__})")
-            
+                logger.error(f"No metrics collected for {ticker}")
             return all_metrics
             
         except Exception as e:
@@ -896,32 +1214,43 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
             logger.error(f"Polygon metrics failed for {ticker}: {e}")
             return {}
     
-    def _validate_and_combine_metrics(self, ticker: str, perplexity_data: Dict, polygon_data: Dict) -> Dict[str, Any]:
-        """Validate and combine metrics from multiple sources using best available data."""
+    def _validate_and_combine_metrics(self, ticker: str, yfinance_data: Dict, polygon_data: Dict, perplexity_data: Dict = None) -> Dict[str, Any]:
+        """Validate and combine metrics from multiple sources using best available data.
+
+        3-tier priority: yfinance → Polygon → Perplexity.
+        """
+        if perplexity_data is None:
+            perplexity_data = {}
+
         combined = {}
-        
-        # Priority order for different metrics
+
+        # Priority order for different metrics (Tier 1 → Tier 2 → Tier 3)
         source_priority = {
-            'price': ['polygon', 'perplexity'],
-            'pe_ratio': ['polygon', 'perplexity'], 
-            'beta': ['polygon', 'perplexity'],
-            'dividend_yield': ['perplexity', 'polygon'],
-            'eps': ['polygon', 'perplexity'],
-            'market_cap': ['polygon', 'perplexity'],
-            'week_52_low': ['polygon', 'perplexity'],
-            'week_52_high': ['polygon', 'perplexity'],
-            'volume': ['polygon', 'perplexity'],
-            'description': ['polygon', 'perplexity'],
-            'sector': ['polygon', 'perplexity'],
-            # Valuation fundamentals (Perplexity only)
-            'fcf_yield': ['perplexity'],
-            'ev_to_ebitda': ['perplexity'],
-            'profit_margin': ['perplexity'],
+            'price':            ['yfinance', 'polygon', 'perplexity'],
+            'pe_ratio':         ['yfinance', 'polygon', 'perplexity'],
+            'beta':             ['yfinance', 'polygon', 'perplexity'],
+            'dividend_yield':   ['yfinance', 'perplexity', 'polygon'],
+            'eps':              ['yfinance', 'polygon', 'perplexity'],
+            'market_cap':       ['yfinance', 'polygon', 'perplexity'],
+            'week_52_low':      ['yfinance', 'polygon', 'perplexity'],
+            'week_52_high':     ['yfinance', 'polygon', 'perplexity'],
+            'volume':           ['yfinance', 'polygon', 'perplexity'],
+            'description':      ['yfinance', 'polygon', 'perplexity'],
+            'sector':           ['yfinance', 'polygon', 'perplexity'],
+            'name':             ['yfinance', 'polygon', 'perplexity'],
+            'enterprise_value': ['yfinance', 'polygon'],
+            'fcf_yield':        ['yfinance', 'perplexity'],
+            'ev_to_ebitda':     ['yfinance', 'perplexity'],
+            'profit_margin':    ['yfinance', 'perplexity'],
+            'earnings_growth':  ['yfinance', 'perplexity'],
+            'revenue_growth':   ['yfinance', 'perplexity'],
+            'industry':         ['yfinance'],
         }
-        
+
         sources = {
+            'yfinance': yfinance_data,
+            'polygon': polygon_data,
             'perplexity': perplexity_data,
-            'polygon': polygon_data
         }
         
         # Combine metrics using priority system
@@ -1812,17 +2141,13 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
                 r'([\d.]+)x?\s*TTM P/E',                      # "37.7x TTM P/E" format
             ]
             
-            logger.info(f"DEBUG - Searching for P/E ratio in text: {text}")
-            
             for i, pattern in enumerate(pe_patterns):
                 match = re.search(pattern, text, re.IGNORECASE)
-                logger.info(f"DEBUG - Pattern {i+1} '{pattern}': {'MATCH' if match else 'NO MATCH'}")
                 if match:
                     try:
                         extracted_pe = float(match.group(1))
                         metrics['pe_ratio'] = extracted_pe
-                        logger.info(f"EXTRACTED P/E ratio: {metrics['pe_ratio']} using pattern: {pattern}")
-                        logger.info(f"DEBUG - Match found: '{match.group(0)}' -> extracted: {extracted_pe}")
+                        logger.debug(f"Extracted P/E ratio: {extracted_pe} using pattern: {pattern}")
                         break
                     except ValueError as e:
                         logger.warning(f"Failed to convert P/E match '{match.group(1)}' to float: {e}")
@@ -2112,11 +2437,8 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
             'timestamp': datetime.now().isoformat()
         }
         
-        # SKIP POLYGON.IO - Using ONLY Perplexity as requested
-        logger.info(f"SKIPPING Polygon.io - Using PERPLEXITY ONLY for {ticker}")
-        
-        # 1. Get Perplexity real-time analysis - ONLY SOURCE
-        logger.info(f"FETCHING PERPLEXITY ANALYSIS FOR {ticker}")
+        # Get Perplexity real-time qualitative analysis (narrative context for agents)
+        logger.info(f"FETCHING PERPLEXITY QUALITATIVE ANALYSIS FOR {ticker}")
         perplexity_analysis = self._get_perplexity_analysis(ticker, is_etf)
         if perplexity_analysis:
             comprehensive_data['perplexity_analysis'] = perplexity_analysis
@@ -2139,12 +2461,12 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
         return comprehensive_data
     
     def _extract_key_metrics(self, data: Dict[str, Any], is_etf: bool) -> Dict[str, Any]:
-        """Extract key financial metrics with PERPLEXITY as primary source."""
+        """Extract key financial metrics using tiered sources: yfinance → Polygon → Perplexity."""
         ticker = data.get('ticker', 'UNKNOWN')
         logger.info(f"=== EXTRACTING KEY METRICS FOR {ticker} ===")
         
         # Use ONLY Perplexity as the single source of truth - NO OTHER SOURCES
-        logger.info(f"=== USING PERPLEXITY AS ONLY SOURCE FOR {ticker} ===")
+        logger.info(f"=== USING TIERED DATA SOURCES FOR {ticker} (yfinance -> Polygon -> Perplexity) ===")
         
         # Get comprehensive metrics using multi-source validation
         logger.info(f"Getting multi-source comprehensive metrics for {ticker}")
@@ -2165,10 +2487,13 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
             'source': 'multi_source_validated',
             'description': comprehensive_metrics.get('description', f"{ticker} stock"),
             'sector': comprehensive_metrics.get('sector', 'Unknown'),
-            # Valuation fundamentals (fetched via Perplexity CLEAN METHOD 10)
+            # Valuation fundamentals (fetched via yfinance or Perplexity fallback)
             'fcf_yield': comprehensive_metrics.get('fcf_yield'),
             'ev_to_ebitda': comprehensive_metrics.get('ev_to_ebitda') if not is_etf else None,
             'profit_margin': comprehensive_metrics.get('profit_margin'),
+            # Growth rates (fetched via yfinance or Perplexity fallback)
+            'earnings_growth': comprehensive_metrics.get('earnings_growth'),
+            'revenue_growth': comprehensive_metrics.get('revenue_growth'),
         }
         
         # Compute pct_from_52w_high from price and week_52_high
@@ -2530,52 +2855,65 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
     ) -> pd.DataFrame:
         """
         Get historical price data with comprehensive fallbacks.
-        
+
         Fallback order:
-        1. Polygon.io (premium with upgraded tier)
-        2. Alpha Vantage (free tier)
-        3. Cache (even if stale)
-        4. Synthetic data based on market patterns
+        1. Cache (fresh)
+        2. Yahoo Finance via yfinance (free, no API key)
+        3. Polygon.io (premium with upgraded tier)
+        4. Alpha Vantage (free tier)
+        5. Cache (even if stale)
+        6. Synthetic data based on market patterns
         """
         cache_key = f"price_enhanced_{ticker}_{start_date}_{end_date}"
-        
+
         # Try fresh cache first
         cached = self._load_cache(cache_key, cache_hours)
         if cached is not None and hasattr(cached, 'empty') and not cached.empty:
             logger.info(f"Using cached price data for {ticker}")
             return cached
-        
-        # Try each data source in order - NO IEX
+
+        # Tier 1: yfinance (free, no API key, no rate limit concerns)
+        try:
+            logger.info(f"Trying yfinance for {ticker} price history")
+            df = self._get_yfinance_prices(ticker, start_date, end_date)
+            if df is not None and not df.empty:
+                self._save_cache(cache_key, df)
+                logger.info(f"Got price data from yfinance for {ticker}")
+                return df
+        except Exception as e:
+            logger.warning(f"yfinance prices failed for {ticker}: {e}")
+
+        # Tier 2+3: Polygon, Alpha Vantage
         sources = [
             ("polygon", self._get_polygon_prices),
             ("alpha_vantage", self._get_av_prices)
         ]
-        
+
         for source_name, source_func in sources:
             if not self._rate_limit_check(source_name):
                 logger.info(f"Rate limit hit for {source_name}, trying next source")
                 continue
-            
+
             try:
                 logger.info(f"Trying {source_name} for {ticker}")
                 df = self._smart_retry(lambda: source_func(ticker, start_date, end_date))
-                
+
                 if df is not None and not df.empty:
                     self._record_request(source_name)
                     self._save_cache(cache_key, df)
                     logger.info(f"Got price data from {source_name} for {ticker}")
                     return df
-                
+
             except Exception as e:
                 logger.warning(f"{source_name} failed for {ticker}: {e}")
                 continue
-        
+
         # Try stale cache as fallback
         stale_cached = self._load_cache(cache_key, 72)  # 3 days old
         if stale_cached is not None and hasattr(stale_cached, 'empty') and not stale_cached.empty:
             logger.warning(f"Using stale cache for {ticker} (better than nothing)")
             return stale_cached
-        
+
         # Last resort: synthetic data
         logger.warning(f"Generating synthetic price data for {ticker}")
         return self._generate_synthetic_prices(ticker, start_date, end_date)
@@ -2673,32 +3011,26 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
         
         return df.fillna(0)
     
-    def get_fundamentals_enhanced(self, ticker: str, cache_hours: float = 0.0) -> Dict[str, Any]:
+    def get_fundamentals_enhanced(self, ticker: str, cache_hours: float = 4.0) -> Dict[str, Any]:
         """Get comprehensive fundamental data using Polygon, Perplexity, and intelligent analysis."""
         logger.info(f"=== STARTING FUNDAMENTALS RETRIEVAL FOR {ticker} ===")
-        
-        # DISABLE CACHING COMPLETELY FOR DEBUGGING
-        # cache_key = f"comprehensive_data_{ticker}"
-        # cached = self._load_cache(cache_key, cache_hours)
-        # if cached is not None:
-        #     logger.info(f"Using cached data for {ticker}")
-        #     return cached
+
+        cache_key = f"comprehensive_data_{ticker}"
+        cached = self._load_cache(cache_key, cache_hours)
+        if cached is not None:
+            logger.info(f"Using cached data for {ticker}")
+            return cached
         
         # Use the new comprehensive method
         try:
-            logger.info(f"STEP 1: Calling get_comprehensive_stock_data for {ticker}")
             comprehensive_data = self.get_comprehensive_stock_data(ticker)
-            logger.info(f"STEP 2: Comprehensive data retrieved: {comprehensive_data.keys() if comprehensive_data else 'None'}")
-            
+            logger.debug(f"Comprehensive data retrieved for {ticker}: {comprehensive_data.keys() if comprehensive_data else 'None'}")
+
             # Convert to expected format for backward compatibility
             key_metrics = comprehensive_data.get('key_metrics', {})
-            
-            # CRITICAL DEBUG: Check what's in key_metrics before final assembly
-            logger.info(f"CRITICAL: key_metrics before final assembly: {key_metrics}")
             price_value = key_metrics.get('price')
             pe_value = key_metrics.get('pe_ratio')
             beta_value = key_metrics.get('beta')
-            logger.info(f"CRITICAL: Extracted values - price: {price_value} (type: {type(price_value).__name__}), pe: {pe_value}, beta: {beta_value}")
             
             fundamentals = {
                 'ticker': ticker,
@@ -2732,11 +3064,8 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
                 'source': 'comprehensive_enhanced'
             }
             
-            logger.info(f"FINAL FUNDAMENTALS STRUCTURE: {fundamentals}")
-            
-            # Save to cache - DISABLED FOR DEBUGGING
-            # self._save_cache(cache_key, fundamentals)
-            
+            self._save_cache(cache_key, fundamentals)
+
             logger.info(f"Comprehensive fundamentals retrieved for {ticker} using: {fundamentals['data_sources']}")
             return fundamentals
             
@@ -3045,15 +3374,33 @@ Example: {{"price": 150.25, "pe_ratio": 28.5, "beta": 1.2}}"""
         }
     
     def get_macro_indicators(self) -> Dict[str, Any]:
-        """Get macro indicators with fallbacks (compatibility method)."""
-        # For now, return basic indicators - can be enhanced later
+        """Get macro indicators. Tier 1: FRED API (real data), Tier 2: hardcoded estimates."""
+        # Try FRED first (real, authoritative macro data)
+        if self.fred_key:
+            try:
+                fred_data = self._get_fred_macro_indicators()
+                if fred_data and any(v is not None for v in fred_data.values()):
+                    fred_data['estimated'] = False
+                    fred_data['source'] = 'FRED'
+                    logger.info(f"Using FRED macro data: {fred_data}")
+                    return fred_data
+            except Exception as e:
+                logger.warning(f"FRED macro indicators failed, falling back to estimates: {e}")
+
+        # Fallback: hardcoded estimates
+        logger.info("Using estimated macro indicators (no FRED API key or FRED failed)")
         return {
-            'vix': 20.0,  # Estimated VIX
-            'ten_year_yield': 4.5,  # Estimated 10-year treasury
-            'dollar_index': 100.0,  # Estimated DXY
-            'oil_price': 80.0,  # Estimated crude oil
-            'estimated': True,  # Flag that this is estimated data
-            'note': 'Macro indicators are estimated - consider adding FRED API for real data'
+            'yield_curve_slope': 0.5,
+            'inflation_yoy': 3.0,
+            'unemployment_rate': 4.0,
+            'fed_funds_rate': 5.25,
+            'vix': 20.0,
+            'ten_year_yield': 4.5,
+            'dollar_index': 100.0,
+            'oil_price': 80.0,
+            'estimated': True,
+            'source': 'estimated',
+            'note': 'Set FRED_API_KEY for real macro data (free at https://fred.stlouisfed.org/docs/api/api_key.html)'
         }
     
     def get_news_sentiment(self, ticker: str, days_back: int = 7) -> List[Dict[str, Any]]:

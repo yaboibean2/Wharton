@@ -204,11 +204,17 @@ class GrowthMomentumAgent(BaseAgent):
         rationale = self._generate_rationale(ticker, details, composite_score)
         rationale += self._format_article_references(articles)
 
+        # data_quality: fraction of components backed by real data (not defaulted to 50)
+        real_data_components = sum(1 for v in scores.values() if v != 50)
+        data_quality = real_data_components / max(len(scores), 1)
+        details['data_quality'] = round(data_quality, 2)
+
         return {
             'score': round(composite_score, 2),
             'rationale': rationale,
             'details': details,
-            'component_scores': scores
+            'component_scores': scores,
+            'data_quality': round(data_quality, 2),
         }
     
     def _generate_scoring_explanation(self, ticker: str, scores: Dict, details: Dict, final_score: float) -> str:

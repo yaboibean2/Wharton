@@ -36,13 +36,14 @@ def _load_learned_phase_durations() -> dict:
     Falls back to conservative defaults if the file is missing or empty.
     """
     defaults = {
-        'data_gather': 45.0, 'agents': 25.0, 'blend': 1.0,
-        'total': 70.0, 'avg_total': 70.0,
+        'data_gather': 10.0, 'agents': 16.0, 'blend': 0.1,
+        'total': 30.0, 'avg_total': 30.0,
         # Per-step defaults (seconds)
-        'fundamentals': 40.0, 'price_history': 5.0, 'benchmark': 0.5,
-        'value_agent': 12.0, 'growth_momentum_agent': 12.0,
-        'macro_regime_agent': 12.0, 'risk_agent': 12.0,
-        'sentiment_agent': 15.0,
+        # yfinance fundamentals ~2-7s (vs ~30s with Perplexity fallback)
+        'fundamentals': 7.0, 'price_history': 1.0, 'benchmark': 0.1,
+        'value_agent': 10.0, 'growth_momentum_agent': 10.0,
+        'macro_regime_agent': 11.0, 'risk_agent': 12.0,
+        'sentiment_agent': 16.0,
     }
     try:
         path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'step_times.json')
@@ -62,6 +63,14 @@ def _load_learned_phase_durations() -> dict:
             vals = st.get(key, [])
             return sum(vals) / len(vals) if vals else None
 
+        def _recent_avg(key, n=5):
+            """Average of the last n samples — adapts faster to pipeline changes."""
+            vals = st.get(key, [])
+            if not vals:
+                return None
+            recent = vals[-n:]
+            return sum(recent) / len(recent)
+
         def _p75(key):
             """75th percentile — conservative estimate for variable durations."""
             vals = st.get(key, [])
@@ -72,12 +81,12 @@ def _load_learned_phase_durations() -> dict:
             qs = _quantiles(sorted(vals), n=4)
             return qs[2]  # 75th percentile
 
-        # Legacy phase keys
-        dg = _med('1')
-        ag = _med('2')
-        bl = _med('3')
-        tot = _med('total')
-        avg_tot = _avg('total')
+        # Use recent averages (last 10 samples) for all phase estimates.
+        # This adapts quickly when the pipeline changes (e.g. caching enabled).
+        dg = _recent_avg('1')
+        ag = _recent_avg('2')
+        bl = _recent_avg('3')
+        tot = _recent_avg('total')
 
         # agents_wall: 75th percentile of actual parallel wall time
         # This is the bottleneck duration and is highly variable,
@@ -89,16 +98,16 @@ def _load_learned_phase_durations() -> dict:
             'agents':      round(ag, 1) if ag is not None else defaults['agents'],
             'blend':       round(bl, 1) if bl is not None else defaults['blend'],
             'total':       round(tot, 1) if tot is not None else defaults['total'],
-            'avg_total':   round(avg_tot, 1) if avg_tot is not None else defaults['avg_total'],
+            'avg_total':   round(tot, 1) if tot is not None else defaults['avg_total'],
             'agents_wall_p75': round(aw_p75, 1) if aw_p75 is not None else defaults['agents'],
         }
 
-        # Per-step keys
+        # Per-step keys — also use recent averages
         for step_key in ('fundamentals', 'price_history', 'benchmark',
                          'value_agent', 'growth_momentum_agent',
                          'macro_regime_agent', 'risk_agent', 'sentiment_agent'):
-            med_val = _med(step_key)
-            result[step_key] = round(med_val, 2) if med_val is not None else defaults.get(step_key, 10.0)
+            ra_val = _recent_avg(step_key)
+            result[step_key] = round(ra_val, 2) if ra_val is not None else defaults.get(step_key, 10.0)
 
         return result
     except Exception:
@@ -898,11 +907,11 @@ class PortfolioOrchestrator:
         benchmark = self.ips_config.get('universe', {}).get('benchmark', '^GSPC')
 
         if progress_callback:
-            progress_callback(f"Querying Polygon, Alpha Vantage, Perplexity for {ticker} fundamentals...")
+            progress_callback(f"Querying yfinance, Polygon, FRED for {ticker} fundamentals...")
 
-        # PARALLEL DATA GATHERING - Run all 3 API calls simultaneously
+        # PARALLEL DATA GATHERING - Run all 4 API calls simultaneously
         _data_start_times = {}
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {}
 
             # Task 1: Get fundamentals (API calls - slowest, ~30-40s)
@@ -935,10 +944,18 @@ class PortfolioOrchestrator:
                 self._create_benchmark_data, benchmark, start_date, end_date
             )
 
+            # Task 4: Get macro indicators (FRED API or hardcoded fallback)
+            _data_start_times['macro'] = time.time()
+            if hasattr(self.data_provider, 'get_macro_indicators'):
+                futures['macro'] = executor.submit(
+                    self.data_provider.get_macro_indicators
+                )
+
             task_labels = {
                 'fundamentals': 'Fundamentals (P/E, EPS, market cap, financials)',
                 'price_history': 'Price history (1 year daily prices)',
-                'benchmark': 'Benchmark data (S&P 500 comparison)'
+                'benchmark': 'Benchmark data (S&P 500 comparison)',
+                'macro': 'Macro indicators (yield curve, inflation, unemployment)'
             }
             completed_tasks = []
 
@@ -959,6 +976,10 @@ class PortfolioOrchestrator:
                         data['_price_history_raw'] = result
                     elif name == 'benchmark':
                         data['benchmark_history'] = result
+                    elif name == 'macro':
+                        data['macro_indicators'] = result
+                        if result:
+                            logger.info(f"ORCHESTRATOR RECEIVED MACRO INDICATORS: source={result.get('source', 'unknown')}, estimated={result.get('estimated', True)}")
                     logger.info(f"Data task '{name}' completed for {ticker} in {task_elapsed:.1f}s")
                     completed_tasks.append(name)
 
@@ -983,6 +1004,8 @@ class PortfolioOrchestrator:
                         data['_price_history_raw'] = None
                     elif name == 'benchmark':
                         data['benchmark_history'] = pd.DataFrame()
+                    elif name == 'macro':
+                        data['macro_indicators'] = {}
 
         # Process price history (may depend on fundamentals result)
         if data.get('fundamentals', {}).get('source') == 'comprehensive_enhanced':
@@ -997,6 +1020,10 @@ class PortfolioOrchestrator:
 
         if 'benchmark_history' not in data:
             data['benchmark_history'] = pd.DataFrame()
+
+        # Ensure macro_indicators exists (even if task wasn't submitted or failed)
+        if 'macro_indicators' not in data:
+            data['macro_indicators'] = {}
 
         # Add existing portfolio for risk analysis
         data['existing_portfolio'] = existing_portfolio or []

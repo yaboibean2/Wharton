@@ -180,12 +180,21 @@ class SentimentAgent(BaseAgent):
             rationale = f"Sentiment analysis for {ticker} used a neutral default score (50/100) because recent news articles could not be retrieved from financial sources. This does not indicate positive or negative sentiment - it reflects limited news coverage availability."
             details['scoring_explanation'] = "News retrieval unsuccessful - neutral default applied."
 
+        # data_quality: 0 if sentiment failed entirely, otherwise real data fraction
+        if _sentiment_failed:
+            data_quality = 0.0
+        else:
+            real_data_components = sum(1 for v in scores.values() if v != 50)
+            data_quality = real_data_components / max(len(scores), 1)
+        details['data_quality'] = round(data_quality, 2)
+
         return {
             'score': round(composite_score, 2),
             'rationale': rationale,
             'details': details,
             'component_scores': scores,
             'data_unavailable': _sentiment_failed,
+            'data_quality': round(data_quality, 2),
         }
     
     def _analyze_news_sentiment(self, news_items: List[Dict], ticker: str) -> float:

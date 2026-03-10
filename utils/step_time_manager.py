@@ -126,8 +126,8 @@ class StepTimeManager:
         
         # No data for this step, use default
         step_defaults = {
-            1: 3.5,   # Data gathering - fundamentals
-            2: 4.0,   # Data gathering - market data
+            1: 2.0,   # Data gathering - fundamentals (yfinance primary)
+            2: 1.0,   # Data gathering - market data (yfinance download)
             3: 5.5,   # Value agent
             4: 5.0,   # Growth/Momentum agent
             5: 4.5,   # Macro regime agent

@@ -132,3 +132,11 @@ backtest:
 thresholds:
   upside_minimum: 0.12
   conviction_threshold: 55
+scoring_thresholds:
+  pe_thresholds: [12, 18, 25, 35, 50]
+  pe_scores: [90, 75, 60, 45, 30, 15]
+  ev_ebitda_thresholds: [8, 14, 22, 35, 50]
+  ev_ebitda_scores: [90, 70, 55, 40, 25, 10]
+  fcf_yield_thresholds: [5.0, 3.0, 2.0, 1.0]
+  fcf_scores: [90, 70, 55, 40]
+  market_vol_default: 18.0

@@ -21,6 +21,13 @@ class ValueAgent(BaseAgent):
     def __init__(self, config: Dict[str, Any], openai_client=None):
         super().__init__("ValueAgent", config, openai_client)
         self.metrics_config = config.get('value_agent', {}).get('metrics', {})
+        st = config.get('scoring_thresholds', {})
+        self._pe_thresholds = st.get('pe_thresholds', [12, 18, 25, 35, 50])
+        self._pe_scores = st.get('pe_scores', [90, 75, 60, 45, 30, 15])
+        self._ev_thresholds = st.get('ev_ebitda_thresholds', [8, 14, 22, 35, 50])
+        self._ev_scores = st.get('ev_ebitda_scores', [90, 70, 55, 40, 25, 10])
+        self._fcf_thresholds = st.get('fcf_yield_thresholds', [5.0, 3.0, 2.0, 1.0])
+        self._fcf_scores = st.get('fcf_scores', [90, 70, 55, 40])
     
     def analyze(self, ticker: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -48,69 +55,35 @@ class ValueAgent(BaseAgent):
         
         # 1. P/E ratio vs sector (lower is better)
         if pe_ratio and pe_ratio > 0:
-            # Centered scoring: 50 = fair value (market-average ~22x P/E)
-            if pe_ratio <= 12:
-                pe_score = 90   # Deep value
-            elif pe_ratio <= 18:
-                pe_score = 75   # Good value
-            elif pe_ratio <= 25:
-                pe_score = 60   # Slightly cheap to fair
-            elif pe_ratio <= 35:
-                pe_score = 45   # Slightly expensive
-            elif pe_ratio <= 50:
-                pe_score = 30   # Expensive
-            else:
-                pe_score = 15   # Very expensive
-
+            pe_score = self._score_with_thresholds(pe_ratio, self._pe_thresholds, self._pe_scores)
             scores['pe_score'] = pe_score
             details['pe_ratio'] = pe_ratio
             details['sector_pe'] = sector_data.get('avg_pe', 25)
             details['pe_discount_pct'] = ((25 - pe_ratio) / 25 * 100)
         else:
             scores['pe_score'] = 50  # Neutral if missing
-        
+
         # 2. EV/EBITDA (lower is better)
         if ev_ebitda and ev_ebitda > 0:
-            if ev_ebitda <= 8:
-                ev_score = 90   # Deep value
-            elif ev_ebitda <= 14:
-                ev_score = 70   # Good value
-            elif ev_ebitda <= 22:
-                ev_score = 55   # Fair
-            elif ev_ebitda <= 35:
-                ev_score = 40   # Expensive
-            elif ev_ebitda <= 50:
-                ev_score = 25   # Very expensive
-            else:
-                ev_score = 10   # Extreme premium
-
+            ev_score = self._score_with_thresholds(ev_ebitda, self._ev_thresholds, self._ev_scores)
             scores['ev_ebitda_score'] = ev_score
             details['ev_ebitda'] = ev_ebitda
         else:
             scores['ev_ebitda_score'] = 50  # Neutral
         
         # 3. FCF Yield (higher is better)
-        # Use real FCF yield from Perplexity data provider (CLEAN METHOD 10)
         fcf_yield = fundamentals.get('fcf_yield') or 0
-        # If not available from data provider, fall back to profit margin proxy
-        if not fcf_yield and market_cap and market_cap > 0:
-            profit_margin = fundamentals.get('profit_margin', 0) or 0
-            fcf_yield = profit_margin * 100 if profit_margin else 0
-        
-        # 3. FCF Yield (higher is better)
-        if fcf_yield >= 5.0:
-            fcf_score = 90   # Excellent cash generation
-        elif fcf_yield >= 3.0:
-            fcf_score = 70   # Good
-        elif fcf_yield >= 2.0:
-            fcf_score = 55   # Fair
-        elif fcf_yield >= 1.0:
-            fcf_score = 40   # Low
+
+        if not fcf_yield:
+            scores['fcf_yield_score'] = 50  # Neutral — data unavailable, not zero
+            details['fcf_yield_pct'] = None
+            details['fcf_data'] = 'unavailable'
         else:
-            fcf_score = 25   # Poor / reinvesting everything
-        
-        scores['fcf_yield_score'] = fcf_score
-        details['fcf_yield_pct'] = fcf_yield
+            fcf_score = self._score_with_thresholds(
+                fcf_yield, self._fcf_thresholds, self._fcf_scores, higher_is_better=True
+            )
+            scores['fcf_yield_score'] = fcf_score
+            details['fcf_yield_pct'] = fcf_yield
         
         # 4. Dividend/Shareholder yield
         shareholder_yield = dividend_yield * 100 if dividend_yield else 0
@@ -152,13 +125,46 @@ class ValueAgent(BaseAgent):
         rationale = self._generate_rationale(ticker, fundamentals, scores, details, composite_score)
         rationale += self._format_article_references(articles)
 
+        # data_quality: fraction of components backed by real data (not defaulted to 50)
+        real_data_components = sum(
+            1 for k, v in scores.items()
+            if v != 50 or k == 'shareholder_yield_score'  # dividend=0 is real data
+        )
+        data_quality = real_data_components / max(len(scores), 1)
+        details['data_quality'] = round(data_quality, 2)
+
         return {
             'score': round(composite_score, 2),
             'rationale': rationale,
             'details': details,
-            'component_scores': scores
+            'component_scores': scores,
+            'data_quality': round(data_quality, 2),
         }
     
+    def _score_with_thresholds(
+        self,
+        value: float,
+        thresholds: list,
+        scores: list,
+        higher_is_better: bool = False,
+    ) -> float:
+        """
+        Return a score from `scores` based on where `value` falls relative to `thresholds`.
+        For lower-is-better metrics (P/E, EV/EBITDA): lower value → higher score.
+        For higher-is-better metrics (FCF yield): higher value → higher score.
+        `scores` must have len(thresholds) + 1 entries.
+        """
+        if higher_is_better:
+            for threshold, score in zip(thresholds, scores):
+                if value >= threshold:
+                    return score
+            return scores[-1]
+        else:
+            for threshold, score in zip(thresholds, scores):
+                if value <= threshold:
+                    return score
+            return scores[-1]
+
     def _calculate_percentile(self, value: float, peer_avg: float) -> float:
         """Calculate where value falls relative to peer average (0-100)."""
         if peer_avg == 0:

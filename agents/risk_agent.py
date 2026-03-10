@@ -35,6 +35,20 @@ class RiskAgent(BaseAgent):
             logger.warning("PERPLEXITY_API_KEY not found - comprehensive verification disabled")
             self.verifier = None
     
+    def _get_market_vol(self) -> float:
+        """Fetch current annualized SPY volatility (60-day realized). Falls back to 18%."""
+        if hasattr(self, '_market_vol_cache'):
+            return self._market_vol_cache
+        try:
+            import yfinance as yf
+            spy = yf.Ticker("SPY").history(period="3mo")
+            rets = spy['Close'].pct_change().dropna()
+            self._market_vol_cache = float(rets.std() * (252 ** 0.5) * 100)
+            logger.info(f"Live market vol (SPY): {self._market_vol_cache:.1f}%")
+        except Exception:
+            self._market_vol_cache = 18.0
+        return self._market_vol_cache
+
     def analyze(self, ticker: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze stock from risk perspective.
@@ -75,26 +89,28 @@ class RiskAgent(BaseAgent):
                 # Fallback: estimate volatility from beta if available
                 beta_val = fundamentals.get('beta')
                 if beta_val and isinstance(beta_val, (int, float)):
-                    estimated_vol = abs(beta_val) * 18.0  # Market vol ~18%, scale by beta
+                    market_vol = self._get_market_vol()
+                    estimated_vol = abs(beta_val) * market_vol
                     scores['volatility_score'] = self._score_volatility(estimated_vol)
                     details['volatility_pct'] = round(estimated_vol, 2)
                     details['volatility_data_quality'] = 'estimated_from_beta'
                     logger.info(f"Estimated volatility for {ticker} from beta ({beta_val}): {estimated_vol:.1f}%")
                 else:
                     scores['volatility_score'] = 50
-                    details['volatility_pct'] = 20.0  # Market average as default
+                    details['volatility_pct'] = self._get_market_vol()
                     details['volatility_data_quality'] = 'default_estimate'
         else:
             # No price history at all - estimate from beta or use market average
             beta_val = fundamentals.get('beta')
             if beta_val and isinstance(beta_val, (int, float)):
-                estimated_vol = abs(beta_val) * 18.0
+                market_vol = self._get_market_vol()
+                estimated_vol = abs(beta_val) * market_vol
                 scores['volatility_score'] = self._score_volatility(estimated_vol)
                 details['volatility_pct'] = round(estimated_vol, 2)
                 details['volatility_data_quality'] = 'estimated_from_beta'
             else:
                 scores['volatility_score'] = 50
-                details['volatility_pct'] = 20.0  # Market average as default
+                details['volatility_pct'] = self._get_market_vol()
                 details['volatility_data_quality'] = 'default_estimate'
         
         # 2. Beta Analysis - VERY CRITICAL assessment
@@ -191,11 +207,17 @@ class RiskAgent(BaseAgent):
         details['verification_results'] = {"status": "disabled", "reason": "Disabled to prevent connection timeouts"}
         logger.info(f"Verification skipped for {ticker} to prevent timeouts")
         
+        # data_quality: fraction of components backed by real data (not defaulted to 50)
+        real_data_components = sum(1 for v in scores.values() if v != 50)
+        data_quality = real_data_components / max(len(scores), 1)
+        details['data_quality'] = round(data_quality, 2)
+
         return {
             'score': round(composite_score, 2),
             'rationale': rationale,
             'details': details,
-            'component_scores': scores
+            'component_scores': scores,
+            'data_quality': round(data_quality, 2),
         }
     
     def _score_volatility(self, volatility: float) -> float:

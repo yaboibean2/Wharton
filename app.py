@@ -632,6 +632,17 @@ section[data-testid="stSidebar"] > div,
         color: var(--text) !important;
     }
 }
+
+/* Slider track — override BaseWeb orange accent with TI blue */
+div[data-baseweb="slider"] [class*="InnerTrack"],
+div[data-baseweb="slider"] [class*="Track"] > div:first-child {
+    background: #3b5998 !important;
+}
+div[data-baseweb="slider"] [class*="Thumb"],
+div[data-baseweb="slider"] [class*="InnerThumb"] {
+    background: #3b5998 !important;
+    border-color: #3b5998 !important;
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -846,6 +857,62 @@ def main():
     if not initialize_system():
         st.stop()
 
+    # ---- Analysis history (session-level, last 5 results) ----
+    if '_analysis_history' not in st.session_state:
+        st.session_state['_analysis_history'] = []
+
+    # Sidebar: Recent Analyses + Compare
+    _hist = st.session_state['_analysis_history']
+    if _hist:
+        st.sidebar.markdown(
+            '<div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;'
+            'color:#9ca3af;margin-bottom:8px;font-weight:600;">Recent Analyses</div>',
+            unsafe_allow_html=True,
+        )
+        for _hi, _hentry in enumerate(_hist):
+            _hticker = _hentry['ticker']
+            _hscore = _hentry.get('blended_score', 0)
+            _htime = _hentry.get('timestamp', '')
+            if st.sidebar.button(
+                f"{_hticker}  \u2022  {_hscore:.0f}/100  \u2022  {_htime}",
+                key=f"hist_{_hi}",
+                use_container_width=True,
+            ):
+                st.session_state['_display_result'] = _hentry['display_data']
+                st.rerun()
+
+        # Compare feature — available when 2+ results in history
+        if len(_hist) >= 2:
+            st.sidebar.markdown(
+                '<div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;'
+                'color:#9ca3af;margin:12px 0 6px 0;font-weight:600;">Compare Stocks</div>',
+                unsafe_allow_html=True,
+            )
+            _compare_tickers = st.sidebar.multiselect(
+                "Select stocks",
+                options=[h['ticker'] for h in _hist],
+                default=[h['ticker'] for h in _hist[:2]],
+                key="_compare_select",
+                label_visibility="collapsed",
+            )
+            if len(_compare_tickers) >= 2:
+                if st.sidebar.button("Compare Selected", use_container_width=True, type="primary", key="compare_btn"):
+                    _compare_results = []
+                    for _ct in _compare_tickers:
+                        for _ch in _hist:
+                            if _ch['ticker'] == _ct:
+                                _cr = _ch['display_data'].get('result')
+                                if _cr:
+                                    _compare_results.append(_cr)
+                                break
+                    if len(_compare_results) >= 2:
+                        st.session_state['_display_result'] = {
+                            'mode': 'multi', 'results': _compare_results, 'failed': [],
+                        }
+                        st.rerun()
+
+        st.sidebar.markdown("---")
+
     # ---- Results display path (persisted across reruns) ----
     # When results are stored in session state (after analysis completed),
     # re-render them even on widget-triggered reruns (e.g. Google auth button).
@@ -875,7 +942,7 @@ def main():
             <div style="background:linear-gradient(135deg,#2c4a73,#3b5998);color:white;font-weight:700;font-size:1rem;
                         width:38px;height:38px;border-radius:10px;display:flex;
                         align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(44,74,115,0.25);
-                        letter-spacing:-0.02em;">IA</div>
+                        letter-spacing:-0.02em;">TI</div>
             <div>
                 <div style="font-size:1.2rem;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">
                     Total Insights Investing</div>
@@ -1065,6 +1132,18 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         # Strip ~Xs ETA suffix from message (already shown in timer)
         clean_msg = _re.sub(r'\s*~\d+(?:m\s+\d+)?s\s*$', '', message)
 
+        # During agent phase, show which agents are still running
+        if 42 <= sp < 98 and completed_steps is not None:
+            _agent_labels = {
+                'value': 'Value', 'growth': 'Growth', 'macro': 'Macro',
+                'risk': 'Risk', 'sentiment': 'Sentiment',
+            }
+            _still_running = [lbl for key, lbl in _agent_labels.items()
+                              if key not in completed_steps]
+            _done_count = sum(1 for k in _agent_labels if k in completed_steps)
+            if _still_running:
+                clean_msg = f"Running {', '.join(_still_running)}... [{_done_count}/{len(_agent_labels)}]"
+
         # Separate sequential and parallel steps
         seq_steps = [s for s in _AGENT_STEPS if not s.get("parallel")]
         par_steps = [s for s in _AGENT_STEPS if s.get("parallel")]
@@ -1237,8 +1316,8 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                                   regime_modulation=False, regime_sensitivity="moderate"):
         """Run analysis with a simple linear countdown timer.
 
-        Timer starts at 60s and decrements in real-time.  At phase
-        boundaries (data complete / agents complete) the countdown
+        Timer starts at the learned estimated total and decrements in real-time.
+        At phase boundaries (data complete / agents complete) the countdown
         snaps to match estimated remaining time.  After analysis
         completes, measured phase times are appended to step_times.json
         so future runs start with better estimates.
@@ -1275,12 +1354,12 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
         # --- Per-step expected timing (for rate-based recalibration) ---
         _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
-        _est_data_wall  = _lp.get('data_gather', 45.0)
+        _est_data_wall  = _lp.get('data_gather', 10.0)
         # Use 75th-percentile of actual parallel wall time (bottleneck agent).
         # This is more accurate than max(individual medians) because agent
         # durations are highly variable and the bottleneck is what matters.
-        _est_agents_wall = _lp.get('agents_wall_p75', _lp.get('agents', 20.0))
-        _est_blend = _lp.get('blend', 1.0)
+        _est_agents_wall = _lp.get('agents_wall_p75', _lp.get('agents', 16.0))
+        _est_blend = _lp.get('blend', 0.1)
 
         # Actual step-completion timestamps (elapsed seconds from start)
         _step_done_at = {}
@@ -1377,11 +1456,12 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         thread.start()
 
         # ─── Simple linear countdown timer ───
-        # Counts down from 60 at exactly 1 second per second.
+        # Starts from the learned average total time (recent 5 runs).
         # At phase-boundary milestones, the countdown is snapped
         # to match the estimated remaining time so it lands near 0
         # when analysis completes.
-        _countdown = 60.0
+        _avg_total = _lp.get('avg_total', _est_data_wall + _est_agents_wall + _est_blend + 2.0)
+        _countdown = _avg_total
         _data_snapped = False
         _agents_snapped = False
         display_pct = 0.0
@@ -1478,7 +1558,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
     # Use average total time from step_times.json for the initial countdown display
     _lp = st.session_state.orchestrator._learned_phases if hasattr(st.session_state, 'orchestrator') and hasattr(st.session_state.orchestrator, '_learned_phases') else {}
-    _initial_est = 60.0
+    _initial_est = _lp.get('avg_total', _lp.get('total', 30.0))
 
     _render_progress(progress_slot, 0, "Initializing analysis…",
                      remaining_secs=_initial_est)
@@ -1498,6 +1578,17 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 date_str = analysis_date[0].strftime('%Y-%m-%d') if hasattr(analysis_date[0], 'strftime') else str(analysis_date[0])
             else:
                 date_str = datetime.now().strftime('%Y-%m-%d')
+
+            # Quick ticker validation before running full analysis
+            try:
+                import yfinance as yf
+                _fast = yf.Ticker(ticker).fast_info
+                if not getattr(_fast, 'last_price', None):
+                    progress_slot.empty()
+                    st.error(f"**'{ticker}'** doesn't appear to be a valid ticker symbol. Please check and try again.")
+                    return
+            except Exception:
+                pass  # If validation itself fails, let the analysis proceed normally
 
             # Run with smooth progress interpolation (background thread + 10fps polling)
             orchestrator = st.session_state.orchestrator
@@ -1528,13 +1619,44 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 if result['error'] == 'ticker_not_found':
                     _render_ticker_not_found(result.get('ticker', params.get('ticker', '')))
                 else:
-                    st.error(f"{result['error']}")
+                    _failed_ticker = result.get('ticker', ticker)
+                    st.error(f"**Analysis failed for {_failed_ticker}**")
+                    with st.expander("Error details", expanded=True):
+                        st.code(str(result['error']))
+                        st.caption("Possible causes: API rate limit, network issue, or invalid data. Try again in a moment.")
                 return
 
+            # Store agent scores for delta tracking across analyses
+            if '_score_history' not in st.session_state:
+                st.session_state['_score_history'] = {}
+            _result_ticker = result.get('ticker', ticker)
+            # Move current stored scores to _prev_score_history before overwriting
+            if '_prev_score_history' not in st.session_state:
+                st.session_state['_prev_score_history'] = {}
+            if _result_ticker in st.session_state['_score_history']:
+                st.session_state['_prev_score_history'][_result_ticker] = st.session_state['_score_history'][_result_ticker]
+            st.session_state['_score_history'][_result_ticker] = result.get('agent_scores', {})
+
             # Persist results so page survives widget-triggered reruns
-            st.session_state['_display_result'] = {
-                'mode': 'single', 'result': result
-            }
+            _display_data = {'mode': 'single', 'result': result}
+            st.session_state['_display_result'] = _display_data
+
+            # Append to analysis history (most recent first, max 5)
+            _analysis_history = st.session_state.setdefault('_analysis_history', [])
+            _analysis_history.insert(0, {
+                'ticker': _result_ticker,
+                'blended_score': result.get('blended_score', result.get('final_score', 0)),
+                'timestamp': datetime.now().strftime('%H:%M'),
+                'display_data': _display_data,
+            })
+            # Remove older duplicate of same ticker
+            _seen = set()
+            _deduped = []
+            for _ah in _analysis_history:
+                if _ah['ticker'] not in _seen:
+                    _seen.add(_ah['ticker'])
+                    _deduped.append(_ah)
+            st.session_state['_analysis_history'] = _deduped[:5]
 
             # Display results
             display_stock_analysis(result)
@@ -1547,6 +1669,30 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
     else:
         # Multiple stocks analysis — use the same progress card as single stock
         # but with an outer wrapper showing overall batch progress.
+
+        # Validate all tickers upfront before running any analysis
+        _invalid_tickers = []
+        _valid_tickers = []
+        for _t in tickers:
+            try:
+                import yfinance as yf
+                _fi = yf.Ticker(_t).fast_info
+                if not getattr(_fi, 'last_price', None):
+                    _invalid_tickers.append(_t)
+                else:
+                    _valid_tickers.append(_t)
+            except Exception:
+                _valid_tickers.append(_t)  # Let analysis decide if validation fails
+
+        if _invalid_tickers:
+            st.warning(f"Skipping invalid ticker(s): {', '.join(f'**{t}**' for t in _invalid_tickers)}")
+
+        tickers = _valid_tickers
+        if not tickers:
+            progress_slot.empty()
+            st.error("No valid tickers to analyze.")
+            return
+
         results = []
         failed_tickers = []
         batch_start_time = time.time()
@@ -1555,7 +1701,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         if st.session_state.analysis_times:
             avg_time_per_stock = sum(st.session_state.analysis_times) / len(st.session_state.analysis_times)
         else:
-            avg_time_per_stock = _lp.get('avg_total', 70.0)
+            avg_time_per_stock = _lp.get('avg_total', 30.0)
 
         total_stocks = len(tickers)
 
@@ -1706,9 +1852,9 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
                 # --- Per-step expected timing (multi-point recalibration) ---
                 _lp_m = st.session_state.orchestrator._learned_phases if hasattr(st.session_state.orchestrator, '_learned_phases') else {}
-                _est_data_wall_m = _lp_m.get('data_gather', 45.0)
-                _est_agents_wall_m = _lp_m.get('agents_wall_p75', _lp_m.get('agents', 20.0))
-                _est_blend_m = _lp_m.get('blend', 1.0)
+                _est_data_wall_m = _lp_m.get('data_gather', 10.0)
+                _est_agents_wall_m = _lp_m.get('agents_wall_p75', _lp_m.get('agents', 16.0))
+                _est_blend_m = _lp_m.get('blend', 0.1)
                 _step_done_at_m = {}
 
                 _DATA_KW_M = {'fundamentals': 'fundamentals', 'price history': 'price_history', 'benchmark': 'benchmark'}
@@ -1781,7 +1927,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 thread.start()
 
                 # ─── Simple linear countdown timer (same as single-stock) ───
-                _countdown_m = 60.0
+                _countdown_m = _est_data_wall_m + _est_agents_wall_m + _est_blend_m + 2.0
                 _data_snapped_m = False
                 _agents_snapped_m = False
                 display_pct_m = 0.0
@@ -1917,9 +2063,30 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         # Display results summary
         if results:
             # Persist results so page survives widget-triggered reruns
-            st.session_state['_display_result'] = {
+            _display_data = {
                 'mode': 'multi', 'results': results, 'failed': failed_tickers,
             }
+            st.session_state['_display_result'] = _display_data
+
+            # Append each successful result to analysis history
+            _analysis_history = st.session_state.setdefault('_analysis_history', [])
+            for _mr in results:
+                _mt = _mr.get('ticker', '?')
+                _analysis_history.insert(0, {
+                    'ticker': _mt,
+                    'blended_score': _mr.get('blended_score', _mr.get('final_score', 0)),
+                    'timestamp': datetime.now().strftime('%H:%M'),
+                    'display_data': {'mode': 'single', 'result': _mr},
+                })
+            # Deduplicate (keep most recent per ticker) and cap at 5
+            _seen = set()
+            _deduped = []
+            for _ah in _analysis_history:
+                if _ah['ticker'] not in _seen:
+                    _seen.add(_ah['ticker'])
+                    _deduped.append(_ah)
+            st.session_state['_analysis_history'] = _deduped[:5]
+
             display_multiple_stock_analysis(results, failed_tickers)
         else:
             st.error("All analyses failed!")
@@ -1931,10 +2098,7 @@ def stock_analysis_page():
     """Single or multiple stock analysis page."""
     import threading, math
 
-    st.header("Stock Analysis")
-    st.write("Evaluate individual securities or analyze multiple stocks at once using multi-agent investment research methodology.")
     st.markdown("---")
-
 
     # Analysis mode selection
     analysis_mode = st.radio(
@@ -1945,8 +2109,8 @@ def stock_analysis_page():
     )
 
     if analysis_mode == "Multiple Stocks":
-        st.info("**Note:** Multi-stock analysis takes longer since each stock is analyzed individually. "
-                "Consider starting with a single stock first to test your configuration.")
+        st.caption("**Note:** Multi-stock analysis takes longer since each stock is analyzed individually. "
+                   "Consider starting with a single stock first to test your configuration.")
     
     if analysis_mode == "Single Stock":
         ticker = st.text_input(
@@ -2010,85 +2174,7 @@ def stock_analysis_page():
     if weight_preset == "custom_weights":
         st.caption("Adjust sliders to set each agent's influence on the final score. Higher = more influence.")
 
-        # Fix slider track fill color: BaseWeb's InnerTrack uses a linear-gradient
-        # generated by getTrackBackground() via Styletron CSS-in-JS.
-        # Styletron captures insertRule references at init (before our iframe loads),
-        # so a prototype patch alone is insufficient. We combine:
-        #   1. Prototype patch (catches any calls that DO go through the chain)
-        #   2. Continuous RAF scanner (catches everything else, throttled to ~8fps)
-        # Both handle rgb() AND hex color formats.
-        import streamlit.components.v1 as components
-        components.html("""
-        <script>
-        (function() {
-            try { var pw = window.parent; var doc = pw.document; } catch(e) { return; }
-
-            var B_RGB = 'rgb(59, 89, 152)';
-            var B_HEX = '#3b5998';
-
-            function isOrange(r, g, b) {
-                return r > 150 && (r - g > 50 || r - b > 80);
-            }
-
-            function fix(s) {
-                if (!s) return s;
-                s = s.replace(/rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)[^)]*\\)/g,
-                    function(m, r, g, b) { return isOrange(+r, +g, +b) ? B_RGB : m; });
-                s = s.replace(/#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\\b/g,
-                    function(m, rh, gh, bh) {
-                        return isOrange(parseInt(rh,16), parseInt(gh,16), parseInt(bh,16)) ? B_HEX : m;
-                    });
-                return s;
-            }
-
-            function scanRules() {
-                for (var i = 0; i < doc.styleSheets.length; i++) {
-                    try {
-                        var rules = doc.styleSheets[i].cssRules;
-                        if (!rules) continue;
-                        for (var j = 0; j < rules.length; j++) {
-                            var rs = rules[j].style;
-                            if (!rs) continue;
-                            var bg = rs.background;
-                            if (bg) { var f = fix(bg); if (f !== bg) rs.background = f; }
-                            var bc = rs.backgroundColor;
-                            if (bc) { var f2 = fix(bc); if (f2 !== bc) rs.backgroundColor = f2; }
-                        }
-                    } catch(e) {}
-                }
-            }
-
-            // Layer 1: patch insertRule prototype (belt)
-            if (!pw.__slPatch4) {
-                pw.__slPatch4 = true;
-                var P = pw.CSSStyleSheet.prototype;
-                var orig = P.insertRule;
-                P.insertRule = function(rule, idx) {
-                    return orig.call(this, fix(rule), idx);
-                };
-            }
-
-            // Layer 2: continuous RAF scanner (suspenders) — only scans when
-            // sliders exist on the page, throttled to every 120ms (~8fps)
-            if (!pw.__slScan4) {
-                pw.__slScan4 = true;
-                var last = 0;
-                (function tick() {
-                    var now = Date.now();
-                    if (now - last >= 120 && doc.querySelector('[data-baseweb="slider"]')) {
-                        scanRules();
-                        last = now;
-                    }
-                    pw.requestAnimationFrame(tick);
-                })();
-            }
-
-            // Always run an immediate scan (handles full-page reruns where
-            // new rules were inserted before this iframe loaded)
-            scanRules();
-        })();
-        </script>
-        """, height=0)
+        # Slider track color is handled via global CSS (see st.markdown style block at top)
 
         @st.fragment
         def _weight_slider_fragment():
@@ -3805,10 +3891,34 @@ def generate_pdf_report(result: dict) -> bytes:
     return buf.getvalue()
 
 
-def display_stock_analysis(result: dict):
+@st.cache_data(ttl=3600)
+def _get_market_context() -> dict:
+    """Fetch key market indicators (cached 1 hour)."""
+    try:
+        import yfinance as yf
+        _sp = yf.Ticker("^GSPC").fast_info
+        _vix = yf.Ticker("^VIX").fast_info
+        return {
+            'sp500': getattr(_sp, 'last_price', None),
+            'vix': getattr(_vix, 'last_price', None),
+        }
+    except Exception:
+        return {}
+
+
+def display_stock_analysis(result: dict, show_back_button: bool = True):
     """Display detailed stock analysis results with enhanced rationales."""
-    
-    
+
+    # Market context one-liner banner
+    _mkt = _get_market_context()
+    _analysis_date = result.get('analysis_date', datetime.now().strftime('%Y-%m-%d'))
+    _mkt_parts = [f"Analysis Date: {_analysis_date}"]
+    if _mkt.get('sp500'):
+        _mkt_parts.append(f"S&P 500: {_mkt['sp500']:,.0f}")
+    if _mkt.get('vix'):
+        _mkt_parts.append(f"VIX: {_mkt['vix']:.1f}")
+    st.caption("  ·  ".join(_mkt_parts))
+
     # Header with company info
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -3816,14 +3926,22 @@ def display_stock_analysis(result: dict):
         if 'name' in result['fundamentals']:
             st.caption(result['fundamentals']['name'])
     with col2:
-        # Score badge
+        # Score badge — styled to match design system
         final_score = result['final_score']
-        if final_score >= 65:
-            st.success(f"Score: {final_score:.1f}")
-        elif final_score >= 45:
-            st.info(f"Score: {final_score:.1f}")
-        else:
-            st.warning(f"Score: {final_score:.1f}")
+        _badge_color = (
+            '#059669' if final_score >= 65 else
+            '#10b981' if final_score >= 55 else
+            '#f59e0b' if final_score >= 45 else
+            '#f97316' if final_score >= 35 else
+            '#ef4444'
+        )
+        st.markdown(
+            f'<div style="background:{_badge_color};color:white;font-weight:700;font-size:1.15rem;'
+            f'padding:10px 16px;border-radius:10px;text-align:center;margin-top:6px;'
+            f'box-shadow:0 2px 8px rgba(0,0,0,0.12);letter-spacing:-0.01em;">'
+            f'{final_score:.1f}/100</div>',
+            unsafe_allow_html=True,
+        )
     
     # --- Overall Assessment ---
     final_score = result['final_score']
@@ -4284,26 +4402,28 @@ Formula: Blended Score = Weighted Sum / Total Weight
         ticker_safe = result.get('ticker', 'analysis').upper()
         pdf_filename = f"{ticker_safe}_Investment_Report_{datetime.now().strftime('%Y%m%d')}.pdf"
         st.download_button(
-            label="Download PDF Report",
+            label="⬇  Download PDF Report",
             data=pdf_bytes,
             file_name=pdf_filename,
             mime="application/pdf",
             type="primary",
-            use_container_width=True,
             key="download_pdf_report",
         )
     except Exception as _pdf_err:
         st.warning(f"PDF generation unavailable: {_pdf_err}")
 
     # Back to home
-    st.markdown("---")
-    if st.button("Back to Home Page", type="secondary", use_container_width=True, key="back_home_single"):
-        if '_analysis_params' in st.session_state:
-            del st.session_state['_analysis_params']
-        if '_display_result' in st.session_state:
-            del st.session_state['_display_result']
-        _cleanup_display_result_backup()
-        st.rerun()
+    if show_back_button:
+        st.markdown("---")
+        _ticker_key = result.get('ticker', 'single').replace('.', '_')
+        if st.button("← Back to Home Page", type="secondary", use_container_width=True,
+                     key=f"back_home_{_ticker_key}"):
+            if '_analysis_params' in st.session_state:
+                del st.session_state['_analysis_params']
+            if '_display_result' in st.session_state:
+                del st.session_state['_display_result']
+            _cleanup_display_result_backup()
+            st.rerun()
 
 
 def display_multiple_stock_analysis(results: list, failed_tickers: list):
@@ -4595,14 +4715,14 @@ def display_multiple_stock_analysis(results: list, failed_tickers: list):
     
     for idx, (tab, result) in enumerate(zip(tabs, results)):
         with tab:
-            display_stock_analysis(result)
+            display_stock_analysis(result, show_back_button=False)
 
 #     # Google Sheets / Docs export (multi-stock comparison)
 #     _render_google_export_multi(results)
 
     # Back to home
     st.markdown("---")
-    if st.button("Back to Home Page", type="secondary", use_container_width=True, key="back_home_multi"):
+    if st.button("← Back to Home Page", type="secondary", use_container_width=True, key="back_home_multi"):
         if '_analysis_params' in st.session_state:
             del st.session_state['_analysis_params']
         if '_display_result' in st.session_state:
@@ -4757,15 +4877,41 @@ def display_enhanced_agent_rationales(result: dict):
     st.write("---")
     st.write("**Individual Agent Analysis**")
     
-    # Create detailed rationale display for each agent 
+    # Key mapping from display agent key to orchestrator key (used for agent_details lookup)
+    _dq_key_map = {
+        'value_agent': 'value',
+        'growth_momentum_agent': 'growth_momentum',
+        'risk_agent': 'risk',
+        'sentiment_agent': 'sentiment',
+        'macro_regime_agent': 'macro_regime',
+    }
+
+    # Retrieve previous scores for this ticker (if any)
+    _result_ticker = result.get('ticker', '')
+    _prev_scores = st.session_state.get('_prev_score_history', {}).get(_result_ticker, {})
+
+    # Create detailed rationale display for each agent
     for i, (agent_key, agent_name) in enumerate(zip(agent_scores.keys(), agent_names)):
         score = agent_scores[agent_key]
         rationale = agent_rationales.get(agent_key, "Analysis not available")
-        
+
+        # Resolve data_quality from agent details
+        _orch_key = _dq_key_map.get(agent_key, agent_key)
+        _agent_det = result.get('agent_details', {}).get(_orch_key, {})
+        data_quality = _agent_det.get('data_quality', 1.0)
+
+        # Score delta vs previous run
+        _prev_score = _prev_scores.get(agent_key)
+        if _prev_score is not None:
+            _delta = score - _prev_score
+            _delta_str = f" ▲ +{_delta:.1f}" if _delta > 0 else (f" ▼ {_delta:.1f}" if _delta < 0 else " ━ no change")
+        else:
+            _delta_str = ""
+
         # Create expandable section for each agent
-        with st.expander(f"**{agent_name}** - Score: {score:.1f}/100", expanded=False):
+        with st.expander(f"**{agent_name}** - Score: {score:.1f}/100{_delta_str}", expanded=False):
             col1, col2 = st.columns([1, 3])
-            
+
             with col1:
                 # Score display with gradient color
                 score_color = get_gradient_color(score)
@@ -4782,7 +4928,7 @@ def display_enhanced_agent_rationales(result: dict):
                     <p style="margin: 0; color: white;">out of 100</p>
                 </div>
                 """, unsafe_allow_html=True)
-                
+
                 # Score interpretation
                 if score >= 80:
                     st.success("**Excellent**\nStrong positive signals")
@@ -4794,20 +4940,38 @@ def display_enhanced_agent_rationales(result: dict):
                     st.error("**Concerning**\nSeveral negative factors")
                 else:
                     st.error("**Poor**\nSignificant issues identified")
+
+                # Data quality warning
+                if data_quality < 0.6:
+                    st.caption("⚠️ Limited data — score may be less reliable")
             
             with col2:
+                # TL;DR: bold first meaningful sentence of the rationale
+                if isinstance(rationale, str) and rationale.strip():
+                    _clean_rat = rationale.replace("\\n", "\n").strip()
+                    # Find first non-header, non-bullet sentence
+                    _tldr = ""
+                    for _line in _clean_rat.split('\n'):
+                        _line = _line.strip().lstrip('•-* #').strip()
+                        if _line and not _line.startswith('**') and len(_line) > 20:
+                            # Take up to first period
+                            _first_period = _line.find('.')
+                            _tldr = _line[:_first_period + 1] if _first_period > 0 else _line
+                            break
+                    if _tldr:
+                        st.markdown(f"**{_tldr}**")
+
                 st.write("**Detailed Analysis:**")
-                
+
                 # Display the rationale with proper formatting
                 if isinstance(rationale, str) and rationale.strip():
-                    # Clean up and format the rationale text
                     formatted_rationale = rationale.replace("\\n", "\n").strip()
-                    
-                    # Split into paragraphs for better readability
+
+                    # Split into paragraphs; render markdown lines as markdown, plain text as write
                     paragraphs = [p.strip() for p in formatted_rationale.split('\n') if p.strip()]
-                    
+
                     for paragraph in paragraphs:
-                        if paragraph.startswith('**') or paragraph.startswith('##'):
+                        if paragraph.startswith(('**', '##', '•', '-', '*')):
                             st.markdown(paragraph)
                         else:
                             st.write(paragraph)
