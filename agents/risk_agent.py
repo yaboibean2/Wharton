@@ -421,24 +421,15 @@ class RiskAgent(BaseAgent):
 
     def _generate_rationale(self, ticker: str, details: Dict, scores: Dict, actual_score: float) -> str:
         """Generate detailed rationale using OpenAI with comprehensive context."""
-        system_prompt = """You are a senior risk management analyst at a premier institutional investment firm.
-You specialize in quantitative risk assessment, portfolio risk management, and downside protection strategies.
-Your analysis should be:
-1. Quantitatively rigorous, focusing on specific risk metrics and their implications
-2. Context-aware, considering market conditions and portfolio construction principles
-3. Forward-looking, discussing potential downside scenarios and risk management
-4. Specific about what drives the risk profile and how it affects investment suitability
-5. Around 120-180 words with clear, actionable risk insights
+        system_prompt = """You are a risk analyst. Summarize the data below in 80-120 words.
 
-CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "With annualized volatility of 24.3%..." or "The beta of 1.21 indicates...").
-Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., price history, fundamental data, beta coefficient).
-
-ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
-- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
-- If a metric is N/A, say so — do NOT substitute a made-up value.
-- Before writing each number, mentally verify it matches the data provided verbatim.
-- Do NOT claim a volatility, beta, or drawdown figure that is not explicitly in the data below."""
+RULES:
+- ONLY state facts from the DATA section. Never invent numbers.
+- Quote every number EXACTLY as given (e.g. "24.3%", "1.21").
+- If a value is N/A or DATA NOT AVAILABLE, say so — do not guess.
+- Do NOT add predictions, opinions, or context beyond what the data shows.
+- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
+- Structure: start with the score, then cover each metric with its exact value."""
         
         risk_boost = details.get('risk_boost_applied', 0)
         is_low_risk = details.get('is_low_risk_asset', False)
@@ -457,41 +448,22 @@ ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
         beta_text = f"{beta:.2f}" if beta is not None else "N/A"
         dd_text = f"{max_drawdown:.1f}%" if max_drawdown is not None else "N/A"
         
-        user_prompt = f"""
-RISK ASSESSMENT REQUEST: {ticker}
-FINAL RISK SCORE: {actual_score:.1f}/100
+        user_prompt = f"""DATA for {ticker} — Risk Score: {actual_score:.1f}/100
 
-DETAILED RISK METRICS:
-• Volatility Analysis: {vol_text} annualized → Score: {vol_score:.0f}/100
-• Beta Coefficient: {beta_text} (market correlation) → Score: {beta_score:.0f}/100  
-• Maximum Drawdown: {dd_text} (worst decline) → Score: {dd_score:.0f}/100
-• Diversification Benefit: Score: {div_score:.0f}/100
-{'• Large-Cap Risk Reduction: +' + str(risk_boost) + ' point institutional stability bonus' if risk_boost > 0 else ''}
+• Volatility: {vol_text} annualized (score {vol_score:.0f}/100)
+• Beta: {beta_text} (score {beta_score:.0f}/100)
+• Max Drawdown: {dd_text} (score {dd_score:.0f}/100)
+• Diversification Benefit: score {div_score:.0f}/100
+{'• Large-Cap Stability Bonus: +' + str(risk_boost) + ' points' if risk_boost > 0 else ''}
 
-SCORING CONTEXT:
-- Scores above 80 = Lower risk with institutional quality characteristics
-- Scores 60-80 = Moderate risk suitable for balanced portfolios
-- Scores 40-60 = Higher risk requiring careful position sizing
-- Scores 20-40 = High risk suitable only for aggressive allocations
-- Scores below 20 = Extreme risk, speculative positions only
-
-ANALYSIS REQUEST:
-As a risk management expert, provide a comprehensive analysis explaining why {ticker} earned a {actual_score:.1f}/100 risk score.
-Address:
-1. What are the primary risk drivers and most concerning metrics?
-2. How do volatility, beta, and drawdown patterns interact to create the overall risk profile?
-3. What downside scenarios should investors be prepared for?
-4. How does this risk level affect appropriate position sizing and portfolio allocation?
-5. What risk management considerations are most critical for this investment?
-
-Focus on actionable insights for portfolio risk management and downside protection."""
+Summarize these facts."""
         
         try:
             rationale = self._call_openai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.2,
-                max_tokens=250
+                temperature=0.1,
+                max_tokens=180
             )
             return rationale.strip()
         except Exception as e:

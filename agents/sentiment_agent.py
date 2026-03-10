@@ -289,7 +289,14 @@ Output only a number 0-100 for overall sentiment:"""
         links_text = '\n'.join([f"Link {i}: {link}" for i, link in enumerate(article_links, 1)])
         
         # Use improved prompt format that ensures clear sentiment score
-        system_prompt = "You are a sentiment analysis agent as part of a stock analysis pipeline. You must provide a clear numerical sentiment score."
+        system_prompt = """You are a sentiment scoring agent. You must provide a clear numerical sentiment score.
+
+RULES:
+- Start with SENTIMENT SCORE: [number]/100.
+- ONLY reference article titles and content that appear below. Do NOT invent headlines or sources.
+- Quote numbers exactly. Do not round or alter figures.
+- Keep the analysis to 80-120 words of factual summary, no speculation.
+- Do NOT use phrases like 'suggests', 'indicates', 'implies', or 'reflects'."""
         
         user_prompt = f"""Analyze the sentiment for stock {ticker} using the information below and provide a numerical sentiment score.
 
@@ -312,8 +319,8 @@ Provide your analysis after the sentiment score."""
             response = self._call_openai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.2,
-                max_tokens=800
+                temperature=0.1,
+                max_tokens=400
             )
             
             # Store the full response for rationale generation
@@ -641,21 +648,16 @@ Provide your analysis after the sentiment score."""
                 headlines_with_urls.append(f"- {title}")
         headlines_text = '\n'.join(headlines_with_urls)
         
-        system_prompt = """You are a senior market sentiment analyst at a leading investment research firm.
-You specialize in analyzing news flow, market narratives, and investor sentiment to gauge stock momentum.
-Your analysis should be:
-1. Comprehensive and insightful, explaining how news and events shape investor perception
-2. Evidence-based, citing specific news sources and events that drive sentiment
-3. Market-aware, considering broader market context and investor behavior
-4. Forward-looking, discussing implications for stock performance
-5. Around 120-180 words with specific, actionable insights about sentiment trends
+        system_prompt = """You are a sentiment analyst. Summarize the data below in 80-120 words.
 
-ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
-- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
-- ONLY reference headlines and sources that are explicitly listed in the data below. Do NOT invent article titles or sources.
-- If a sentiment score is provided, cite it exactly as given.
-- Before writing each number or headline, mentally verify it matches the data provided verbatim.
-- Do NOT claim sentiment shifts, analyst rating changes, or events that are not explicitly in the data below."""
+RULES:
+- ONLY state facts from the DATA section. Never invent numbers or headlines.
+- Quote every number EXACTLY as given.
+- ONLY reference article titles and sources that appear in the data. Do NOT invent any.
+- If there are few articles, say so — do not speculate about missing coverage.
+- Do NOT add predictions, opinions, or context beyond what the data shows.
+- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
+- Structure: start with the score and article count, then summarize the key headlines."""
         
         # Calculate component scores for comprehensive analysis
         news_volume_score = min(100, len(news_items) * 10)  # Approximate score based on volume
@@ -678,42 +680,22 @@ ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
             
             sources_info = f"\n\nDETAILED ARTICLE SOURCES:\n" + '\n'.join(source_details)
         
-        user_prompt = f"""
-SENTIMENT ANALYSIS REQUEST: {ticker}
-FINAL SENTIMENT SCORE: {sentiment_score:.1f}/100
+        user_prompt = f"""DATA for {ticker} — Sentiment Score: {sentiment_score:.1f}/100
 
-NEWS COVERAGE ANALYSIS:
-• Total Articles Analyzed: {len(news_items)} recent articles
-• Key Market Events: {', '.join(events) if events else 'No major events detected'}
-• Coverage Intensity: {'High' if len(news_items) > 5 else 'Moderate' if len(news_items) > 2 else 'Limited'}
+• Articles Analyzed: {len(news_items)}
+• Key Events: {', '.join(events) if events else 'None detected'}
 
-RECENT HEADLINES & SOURCES:
+HEADLINES:
 {headlines_text}{sources_info}
 
-SCORING CONTEXT:
-- Scores above 80 = Very positive sentiment with strong bullish catalysts
-- Scores 60-80 = Positive sentiment with supportive news flow
-- Scores 40-60 = Neutral sentiment, mixed or limited news
-- Scores 20-40 = Negative sentiment with concerning developments
-- Scores below 20 = Very negative sentiment with significant headwinds
-
-ANALYSIS REQUEST:
-As a sentiment expert, provide a comprehensive analysis explaining why {ticker} earned a {sentiment_score:.1f}/100 sentiment score.
-Address:
-1. What are the key news themes and narratives driving current sentiment?
-2. How do recent headlines reflect investor psychology and market perception?
-3. What specific events or developments are most impactful for sentiment?
-4. How does news volume and source credibility affect the sentiment assessment?
-5. What are the implications for near-term stock performance based on current sentiment?
-
-Focus on actionable insights about market sentiment momentum and investor behavior patterns."""
+Summarize these facts."""
         
         try:
             rationale = self._call_openai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.3,
-                max_tokens=250
+                temperature=0.1,
+                max_tokens=180
             )
             
             # ALWAYS append the article links to the rationale

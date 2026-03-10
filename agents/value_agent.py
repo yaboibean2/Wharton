@@ -292,25 +292,15 @@ class ValueAgent(BaseAgent):
         div_yield = details.get('dividend_yield_pct', 0)
         composite_score = actual_score if actual_score is not None else (sum(scores.values()) / len(scores) if scores else 50)
         
-        # Enhanced system prompt for comprehensive value analysis
-        system_prompt = """You are a senior value investment analyst at a top-tier investment firm.
-You specialize in identifying undervalued stocks using fundamental analysis. Your analysis should be:
-1. Professional and detailed, explaining the specific metrics that drive your valuation
-2. Context-aware, considering sector norms and market conditions
-3. Forward-looking, discussing implications for investors
-4. Specific about what makes this stock attractive or concerning from a value perspective
-5. Around 100-150 words with clear, actionable insights
+        system_prompt = """You are a value analyst. Summarize the data below in 80-120 words.
 
-CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "The P/E ratio of 28.5x trades at a 12% discount..." or "Dividend yield of 1.8% provides...").
-Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., P/E ratio, dividend yield, FCF yield, EV/EBITDA).
-
-ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
-- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
-- If a metric is listed as N/A or 0.0%, say so — do NOT substitute a made-up value.
-- Before writing each number, mentally verify it matches the data provided verbatim.
-- Do NOT claim a growth rate, P/E, yield, or price that is not explicitly in the data below.
-- If something seems contradictory (e.g., 0% growth but high momentum), describe what the data shows rather than speculating about what it 'should' be."""
+RULES:
+- ONLY state facts from the DATA section. Never invent numbers.
+- Quote every number EXACTLY as given (e.g. "28.5x", "1.8%").
+- If a value is N/A or DATA NOT AVAILABLE, say so — do not guess.
+- Do NOT add predictions, opinions, or context beyond what the data shows.
+- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
+- Structure: start with the score, then cover each metric with its exact value."""
         
         # Get all component scores for comprehensive context
         pe_score = scores.get('pe_score', 50)
@@ -318,40 +308,29 @@ ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
         fcf_score = scores.get('fcf_yield_score', 50)
         yield_score = scores.get('shareholder_yield_score', 50)
         
-        # Rich context for comprehensive analysis
-        user_prompt = f"""
-STOCK ANALYSIS REQUEST: {ticker}
-Sector: {sector}
-FINAL VALUE SCORE: {composite_score:.1f}/100
+        def _vfmt(val, suffix=''):
+            if val is None or val == 'N/A':
+                return 'DATA NOT AVAILABLE'
+            return f"{val}{suffix}"
+        
+        fcf_raw = details.get('fcf_yield_pct')
+        ev_raw = details.get('ev_ebitda')
+        
+        user_prompt = f"""DATA for {ticker} ({sector}) — Value Score: {composite_score:.1f}/100
 
-DETAILED VALUATION METRICS:
-• P/E Ratio: {pe_ratio} (Trading {pe_discount:+.1f}% vs sector average) → Score: {pe_score:.0f}/100
-• Dividend Yield: {div_yield:.1f}% annual → Score: {yield_score:.0f}/100  
-• Free Cash Flow Yield: {details.get('fcf_yield_pct', 0):.1f}% → Score: {fcf_score:.0f}/100
-• EV/EBITDA Multiple: {details.get('ev_ebitda', 'N/A')} → Score: {ev_score:.0f}/100
+• P/E Ratio: {_vfmt(pe_ratio, 'x')} ({pe_discount:+.1f}% vs sector avg) (score {pe_score:.0f}/100)
+• Dividend Yield: {div_yield:.1f}% (score {yield_score:.0f}/100)
+• FCF Yield: {_vfmt(f'{fcf_raw:.1f}' if fcf_raw else None, '%')} (score {fcf_score:.0f}/100)
+• EV/EBITDA: {_vfmt(ev_raw)} (score {ev_score:.0f}/100)
 
-SCORING CONTEXT:
-- Scores above 80 = Excellent value opportunity
-- Scores 65-80 = Good value with solid fundamentals  
-- Scores 50-65 = Fair value, reasonably priced
-- Scores below 50 = Overvalued or concerning metrics
-
-ANALYSIS REQUEST:
-As a value investing expert, provide a comprehensive analysis explaining why {ticker} earned a {composite_score:.1f}/100 value score. 
-Address:
-1. What are the strongest and weakest value metrics?
-2. How does this compare to typical {sector} sector valuations?
-3. What does this valuation suggest about investor sentiment and opportunity?
-4. What are the key value investment considerations for this stock?
-
-Focus on actionable insights for value-oriented investors."""
+Summarize these facts."""
         
         try:
             rationale = self._call_openai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.3,
-                max_tokens=200
+                temperature=0.1,
+                max_tokens=180
             )
             return rationale.strip()
         except Exception as e:

@@ -374,66 +374,35 @@ class MacroRegimeAgent(BaseAgent):
         actual_score: float = None
     ) -> str:
         """Generate one-line rationale using OpenAI."""
-        system_prompt = """You are a senior macroeconomic strategist at a global investment management firm.
-You specialize in analyzing how macroeconomic cycles, monetary policy, and regime changes affect sector performance.
-Your analysis should be:
-1. Macro-focused and regime-aware, explaining how economic conditions drive sector rotations
-2. Policy-conscious, considering Fed policy, yield curves, and inflation impacts
-3. Forward-looking, discussing implications for sector performance in current macro environment
-4. Specific about the transmission mechanisms between macro conditions and sector fundamentals
-5. Around 100-150 words with clear, actionable macro-investment insights
+        system_prompt = """You are a macro analyst. Summarize the data below in 80-120 words.
 
-CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "With yield curve slope at 0.50 and inflation at 3.2%..." or "The sector adjustment of +15 points reflects...").
-Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., yield curve, inflation rate, unemployment, regime classification).
-
-ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
-- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
-- If a metric says 'Data unavailable', say so — do NOT substitute a made-up value.
-- Before writing each number, mentally verify it matches the data provided verbatim.
-- Do NOT claim a yield curve slope, inflation rate, or interest rate that is not explicitly in the data below."""
+RULES:
+- ONLY state facts from the DATA section. Never invent numbers.
+- Quote every number EXACTLY as given.
+- If a value says 'Data unavailable', say so — do not guess.
+- Do NOT add predictions, opinions, or context beyond what the data shows.
+- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
+- Structure: start with the score and regime, then cover each metric with its exact value."""
         
         base_score = 50  # Neutral baseline
         final_score = actual_score if actual_score is not None else (base_score + sector_adjustment)
         
-        user_prompt = f"""
-MACROECONOMIC ANALYSIS REQUEST: {ticker}
-Sector: {sector}
-FINAL MACRO SCORE: {final_score:.1f}/100
+        user_prompt = f"""DATA for {ticker} ({sector}) — Macro Score: {final_score:.1f}/100
 
-CURRENT ECONOMIC REGIME: {regime.replace('_', ' ').title()}
-SECTOR ADJUSTMENT: {sector_adjustment:+.1f} points from neutral baseline
-
-MACROECONOMIC INDICATORS:
+• Economic Regime: {regime.replace('_', ' ').title()}
+• Sector Adjustment: {sector_adjustment:+.1f} points
 • Yield Curve Slope: {macro_data.get('yield_curve_slope', 'Data unavailable')}
-• Year-over-Year Inflation: {macro_data.get('inflation_yoy', 'Data unavailable')}%
-• Interest Rate Environment: {macro_data.get('fed_funds_rate', 'Data unavailable')}
-• Economic Growth Phase: {regime.replace('_', ' ').title()}
+• YoY Inflation: {macro_data.get('inflation_yoy', 'Data unavailable')}%
+• Interest Rate: {macro_data.get('fed_funds_rate', 'Data unavailable')}
 
-SCORING CONTEXT:
-- Scores above 70 = Sector strongly favored in current macro environment
-- Scores 55-70 = Sector moderately benefits from macro conditions  
-- Scores 45-55 = Sector neutral to current macro environment
-- Scores 30-45 = Sector faces macro headwinds but manageable
-- Scores below 30 = Sector significantly challenged by macro conditions
-
-ANALYSIS REQUEST:
-As a macroeconomic strategist, provide a comprehensive analysis explaining why {sector} sector earned a {final_score:.1f}/100 macro score in the current {regime.replace('_', ' ')} regime environment.
-Address:
-1. How does the current economic regime specifically impact {sector} sector fundamentals?
-2. What are the key transmission mechanisms (interest rates, inflation, growth) affecting this sector?
-3. How do current monetary policy and yield curve conditions influence sector performance?
-4. What macro risks and opportunities should investors consider for {sector} exposure?
-5. How does this macro environment affect the sector's relative attractiveness vs alternatives?
-
-Focus on actionable insights about macro-driven sector allocation and timing."""
+Summarize these facts."""
         
         try:
             rationale = self._call_openai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.3,
-                max_tokens=250
+                temperature=0.1,
+                max_tokens=180
             )
             return rationale.strip()
         except Exception as e:

@@ -201,7 +201,7 @@ class GrowthMomentumAgent(BaseAgent):
         details['supporting_articles'] = articles
 
         # Generate AI rationale with actual final score
-        rationale = self._generate_rationale(ticker, details, composite_score)
+        rationale = self._generate_rationale(ticker, details, composite_score, scores)
         rationale += self._format_article_references(articles)
 
         # data_quality: fraction of components backed by real data (not defaulted to 50)
@@ -331,91 +331,69 @@ class GrowthMomentumAgent(BaseAgent):
         
         return explanation
 
-    def _generate_rationale(self, ticker: str, details: Dict, actual_score: float = None) -> str:
+    def _generate_rationale(self, ticker: str, details: Dict, actual_score: float = None, component_scores: Dict = None) -> str:
         """Generate enhanced rationale for growth and momentum analysis."""
         
-        system_prompt = """You are a senior growth and momentum analyst at a leading growth-focused investment firm.
-You specialize in identifying companies with accelerating fundamentals and positive price momentum.
-Your analysis should be:
-1. Growth-focused and momentum-aware, explaining how earnings, revenue, and price trends interact
-2. Forward-looking, discussing implications for continued growth and momentum
-3. Market-context aware, considering how growth rates compare to sector peers and market conditions
-4. Specific about what drives sustainable growth momentum vs temporary price movements
-5. Around 120-180 words with clear, actionable insights about growth sustainability
+        system_prompt = """You are a growth and momentum analyst. Summarize the data below in 80-120 words.
 
-CRITICAL: You MUST cite specific numerical values from the data provided (e.g., "Earnings growth of +18.5% combined with 3-month momentum of +12.3%..." or "Revenue growth of 22% validates...").
-Reference the exact metrics and scores given to you. Explain HOW each metric contributed to the final score.
-State which data sources informed your analysis (e.g., earnings growth rate, revenue growth, price momentum, 52-week proximity).
-
-ACCURACY RULES — ZERO TOLERANCE FOR ERRORS:
-- ONLY use the exact numerical values provided in the user prompt below. NEVER invent, round differently, or hallucinate statistics.
-- If a metric shows +0.0% or N/A, acknowledge that directly — do NOT describe it as "stagnant" or claim the data is unavailable when a number IS provided.
-- Before writing each number, mentally verify it matches the data provided verbatim.
-- If earnings growth is +0.0%, do NOT say "lack of fundamental growth" — say earnings growth is flat at +0.0%.
-- If 12-month momentum is +168.6%, cite that exact figure — do NOT alter it.
-- If something seems contradictory (e.g., 0% earnings growth but strong momentum), describe both facts accurately without fabricating an explanation."""
+RULES:
+- ONLY state facts from the DATA section. Never invent numbers.
+- Quote every number EXACTLY as given (e.g. "+0.0%", "-12.3%").
+- If a value is marked DATA NOT AVAILABLE, say "data was not available" — do not guess.
+- If a metric is +0.0% or -0.0%, call it "flat" — do not speculate about causes.
+- Do NOT add analysis, opinions, predictions, or context beyond what the data shows.
+- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
+- Structure: start with the score, then cover each metric with its exact value."""
         
-        earnings_growth = details.get('earnings_growth_pct', 0) or 0
-        revenue_growth = details.get('revenue_growth_pct', 0) or 0
-        momentum_3m = details.get('momentum_3m_pct', 0) or 0
-        momentum_6m = details.get('momentum_6m_pct', 0) or 0
-        momentum_12m = details.get('momentum_12m_pct', 0) or 0
-        from_52w_high = details.get('pct_from_52w_high', 0) or 0
+        # Use component_scores dict (passed from analyze) for accurate score values
+        cs = component_scores or {}
+        eps_score = cs.get('eps_growth_score', 50)
+        rev_score = cs.get('revenue_growth_score', 50)
+        mom_3m_score = cs.get('momentum_3m_score', 50)
+        mom_6m_score = cs.get('momentum_6m_score', 50)
+        mom_12m_score = cs.get('momentum_12m_score', 50)
+        high_prox_score = cs.get('high_proximity_score', 50)
         
-        # Get component scores for comprehensive analysis
-        eps_score = details.get('eps_growth_score', 50)
-        rev_score = details.get('revenue_growth_score', 50)  
-        mom_3m_score = details.get('momentum_3m_score', 50)
-        mom_6m_score = details.get('momentum_6m_score', 50)
-        mom_12m_score = details.get('momentum_12m_score', 50)
-        high_prox_score = details.get('high_proximity_score', 50)
-        
-        # Use actual score if provided, otherwise calculate composite score for context
         composite_score = actual_score if actual_score is not None else sum([eps_score, rev_score, mom_3m_score, mom_6m_score, mom_12m_score, high_prox_score]) / 6
         
-        user_prompt = f"""
-GROWTH & MOMENTUM ANALYSIS REQUEST: {ticker}
-FINAL GROWTH/MOMENTUM SCORE: {composite_score:.1f}/100
+        # Explicit data-availability flags
+        raw_eg = details.get('earnings_growth_pct')
+        raw_rg = details.get('revenue_growth_pct')
+        raw_m3 = details.get('momentum_3m_pct')
+        raw_m6 = details.get('momentum_6m_pct')
+        raw_m12 = details.get('momentum_12m_pct')
+        raw_52h = details.get('pct_from_52w_high')
+        
+        def _fmt(val, suffix='%'):
+            if val is None:
+                return 'DATA NOT AVAILABLE'
+            return f"{val:+.1f}{suffix}"
+        
+        user_prompt = f"""DATA for {ticker} — Score: {composite_score:.1f}/100
 
-DETAILED GROWTH METRICS:
-• Earnings Growth Rate: {earnings_growth:+.1f}% → Score: {eps_score:.0f}/100
-• Revenue Growth Rate: {revenue_growth:+.1f}% → Score: {rev_score:.0f}/100
-• 3-Month Price Momentum: {momentum_3m:+.1f}% → Score: {mom_3m_score:.0f}/100
-• 6-Month Price Momentum: {momentum_6m:+.1f}% → Score: {mom_6m_score:.0f}/100
-• 12-Month Price Momentum: {momentum_12m:+.1f}% → Score: {mom_12m_score:.0f}/100
-• Distance from 52-Week High: {from_52w_high:.1f}% → Score: {high_prox_score:.0f}/100
+• Earnings Growth: {_fmt(raw_eg)} (score {eps_score:.0f}/100)
+• Revenue Growth: {_fmt(raw_rg)} (score {rev_score:.0f}/100)
+• 3-Month Momentum: {_fmt(raw_m3)} (score {mom_3m_score:.0f}/100)
+• 6-Month Momentum: {_fmt(raw_m6)} (score {mom_6m_score:.0f}/100)
+• 12-Month Momentum: {_fmt(raw_m12)} (score {mom_12m_score:.0f}/100)
+• Distance from 52-Week High: {_fmt(raw_52h)} (score {high_prox_score:.0f}/100)
 
-SCORING CONTEXT:
-- Scores above 80 = Exceptional growth with strong momentum acceleration
-- Scores 60-80 = Solid growth with positive momentum trends
-- Scores 40-60 = Moderate growth with mixed momentum signals
-- Scores 20-40 = Weak growth with concerning momentum deterioration
-- Scores below 20 = Poor growth fundamentals with negative momentum
-
-ANALYSIS REQUEST:
-As a growth and momentum expert, provide a comprehensive analysis explaining why {ticker} earned a {composite_score:.1f}/100 growth/momentum score.
-Address:
-1. How do fundamental growth rates (earnings/revenue) align with price momentum?
-2. What does the momentum pattern across different timeframes suggest about sustainability?
-3. How does proximity to 52-week highs/lows affect the momentum outlook?
-4. What are the key drivers of growth acceleration or deceleration?
-5. How does this growth/momentum profile affect investment timing and expectations?
-
-Focus on actionable insights about growth sustainability and momentum continuation patterns."""
+Summarize these facts."""
         
         try:
             rationale = self._call_openai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.3,
-                max_tokens=250
+                temperature=0.1,
+                max_tokens=200
             )
             return rationale.strip()
         except Exception as e:
             logger.warning(f"Failed to generate rationale: {e}")
             
-            # Simple, direct fallback explanations
-            composite_score = sum([eps_score, rev_score, mom_6m_score, high_prox_score]) / 4
+            earnings_growth = raw_eg or 0
+            momentum_6m = raw_m6 or 0
+            from_52w_high = raw_52h or 0
             
             if earnings_growth < 0:
                 return f"Score {composite_score:.0f}/100: Declining {abs(earnings_growth):.0f}% earnings growth"
