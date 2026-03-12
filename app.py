@@ -33,6 +33,10 @@ CUSTOM_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+:root, html {
+    color-scheme: light !important;
+}
+
 :root {
     --primary: #3b5998;
     --primary-light: #5b7bb3;
@@ -433,9 +437,7 @@ section[data-testid="stSidebar"] > div,
 /* --- Selectbox / Dropdown --- */
 [data-baseweb="select"],
 [data-baseweb="select"] > div,
-[data-baseweb="select"] > div > div,
-.stSelectbox > div > div,
-.stSelectbox > div > div > div {
+[data-baseweb="select"] > div > div {
     background: var(--surface) !important;
     background-color: var(--surface) !important;
     color: var(--text) !important;
@@ -445,13 +447,15 @@ section[data-testid="stSidebar"] > div,
     color: var(--text-secondary) !important;
     fill: var(--text-secondary) !important;
 }
-/* Dropdown menu */
+/* Dropdown menu — works for both BaseWeb and Streamlit 1.39+ portals */
 [data-baseweb="popover"],
 [data-baseweb="popover"] > div,
 [data-baseweb="menu"],
-[data-baseweb="list"] {
+[data-baseweb="list"],
+[role="listbox"] {
     background: var(--surface) !important;
     color: var(--text) !important;
+    color-scheme: light !important;
     z-index: 999999 !important;
 }
 [data-baseweb="menu-item"],
@@ -460,10 +464,22 @@ section[data-testid="stSidebar"] > div,
     background: var(--surface) !important;
     color: var(--text) !important;
 }
+[data-baseweb="menu-item"] *,
+[data-baseweb="option"] *,
+[role="option"] * {
+    color: inherit !important;
+}
 [data-baseweb="menu-item"]:hover,
 [data-baseweb="option"]:hover,
-[role="option"]:hover {
+[role="option"]:hover,
+[role="option"][aria-selected="true"] {
     background: var(--primary-bg) !important;
+    color: var(--primary) !important;
+}
+[data-baseweb="menu-item"]:hover *,
+[data-baseweb="option"]:hover *,
+[role="option"]:hover *,
+[role="option"][aria-selected="true"] * {
     color: var(--primary) !important;
 }
 
@@ -508,10 +524,19 @@ section[data-testid="stSidebar"] > div,
 }
 
 /* --- Widget labels --- */
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] label,
 [data-testid="stWidgetLabel"] p,
 [data-testid="stWidgetLabel"] span,
-.stLabel p {
-    color: var(--text-secondary) !important;
+[data-testid="stWidgetLabel"] div,
+.stLabel,
+.stLabel p,
+.stSelectbox label,
+.stSelectbox label p,
+.stSelectbox label span,
+.stSelectbox label div {
+    color: var(--text) !important;
+    font-weight: 500 !important;
 }
 
 /* --- Alerts / Notifications --- */
@@ -599,6 +624,9 @@ section[data-testid="stSidebar"] > div,
    query, we force our light palette everywhere.
    ================================================================= */
 @media (prefers-color-scheme: dark) {
+    :root, html, body {
+        color-scheme: light !important;
+    }
     .stApp,
     .stApp > header,
     [data-testid="stAppViewContainer"],
@@ -610,17 +638,35 @@ section[data-testid="stSidebar"] > div,
         color: var(--text) !important;
         color-scheme: light !important;
     }
+    /* Portals / overlays (dropdown menus, tooltips) render outside
+       stAppViewContainer, so they need their own overrides. */
     [data-baseweb="input"],
     [data-baseweb="textarea"],
     [data-baseweb="select"],
     [data-baseweb="select"] > div,
     [data-baseweb="popover"],
+    [data-baseweb="popover"] *,
     [data-baseweb="menu"],
+    [data-baseweb="menu"] *,
     [data-baseweb="list"],
+    [data-baseweb="list"] *,
+    [role="listbox"],
+    [role="listbox"] *,
+    [role="option"],
+    [role="option"] *,
     [data-baseweb="tooltip"],
+    [data-baseweb="tooltip"] *,
     [data-baseweb="tooltip"] > div {
         background: var(--surface) !important;
         color: var(--text) !important;
+        color-scheme: light !important;
+    }
+    [role="option"]:hover,
+    [role="option"]:hover *,
+    [role="option"][aria-selected="true"],
+    [role="option"][aria-selected="true"] * {
+        background: var(--primary-bg) !important;
+        color: var(--primary) !important;
     }
     .js-plotly-plot,
     .js-plotly-plot .plot-container,
@@ -645,34 +691,19 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
     border-color: #3b5998 !important;
 }
 
-/* ===== Help / Tooltip Icon — clean dark circle ===== */
+/* ===== Help / Tooltip Icon ===== */
 [data-testid="stTooltipHoverTarget"],
 button[data-testid="stTooltipHoverTarget"] {
-    width: 15px !important;
-    height: 15px !important;
-    min-width: 0 !important;
-    border-radius: 50% !important;
-    background: transparent !important;
-    border: 1.5px solid #374151 !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: help !important;
-    padding: 0 !important;
-    margin-left: 4px !important;
-    opacity: 0.5 !important;
+    opacity: 0.45 !important;
     transition: opacity 0.15s ease !important;
-    vertical-align: middle !important;
+    cursor: pointer !important;
 }
 [data-testid="stTooltipHoverTarget"]:hover {
     opacity: 1 !important;
-    border-color: #111827 !important;
 }
 [data-testid="stTooltipHoverTarget"] svg {
     color: #374151 !important;
     fill: #374151 !important;
-    width: 8px !important;
-    height: 8px !important;
 }
 
 /* =================================================================
@@ -1183,8 +1214,14 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             rs = max(0, int(remaining_secs))
             if rs >= 60:
                 time_label = f"~{rs // 60}m {rs % 60:02d}s remaining"
+            elif rs > 0:
+                time_label = f"~{rs}s remaining"
+            elif sp < 42:
+                time_label = "gathering data..."
+            elif sp < 98:
+                time_label = "running analysis..."
             else:
-                time_label = f"~{rs}s remaining" if rs > 0 else "finishing up..."
+                time_label = "finishing up..."
         elif bar_pct >= 100:
             time_label = "Complete"
         else:
@@ -1373,15 +1410,50 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         except Exception:
             pass  # timing log is best-effort, never block analysis
 
-    def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None,
-                                  regime_modulation=False, regime_sensitivity="moderate"):
-        """Run analysis with a simple linear countdown timer.
+    # ── Known mega-cap tickers (fast path: skip yfinance for classification) ──
+    _MEGA_CAP_SET = {
+        'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'GOOG', 'META', 'BRK-B', 'BRK-A',
+        'TSLA', 'LLY', 'JPM', 'V', 'WMT', 'XOM', 'UNH', 'MA', 'AVGO', 'PG', 'JNJ',
+        'HD', 'MRK', 'ABBV', 'CVX', 'COST', 'NFLX', 'KO', 'BAC', 'ORCL', 'CRM',
+        'AMD', 'TMO', 'MCD', 'PM', 'ACN', 'CSCO', 'PEP', 'GE', 'NKE', 'ADBE',
+        'T', 'DIS', 'INTC', 'TXN', 'UPS', 'NEE', 'QCOM', 'DHR', 'WFC', 'IBM',
+        'SPGI', 'GS', 'MS', 'BLK', 'C', 'USB', 'AXP', 'CAT', 'BA', 'HON',
+        'NOW', 'ISRG', 'LULU', 'BKNG', 'ADP', 'AMAT', 'DE', 'LOW', 'BMY', 'AMGN',
+    }
 
-        Timer starts at the learned estimated total and decrements in real-time.
-        At phase boundaries (data complete / agents complete) the countdown
-        snaps to match estimated remaining time.  After analysis
-        completes, measured phase times are appended to step_times.json
-        so future runs start with better estimates.
+    def _classify_ticker_tier(ticker: str, fast_info=None) -> str:
+        """Return the data-speed tier of a ticker: mega/large/mid/small/micro.
+
+        Uses a static mega-cap lookup first (zero latency), then reads
+        market_cap from fast_info if already available (from pre-analysis
+        validation), then falls back to conservatively assuming 'micro'.
+        """
+        if ticker.upper() in _MEGA_CAP_SET:
+            return 'mega'
+        try:
+            mc = getattr(fast_info, 'market_cap', None) or getattr(fast_info, 'marketCap', None)
+            if mc:
+                if mc >= 100e9: return 'mega'
+                if mc >= 10e9:  return 'large'
+                if mc >= 2e9:   return 'mid'
+                if mc >= 300e6: return 'small'
+                return 'micro'
+        except Exception:
+            pass
+        return 'micro'  # conservative: unknown → assume slow
+
+    def _run_with_smooth_progress(slot, orchestrator, tick, date_s, weights=None,
+                                  regime_modulation=False, regime_sensitivity="moderate",
+                                  ticker_tier='micro'):
+        """Run analysis with a velocity-based countdown timer.
+
+        Instead of a simple linear countdown, the timer:
+        1. Uses tier-specific initial estimates (mega=25s vs micro=95s)
+        2. Recalculates ETA at every orchestrator checkpoint using actual pace
+        3. Re-evaluates every 5 seconds even without milestones (data-phase fix)
+        4. Uses phase-aware floors (can't hit 0 while agents/blend are ahead)
+        5. Detects niche stocks early and inflates estimates aggressively
+        6. Ticks down linearly between recalculations for smooth display
         """
 
         _prog = {
@@ -1413,23 +1485,34 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             'end': None,         # milestone pct crosses 100
         }
 
-        # --- Per-step expected timing (for rate-based recalibration) ---
+        # ── Tier-aware learned estimates ──
         _lp = orchestrator._learned_phases if hasattr(orchestrator, '_learned_phases') else {}
-        _est_data_wall  = _lp.get('data_gather', 10.0)
-        # Use 75th-percentile of actual parallel wall time (bottleneck agent).
-        # This is more accurate than max(individual medians) because agent
-        # durations are highly variable and the bottleneck is what matters.
-        _est_agents_wall = _lp.get('agents_wall_p75', _lp.get('agents', 16.0))
-        _est_blend = _lp.get('blend', 0.1)
+        _tier_ests = _lp.get('tier_estimates', {})
+        _te = _tier_ests.get(ticker_tier, {})  # may be empty if no tier data yet
 
-        # Actual step-completion timestamps (elapsed seconds from start)
-        _step_done_at = {}
+        # Fallback chain: 1) measured tier data, 2) global learned average, 3) hard defaults
+        _est_data   = _te.get('data',   _lp.get('data_gather', 10.0))
+        _est_fund   = _te.get('fund',   _lp.get('fundamentals', 7.0))
+        _est_agents = _te.get('agents', _lp.get('agents_wall_p75', _lp.get('agents', 16.0)))
+        _est_blend  = _lp.get('blend', 0.1)
+        _total_est  = _te.get('total',  _lp.get('avg_total', _est_data + _est_agents + _est_blend + 2.0))
 
-        # Map from orchestrator message keywords → step key
+        # Niche detection parameters scale with tier — small/micro tiers start
+        # with a non-trivial multiplier and have a lower alarm threshold.
+        _niche_mult_start   = _te.get('niche_mult_start', 1.0)
+        _niche_threshold    = _te.get('niche_threshold',  2.0)
+
+        # ── Per-step tracking ──
+        _step_done_at = {}         # step_key → elapsed seconds
+        _data_tasks_done = [0]     # mutable counter: completed data sub-tasks (of 4)
+        _niche_mult = [_niche_mult_start]  # inflated when niche stock detected
+        _last_recalc_time = [0.0]  # wall-clock time of last recalculation (enables time-based recalc)
+
         _DATA_STEP_KEYWORDS = {
             'fundamentals': 'fundamentals',
             'price history': 'price_history',
             'benchmark': 'benchmark',
+            'macro': 'macro_indicators',
         }
         _AGENT_STEP_KEYWORDS = {
             'value': 'value_agent',
@@ -1456,21 +1539,26 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
             msg_lower = message.lower()
 
-            # --- Detect data sub-step completions ---
+            # ── Detect data sub-task completions ──
             if 'received' in msg_lower:
                 for kw, step_key in _DATA_STEP_KEYWORDS.items():
                     if kw in msg_lower and step_key not in _step_done_at:
                         _step_done_at[step_key] = elapsed
+                        _data_tasks_done[0] += 1
                         break
+                # "All data received" means all 4 tasks finished
+                if 'all data received' in msg_lower:
+                    _data_tasks_done[0] = 4
 
             # Mark all data sub-steps done when data phase completes
             if pct >= 42:
-                for k in ('fundamentals', 'price_history', 'benchmark'):
+                for k in ('fundamentals', 'price_history', 'benchmark', 'macro_indicators'):
                     if k not in _step_done_at:
                         _step_done_at[k] = elapsed
+                _data_tasks_done[0] = 4
                 _completed_steps.add('data')
 
-            # --- Detect agent completions ---
+            # ── Detect agent completions ──
             if any(w in msg_lower for w in ('complete', 'analyzed', 'score', 'failed')):
                 for kw, step_key in _AGENT_STEP_KEYWORDS.items():
                     if kw in msg_lower and step_key not in _step_done_at:
@@ -1516,20 +1604,105 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             pass
         thread.start()
 
-        # ─── Simple linear countdown timer ───
-        # Starts from the learned average total time (recent 5 runs).
-        # At phase-boundary milestones, the countdown is snapped
-        # to match the estimated remaining time so it lands near 0
-        # when analysis completes.
-        _avg_total = _lp.get('avg_total', _est_data_wall + _est_agents_wall + _est_blend + 2.0)
-        _countdown = _avg_total
+        # ─── Tier-aware velocity countdown timer ───
+        #
+        # Key improvements over the old single-average approach:
+        #
+        #  1. Initial estimate uses tier-specific values (mega=25s, micro=95s)
+        #     so the bar starts at a realistic number, not a global 30s average.
+        #
+        #  2. Time-based recalculation fires every 5 seconds during the data
+        #     phase even when no new milestones arrive.  This fixes the "freeze"
+        #     where fundamentals take 60 s but the bar was initialised at 30 s
+        #     and hit the floor after 13 seconds, then sat there.
+        #
+        #  3. Niche detection threshold and multiplier scale with tier:
+        #     - mega:  fires at 2.5× expected  → multiplies by up to 1.5×
+        #     - micro: fires at 1.3× expected  → multiplies by up to 2.0×
+        #
+        #  4. Data-phase remaining estimate self-corrects based on actual
+        #     elapsed vs expected fundamentals time.
+
+        _remaining = _total_est
         _data_snapped = False
         _agents_snapped = False
+        _prev_mp = 0.0
         display_pct = 0.0
         last_render = 0.0
         last_tick = time.time()
         start_wall = time.time()
         _phase_ts['start'] = start_wall
+        _last_recalc_time[0] = start_wall
+        _TIME_RECALC_INTERVAL = 5.0   # seconds between time-based recalculations
+
+        def _phase_floor(mp):
+            """Minimum possible remaining time given pipeline position."""
+            if mp < 42:
+                # Must leave at least agents + blend ahead; use niche-inflated estimate
+                return (_est_agents * _niche_mult[0]) + _est_blend + 1.5
+            elif mp < 98:
+                return _est_blend + 0.5
+            return 0.0
+
+        def _recalc(elapsed, mp):
+            """Recalculate remaining time.
+
+            Data phase:  fundamentals-bottleneck aware; self-corrects when slow.
+            Agent phase: velocity-based (elapsed-in-phase / fraction-done).
+            Blend phase: small fixed buffer.
+            """
+            if mp >= 100:
+                return 0.0
+
+            nm = _niche_mult[0]
+
+            if mp < 42:
+                # ── Data phase — fundamentals is the bottleneck ──
+                if _data_tasks_done[0] >= 4:
+                    # All sub-tasks done, brief processing buffer
+                    return 2.0 + (_est_agents * nm) + _est_blend
+
+                # Estimate remaining fundamentals time
+                if 'fundamentals' not in _step_done_at:
+                    # Still waiting for fundamentals fetch
+                    if elapsed <= _est_fund:
+                        # Within expected range: linear countdown
+                        fund_remaining = max(0.5, _est_fund - elapsed)
+                    else:
+                        # Over expected: apply progressive inflation
+                        overrun = elapsed / max(_est_fund, 1.0)
+                        # Estimate that we're ~halfway through the overrun portion
+                        # e.g. if 2× expected, assume 1× more remaining
+                        extra = (overrun - 1.0) * _est_fund * 0.5
+                        fund_remaining = max(2.0, _est_fund * 0.5 + extra)
+
+                        # Progressively inflate niche multiplier as overrun grows
+                        if overrun > _niche_threshold and nm < 2.0:
+                            inflation = min(2.0, 1.0 + (overrun - 1.0) * 0.4)
+                            _niche_mult[0] = max(nm, inflation)
+                            nm = _niche_mult[0]
+                else:
+                    # Fundamentals done; waiting for other quick sub-tasks
+                    fund_remaining = max(0.5, _est_data - elapsed)
+
+                return fund_remaining + (_est_agents * nm) + _est_blend
+
+            elif mp < 98:
+                # ── Agent phase — velocity-based ──
+                data_wall = ((_phase_ts.get('data_done') or start_wall) - start_wall) or 0.001
+                agent_elapsed = max(0.1, elapsed - data_wall)
+                agent_frac = (mp - 42) / 56.0
+
+                if agent_frac > 0.05 and agent_elapsed > 1.0:
+                    est_full = agent_elapsed / agent_frac
+                    agent_remaining = max(0, est_full - agent_elapsed)
+                else:
+                    agent_remaining = max(0, (_est_agents * nm) - agent_elapsed)
+
+                return agent_remaining + _est_blend
+
+            else:
+                return 0.5
 
         while not _prog['done']:
             now = time.time()
@@ -1540,28 +1713,50 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             msg = _prog['mile_msg']
             mp = _prog['mile_pct']
 
-            # ── Simple linear countdown ──
-            _countdown -= dt
+            # ── Recalculate on milestone OR every 5 s during data phase ──
+            # The time-based trigger is the key fix for the freeze: without it
+            # the bar just decrements linearly and hits the floor when the data
+            # phase overruns the initial estimate.
+            time_recalc = (mp < 42) and (now - _last_recalc_time[0]) >= _TIME_RECALC_INTERVAL
+            if mp > _prev_mp + 0.5 or time_recalc:
+                new_rem = _recalc(elapsed, mp)
 
-            # ── One-time snap when data phase completes (mp >= 42) ──
+                # Smooth: allow upward corrections up to 50% (overrun is common)
+                # but snap down quickly so the display stays credible.
+                if new_rem > _remaining and _remaining > 1:
+                    _remaining = min(new_rem, _remaining * 1.5)
+                else:
+                    _remaining = 0.3 * _remaining + 0.7 * new_rem
+
+                _last_recalc_time[0] = now
+                if mp > _prev_mp + 0.5:
+                    _prev_mp = mp
+            else:
+                # Between recalculations: linear decrement
+                _remaining -= dt
+
+            # ── Phase transitions ──
             if mp >= 42 and not _data_snapped:
                 _data_snapped = True
-                agents_remaining = _est_agents_wall + _est_blend + 2.0
-                if _countdown > agents_remaining + 3:
-                    _countdown = agents_remaining + 2
-                elif _countdown < agents_remaining * 0.3:
-                    # Data was very slow — timer too low, bump it up gently
-                    _countdown = agents_remaining * 0.6
+                actual_data = elapsed
+                # Niche detection: inflate subsequent estimates based on how much
+                # the data phase overran relative to the tier-specific threshold.
+                if actual_data > _est_data * _niche_threshold:
+                    overrun_ratio = actual_data / max(_est_data, 1.0)
+                    # Scale multiplier with severity: cap at 2.0×
+                    _niche_mult[0] = min(2.0, 1.0 + (overrun_ratio - 1.0) * 0.5)
+                _remaining = (_est_agents * _niche_mult[0]) + _est_blend + 1.0
 
-            # ── One-time snap when agent phase completes (mp >= 98) ──
             if mp >= 98 and not _agents_snapped:
                 _agents_snapped = True
-                _countdown = min(_countdown, 2.0)
+                _remaining = min(_remaining, 2.0)
 
-            # ── Floor ──
-            _countdown = max(0.0, _countdown)
+            # ── Apply phase floor ──
+            floor = _phase_floor(mp)
+            _remaining = max(floor, _remaining)
+            _remaining = max(0.0, _remaining)
 
-            display_remaining = _countdown
+            display_remaining = _remaining
 
             # ── Progress bar percentage ──
             est_total = elapsed + max(display_remaining, 0.5)
@@ -1573,7 +1768,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
                 display_pct += pct_gap * lerp
             display_pct = max(0.0, min(99.0, display_pct))
 
-            # Render at ~10 fps
+            # ── Render at ~10 fps ──
             if now - last_render >= 0.10:
                 if mp >= 42:
                     _completed_steps.add('data')
@@ -1589,8 +1784,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         if _prog['error']:
             raise _prog['error']
 
-        # --- Log phase times to step_times.json for future calibration ---
-        # Use per-step timings from the orchestrator result if available
+        # ── Log phase times to step_times.json for future calibration ──
         result = _prog['result']
         step_timings = result.get('step_timings', {}) if isinstance(result, dict) else {}
 
@@ -1605,7 +1799,7 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
         if _phase_ts['agents_done'] and _phase_ts['end']:
             phase_times['blend'] = _phase_ts['end'] - _phase_ts['agents_done']
 
-        # Merge in per-step timings from orchestrator (more accurate)
+        # Merge per-step timings from orchestrator (more accurate)
         for key in ('fundamentals', 'price_history', 'benchmark',
                     'value_agent', 'growth_momentum_agent',
                     'macro_regime_agent', 'risk_agent', 'sentiment_agent',
@@ -1617,9 +1811,11 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
 
         return result
 
-    # Use average total time from step_times.json for the initial countdown display
+    # Use average total time from step_times.json for the initial countdown display.
+    # Before the ticker is classified, show the global average.
+    # After classification (below), this is replaced with a tier-accurate number.
     _lp = st.session_state.orchestrator._learned_phases if hasattr(st.session_state, 'orchestrator') and hasattr(st.session_state.orchestrator, '_learned_phases') else {}
-    _initial_est = _lp.get('avg_total', _lp.get('total', 30.0))
+    _initial_est = _lp.get('avg_total', _lp.get('total', 40.0))
 
     _render_progress(progress_slot, 0, "Initializing analysis…",
                      remaining_secs=_initial_est)
@@ -1640,7 +1836,9 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             else:
                 date_str = datetime.now().strftime('%Y-%m-%d')
 
-            # Quick ticker validation before running full analysis
+            # Quick ticker validation before running full analysis.
+            # Also captures fast_info for tier classification (no extra API call).
+            _fast = None
             try:
                 import yfinance as yf
                 _fast = yf.Ticker(ticker).fast_info
@@ -1651,12 +1849,22 @@ def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weigh
             except Exception:
                 pass  # If validation itself fails, let the analysis proceed normally
 
+            # Classify ticker tier using market cap from fast_info (already fetched above).
+            # This drives the initial time estimate and the niche detection thresholds.
+            _ticker_tier = _classify_ticker_tier(ticker, _fast)
+            _tier_ests   = _lp.get('tier_estimates', {}).get(_ticker_tier, {})
+            _tier_est    = _tier_ests.get('total', _initial_est)
+            # Update the progress bar to show the tier-appropriate estimate immediately
+            _render_progress(progress_slot, 0, f"Analyzing {ticker}…",
+                             remaining_secs=_tier_est)
+
             # Run with smooth progress interpolation (background thread + 10fps polling)
             orchestrator = st.session_state.orchestrator
             result = _run_with_smooth_progress(
                 progress_slot, orchestrator, ticker, date_str, agent_weights,
                 regime_modulation=regime_modulation,
                 regime_sensitivity=regime_sensitivity,
+                ticker_tier=_ticker_tier,
             )
 
             # Track timing
@@ -2206,9 +2414,9 @@ def stock_analysis_page():
     
     # Weight preset
     st.markdown("### Agent Weights")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
+    _wt_col, _ = st.columns([1, 2])
+
+    with _wt_col:
         weight_preset = st.selectbox(
             "Choose Weight Configuration:",
             options=["equal_weights", "theory_based", "custom_weights"],
@@ -5552,12 +5760,17 @@ Analyzed {num_articles} recent articles to assess market sentiment and narrative
             for i, article in enumerate(ranked_articles, 1):
                 preview = article.get('preview', '')
                 preview_section = f"\n- **Preview:** \"{preview}\"" if preview else ""
+                url = article.get('url', '')
+                title = article.get('title', f'Article {i}')
+                source = article.get('source', 'Unknown')
+                if url:
+                    link_line = f"- [{title}]({url})"
+                else:
+                    link_line = f"- {title}"
                 analysis += f"""
 
-**Article {i}: {article['source']}**
-- **Title:** {article['title']}
-- **Published:** {article['published_at']}{preview_section}
-- **Link:** {article['url'] if article['url'] else 'No link available'}
+**{source}** — {article.get('published_at', 'N/A')}
+{link_line}{preview_section}
 """
         else:
             analysis += "\n\nNo detailed article information available. Analysis based on headline sentiment only."
