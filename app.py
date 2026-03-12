@@ -745,14 +745,18 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
 /* ===== Help / Tooltip Icon ===== */
 [data-testid="stTooltipHoverTarget"],
 button[data-testid="stTooltipHoverTarget"] {
-    opacity: 1 !important;
+    opacity: 0.55 !important;
+    transition: opacity 0.15s ease !important;
     cursor: pointer !important;
 }
+[data-testid="stTooltipHoverTarget"]:hover {
+    opacity: 0.85 !important;
+}
 [data-testid="stTooltipHoverTarget"] svg {
-    color: #111827 !important;
-    fill: #111827 !important;
-    width: 14px !important;
-    height: 14px !important;
+    color: #6b7280 !important;
+    fill: #6b7280 !important;
+    width: 13px !important;
+    height: 13px !important;
 }
 
 /* =================================================================
