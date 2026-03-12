@@ -1198,6 +1198,29 @@ def main():
         unsafe_allow_html=True,
     )
 
+    # ── Late-injected CSS for dropdown text ──────────────────────────
+    # Streamlit's Emotion CSS-in-JS injects <style> tags when widgets
+    # render.  By placing this *after* all widgets we guarantee our
+    # rule appears later in document-order and wins on equal specificity.
+    st.markdown("""<style>
+[role="option"],
+[role="option"] *,
+[data-baseweb="option"],
+[data-baseweb="option"] *,
+[data-baseweb="menu-item"],
+[data-baseweb="menu-item"] * {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+}
+[role="option"]:hover,
+[role="option"]:hover *,
+[role="option"][aria-selected="true"],
+[role="option"][aria-selected="true"] * {
+    color: #3b5998 !important;
+    -webkit-text-fill-color: #3b5998 !important;
+}
+</style>""", unsafe_allow_html=True)
+
 
 
 def _execute_analysis(analysis_mode, ticker, tickers, analysis_date, agent_weights,
