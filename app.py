@@ -745,16 +745,14 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
 /* ===== Help / Tooltip Icon ===== */
 [data-testid="stTooltipHoverTarget"],
 button[data-testid="stTooltipHoverTarget"] {
-    opacity: 0.45 !important;
-    transition: opacity 0.15s ease !important;
+    opacity: 1 !important;
     cursor: pointer !important;
 }
-[data-testid="stTooltipHoverTarget"]:hover {
-    opacity: 1 !important;
-}
 [data-testid="stTooltipHoverTarget"] svg {
-    color: #374151 !important;
-    fill: #374151 !important;
+    color: #111827 !important;
+    fill: #111827 !important;
+    width: 14px !important;
+    height: 14px !important;
 }
 
 /* =================================================================
@@ -2533,7 +2531,7 @@ def stock_analysis_page():
             dist_cols = st.columns(5)
             for i, (agent, pct) in enumerate(percentages.items()):
                 with dist_cols[i]:
-                    st.metric(agent_labels[i], f"{pct:.1f}%", help=agent_tips[agents[i]])
+                    st.metric(agent_labels[i], f"{pct:.1f}%")
 
         _weight_slider_fragment()
 
