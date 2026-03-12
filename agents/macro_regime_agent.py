@@ -374,15 +374,16 @@ class MacroRegimeAgent(BaseAgent):
         actual_score: float = None
     ) -> str:
         """Generate one-line rationale using OpenAI."""
-        system_prompt = """You are a macro analyst. Summarize the data below in 80-120 words.
+        system_prompt = """You are a macro analyst. Write a concise 80-120 word analytical paragraph.
 
 RULES:
-- ONLY state facts from the DATA section. Never invent numbers.
-- Quote every number EXACTLY as given.
-- If a value says 'Data unavailable', say so — do not guess.
-- Do NOT add predictions, opinions, or context beyond what the data shows.
-- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
-- Structure: start with the score and regime, then cover each metric with its exact value."""
+- Use the DATA below as your source. Quote numbers exactly.
+- If a value says 'Data unavailable', briefly note it — do not guess a value.
+- Synthesize the data into a coherent narrative — do NOT just list the metrics back.
+- Explain the current macro regime and what it means for this stock's outlook.
+- Highlight the most important macro factors at play.
+- Do NOT invent numbers or data not provided.
+- Write in flowing prose, not bullet points."""
         
         base_score = 50  # Neutral baseline
         final_score = actual_score if actual_score is not None else (base_score + sector_adjustment)

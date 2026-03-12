@@ -458,12 +458,30 @@ class PortfolioOrchestrator:
         agent_scores = {agent_name: (result.get('score') or 50) for agent_name, result in agent_results.items()}
         agent_rationales = {agent_name: result.get('rationale', 'Analysis not available') for agent_name, result in agent_results.items()}
 
+        # Build agent_details keyed by short orchestrator name (e.g. 'value', 'risk')
+        # so the display layer can look up per-agent details + component_scores.
+        _agent_key_to_short = {
+            'value_agent': 'value',
+            'growth_momentum_agent': 'growth_momentum',
+            'risk_agent': 'risk',
+            'sentiment_agent': 'sentiment',
+            'macro_regime_agent': 'macro_regime',
+        }
+        agent_details = {}
+        for agent_name, res in agent_results.items():
+            short_key = _agent_key_to_short.get(agent_name, agent_name.replace('_agent', ''))
+            details = dict(res.get('details', {}))
+            details['component_scores'] = res.get('component_scores', {})
+            details['data_quality'] = res.get('data_quality', 1.0)
+            agent_details[short_key] = details
+
         return {
             'ticker': ticker,
             'analysis_date': analysis_date,
             'agent_results': agent_results,
             'agent_scores': agent_scores,
             'agent_rationales': agent_rationales,
+            'agent_details': agent_details,
             'blended_score': blended_score,
             'final_score': final_score,
             'eligible': True,

@@ -452,6 +452,7 @@ section[data-testid="stSidebar"] > div,
 [data-baseweb="list"] {
     background: var(--surface) !important;
     color: var(--text) !important;
+    z-index: 999999 !important;
 }
 [data-baseweb="menu-item"],
 [data-baseweb="option"],
@@ -672,6 +673,36 @@ button[data-testid="stTooltipHoverTarget"] {
     fill: #374151 !important;
     width: 8px !important;
     height: 8px !important;
+}
+
+/* =================================================================
+   MOBILE RESPONSIVE
+   ================================================================= */
+@media (max-width: 768px) {
+    /* Ensure dropdown popovers render above everything on mobile */
+    [data-baseweb="popover"],
+    [data-baseweb="popover"] > div {
+        z-index: 999999 !important;
+        position: fixed !important;
+        left: 5vw !important;
+        right: 5vw !important;
+        width: 90vw !important;
+        max-height: 50vh !important;
+        overflow-y: auto !important;
+    }
+    /* Wider touch targets for dropdown items */
+    [data-baseweb="menu-item"],
+    [data-baseweb="option"],
+    [role="option"] {
+        min-height: 44px !important;
+        padding: 10px 12px !important;
+        font-size: 16px !important;  /* Prevents iOS zoom on focus */
+    }
+    /* Prevent iOS zoom on select focus */
+    [data-baseweb="select"] input,
+    .stSelectbox input {
+        font-size: 16px !important;
+    }
 }
 </style>
 """

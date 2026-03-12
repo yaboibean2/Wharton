@@ -648,16 +648,17 @@ Provide your analysis after the sentiment score."""
                 headlines_with_urls.append(f"- {title}")
         headlines_text = '\n'.join(headlines_with_urls)
         
-        system_prompt = """You are a sentiment analyst. Summarize the data below in 80-120 words.
+        system_prompt = """You are a sentiment analyst. Write a concise 80-120 word analytical paragraph.
 
 RULES:
-- ONLY state facts from the DATA section. Never invent numbers or headlines.
-- Quote every number EXACTLY as given.
+- Use the DATA below as your source. Quote numbers exactly.
 - ONLY reference article titles and sources that appear in the data. Do NOT invent any.
-- If there are few articles, say so — do not speculate about missing coverage.
-- Do NOT add predictions, opinions, or context beyond what the data shows.
-- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
-- Structure: start with the score and article count, then summarize the key headlines."""
+- If there are few articles, note the limited coverage.
+- Synthesize the data into a coherent narrative — do NOT just list headlines back.
+- Explain the overall sentiment picture: is it bullish, neutral, or bearish and why.
+- Highlight the most impactful news themes.
+- Do NOT invent numbers, headlines, or sources not provided.
+- Write in flowing prose, not bullet points."""
         
         # Calculate component scores for comprehensive analysis
         news_volume_score = min(100, len(news_items) * 10)  # Approximate score based on volume

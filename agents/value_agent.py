@@ -292,15 +292,16 @@ class ValueAgent(BaseAgent):
         div_yield = details.get('dividend_yield_pct', 0)
         composite_score = actual_score if actual_score is not None else (sum(scores.values()) / len(scores) if scores else 50)
         
-        system_prompt = """You are a value analyst. Summarize the data below in 80-120 words.
+        system_prompt = """You are a value analyst. Write a concise 80-120 word analytical paragraph.
 
 RULES:
-- ONLY state facts from the DATA section. Never invent numbers.
-- Quote every number EXACTLY as given (e.g. "28.5x", "1.8%").
-- If a value is N/A or DATA NOT AVAILABLE, say so — do not guess.
-- Do NOT add predictions, opinions, or context beyond what the data shows.
-- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
-- Structure: start with the score, then cover each metric with its exact value."""
+- Use the DATA below as your source. Quote numbers exactly (e.g. "28.5x", "1.8%").
+- If a value is N/A or DATA NOT AVAILABLE, briefly note it was unavailable — do not guess a value.
+- Synthesize the data into a coherent narrative — do NOT just list the metrics back.
+- Explain the overall valuation picture: is it cheap, fair, or expensive and why.
+- Highlight the strongest and weakest valuation signals.
+- Do NOT invent numbers or data not provided.
+- Write in flowing prose, not bullet points."""
         
         # Get all component scores for comprehensive context
         pe_score = scores.get('pe_score', 50)

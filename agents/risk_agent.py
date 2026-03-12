@@ -421,15 +421,16 @@ class RiskAgent(BaseAgent):
 
     def _generate_rationale(self, ticker: str, details: Dict, scores: Dict, actual_score: float) -> str:
         """Generate detailed rationale using OpenAI with comprehensive context."""
-        system_prompt = """You are a risk analyst. Summarize the data below in 80-120 words.
+        system_prompt = """You are a risk analyst. Write a concise 80-120 word analytical paragraph.
 
 RULES:
-- ONLY state facts from the DATA section. Never invent numbers.
-- Quote every number EXACTLY as given (e.g. "24.3%", "1.21").
-- If a value is N/A or DATA NOT AVAILABLE, say so — do not guess.
-- Do NOT add predictions, opinions, or context beyond what the data shows.
-- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
-- Structure: start with the score, then cover each metric with its exact value."""
+- Use the DATA below as your source. Quote numbers exactly (e.g. "24.3%", "1.21").
+- If a value is N/A or DATA NOT AVAILABLE, briefly note it was unavailable — do not guess a value.
+- Synthesize the data into a coherent narrative — do NOT just list the metrics back.
+- Assess the overall risk profile: is it low, moderate, or high risk and why.
+- Highlight the strongest and weakest risk factors.
+- Do NOT invent numbers or data not provided.
+- Write in flowing prose, not bullet points."""
         
         risk_boost = details.get('risk_boost_applied', 0)
         is_low_risk = details.get('is_low_risk_asset', False)

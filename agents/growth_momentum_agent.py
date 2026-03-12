@@ -42,7 +42,7 @@ class GrowthMomentumAgent(BaseAgent):
         
         # 1. EPS Growth
         earnings_growth = fundamentals.get('earnings_growth')
-        if earnings_growth:
+        if earnings_growth is not None:
             earnings_growth_pct = earnings_growth * 100
             if earnings_growth_pct >= 30:
                 scores['eps_growth_score'] = 90   # Exceptional
@@ -65,7 +65,7 @@ class GrowthMomentumAgent(BaseAgent):
         
         # 2. Revenue Growth
         revenue_growth = fundamentals.get('revenue_growth')
-        if revenue_growth:
+        if revenue_growth is not None:
             revenue_growth_pct = revenue_growth * 100
             if revenue_growth_pct >= 25:
                 scores['revenue_growth_score'] = 90   # Explosive
@@ -334,16 +334,16 @@ class GrowthMomentumAgent(BaseAgent):
     def _generate_rationale(self, ticker: str, details: Dict, actual_score: float = None, component_scores: Dict = None) -> str:
         """Generate enhanced rationale for growth and momentum analysis."""
         
-        system_prompt = """You are a growth and momentum analyst. Summarize the data below in 80-120 words.
+        system_prompt = """You are a growth and momentum analyst. Write a concise 80-120 word analytical paragraph.
 
 RULES:
-- ONLY state facts from the DATA section. Never invent numbers.
-- Quote every number EXACTLY as given (e.g. "+0.0%", "-12.3%").
-- If a value is marked DATA NOT AVAILABLE, say "data was not available" — do not guess.
-- If a metric is +0.0% or -0.0%, call it "flat" — do not speculate about causes.
-- Do NOT add analysis, opinions, predictions, or context beyond what the data shows.
-- Do NOT use phrases like "suggests", "indicates", "implies", or "reflects".
-- Structure: start with the score, then cover each metric with its exact value."""
+- Use the DATA below as your source. Quote numbers exactly (e.g. "+12.1%", "-9.1%").
+- If a value is marked DATA NOT AVAILABLE, briefly note it was unavailable — do not guess a value.
+- Synthesize the data into a coherent narrative — do NOT just list the metrics back.
+- Explain what the overall growth and momentum picture looks like for this stock.
+- Highlight the strongest and weakest areas.
+- Do NOT invent numbers or data not provided.
+- Write in flowing prose, not bullet points."""
         
         # Use component_scores dict (passed from analyze) for accurate score values
         cs = component_scores or {}
