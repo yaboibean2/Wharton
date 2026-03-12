@@ -743,20 +743,36 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
 }
 
 /* ===== Help / Tooltip Icon ===== */
+/* Hide Streamlit's default filled-circle SVG and replace with a plain "?" */
 [data-testid="stTooltipHoverTarget"],
 button[data-testid="stTooltipHoverTarget"] {
-    opacity: 0.55 !important;
-    transition: opacity 0.15s ease !important;
     cursor: pointer !important;
-}
-[data-testid="stTooltipHoverTarget"]:hover {
-    opacity: 0.85 !important;
+    opacity: 1 !important;
 }
 [data-testid="stTooltipHoverTarget"] svg {
+    display: none !important;
+}
+[data-testid="stTooltipHoverTarget"]::after {
+    content: "?" !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
     color: #6b7280 !important;
-    fill: #6b7280 !important;
-    width: 13px !important;
-    height: 13px !important;
+    -webkit-text-fill-color: #6b7280 !important;
+    border: 1.5px solid #d1d5db !important;
+    border-radius: 50% !important;
+    width: 16px !important;
+    height: 16px !important;
+    line-height: 1 !important;
+    transition: color 0.15s ease, border-color 0.15s ease !important;
+}
+[data-testid="stTooltipHoverTarget"]:hover::after {
+    color: #374151 !important;
+    -webkit-text-fill-color: #374151 !important;
+    border-color: #9ca3af !important;
 }
 
 /* =================================================================
