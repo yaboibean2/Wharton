@@ -448,13 +448,14 @@ section[data-testid="stSidebar"] > div,
     fill: var(--text-secondary) !important;
 }
 /* Dropdown menu — works for both BaseWeb and Streamlit 1.39+ portals.
-   Hardcode colours (#111827, #fff, #3b5998, #eef2f9) so they survive
-   Cloud portals where CSS variables may not resolve. */
-[data-baseweb="popover"],
+   Hardcode colours so they survive Cloud portals.
+   Double-up attribute selectors ([x][x]) to reach specificity 0,2,0+
+   which beats Streamlit Emotion CSS (0,1,0) on default (non-hover) state. */
+[data-baseweb="popover"][data-baseweb="popover"],
 [data-baseweb="popover"] > div,
-[data-baseweb="menu"],
-[data-baseweb="list"],
-[role="listbox"] {
+[data-baseweb="menu"][data-baseweb="menu"],
+[data-baseweb="list"][data-baseweb="list"],
+[role="listbox"][role="listbox"] {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #111827 !important;
@@ -462,35 +463,37 @@ section[data-testid="stSidebar"] > div,
     color-scheme: light !important;
     z-index: 999999 !important;
 }
-/* Force ALL descendants in dropdown portals to dark text */
-[data-baseweb="popover"] *,
-[data-baseweb="menu"] *,
-[data-baseweb="list"] *,
-[role="listbox"] * {
+/* Force ALL descendants in dropdown portals to dark text (0,2,0+) */
+[data-baseweb="popover"] [data-baseweb],
+[data-baseweb="popover"] [class],
+[data-baseweb="menu"] [class],
+[data-baseweb="list"] [class],
+[role="listbox"] [class] {
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
     color-scheme: light !important;
 }
-[data-baseweb="menu-item"],
-[data-baseweb="option"],
-[role="option"] {
+[data-baseweb="menu-item"][data-baseweb="menu-item"],
+[data-baseweb="option"][data-baseweb="option"],
+[role="option"][role="option"] {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
 }
-/* High-specificity rule for option text descendants */
-[data-baseweb="popover"] [role="option"] *,
-[data-baseweb="popover"] [data-baseweb="option"] *,
-[data-baseweb="popover"] [data-baseweb="menu-item"] *,
-[role="listbox"] [role="option"] *,
-[data-baseweb="menu-item"] *,
-[data-baseweb="option"] *,
-[role="option"] * {
+/* High-specificity (0,3,0+) for option text descendants */
+[data-baseweb="popover"] [role="option"] [class],
+[data-baseweb="popover"] [data-baseweb="option"] [class],
+[data-baseweb="popover"] [data-baseweb="menu-item"] [class],
+[role="listbox"] [role="option"] [class],
+[role="option"][role="option"] [class],
+[role="option"][role="option"] *,
+[data-baseweb="menu-item"][data-baseweb="menu-item"] *,
+[data-baseweb="option"][data-baseweb="option"] * {
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
 }
-/* Hover & selected states */
+/* Hover & selected states (already ≥0,2,0 via :hover pseudo) */
 [data-baseweb="menu-item"]:hover,
 [data-baseweb="option"]:hover,
 [role="option"]:hover,
@@ -501,12 +504,15 @@ section[data-testid="stSidebar"] > div,
     -webkit-text-fill-color: #3b5998 !important;
 }
 [data-baseweb="popover"] [role="option"]:hover *,
+[data-baseweb="popover"] [role="option"]:hover [class],
 [data-baseweb="popover"] [data-baseweb="option"]:hover *,
 [role="listbox"] [role="option"]:hover *,
+[role="listbox"] [role="option"]:hover [class],
 [data-baseweb="menu-item"]:hover *,
 [data-baseweb="option"]:hover *,
 [role="option"]:hover *,
-[role="option"][aria-selected="true"] * {
+[role="option"][aria-selected="true"] *,
+[role="option"][aria-selected="true"] [class] {
     color: #3b5998 !important;
     -webkit-text-fill-color: #3b5998 !important;
 }
@@ -675,14 +681,19 @@ section[data-testid="stSidebar"] > div,
     [data-baseweb="select"] > div,
     [data-baseweb="popover"],
     [data-baseweb="popover"] *,
+    [data-baseweb="popover"] [class],
     [data-baseweb="menu"],
     [data-baseweb="menu"] *,
+    [data-baseweb="menu"] [class],
     [data-baseweb="list"],
     [data-baseweb="list"] *,
+    [data-baseweb="list"] [class],
     [role="listbox"],
     [role="listbox"] *,
-    [role="option"],
-    [role="option"] *,
+    [role="listbox"] [class],
+    [role="option"][role="option"],
+    [role="option"][role="option"] *,
+    [role="option"][role="option"] [class],
     [data-baseweb="tooltip"],
     [data-baseweb="tooltip"] *,
     [data-baseweb="tooltip"] > div {
@@ -691,6 +702,8 @@ section[data-testid="stSidebar"] > div,
         -webkit-text-fill-color: #111827 !important;
         color-scheme: light !important;
     }
+    [data-baseweb="popover"] [role="option"] [class],
+    [role="listbox"] [role="option"] [class],
     [data-baseweb="popover"] [role="option"] *,
     [role="listbox"] [role="option"] * {
         color: #111827 !important;
@@ -698,8 +711,10 @@ section[data-testid="stSidebar"] > div,
     }
     [role="option"]:hover,
     [role="option"]:hover *,
+    [role="option"]:hover [class],
     [role="option"][aria-selected="true"],
-    [role="option"][aria-selected="true"] * {
+    [role="option"][aria-selected="true"] *,
+    [role="option"][aria-selected="true"] [class] {
         background: #eef2f9 !important;
         color: #3b5998 !important;
         -webkit-text-fill-color: #3b5998 !important;
