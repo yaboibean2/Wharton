@@ -447,40 +447,68 @@ section[data-testid="stSidebar"] > div,
     color: var(--text-secondary) !important;
     fill: var(--text-secondary) !important;
 }
-/* Dropdown menu — works for both BaseWeb and Streamlit 1.39+ portals */
+/* Dropdown menu — works for both BaseWeb and Streamlit 1.39+ portals.
+   Hardcode colours (#111827, #fff, #3b5998, #eef2f9) so they survive
+   Cloud portals where CSS variables may not resolve. */
 [data-baseweb="popover"],
 [data-baseweb="popover"] > div,
 [data-baseweb="menu"],
 [data-baseweb="list"],
 [role="listbox"] {
-    background: var(--surface) !important;
-    color: var(--text) !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
     color-scheme: light !important;
     z-index: 999999 !important;
+}
+/* Force ALL descendants in dropdown portals to dark text */
+[data-baseweb="popover"] *,
+[data-baseweb="menu"] *,
+[data-baseweb="list"] *,
+[role="listbox"] * {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+    color-scheme: light !important;
 }
 [data-baseweb="menu-item"],
 [data-baseweb="option"],
 [role="option"] {
-    background: var(--surface) !important;
-    color: var(--text) !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
 }
+/* High-specificity rule for option text descendants */
+[data-baseweb="popover"] [role="option"] *,
+[data-baseweb="popover"] [data-baseweb="option"] *,
+[data-baseweb="popover"] [data-baseweb="menu-item"] *,
+[role="listbox"] [role="option"] *,
 [data-baseweb="menu-item"] *,
 [data-baseweb="option"] *,
 [role="option"] * {
-    color: inherit !important;
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
 }
+/* Hover & selected states */
 [data-baseweb="menu-item"]:hover,
 [data-baseweb="option"]:hover,
 [role="option"]:hover,
 [role="option"][aria-selected="true"] {
-    background: var(--primary-bg) !important;
-    color: var(--primary) !important;
+    background: #eef2f9 !important;
+    background-color: #eef2f9 !important;
+    color: #3b5998 !important;
+    -webkit-text-fill-color: #3b5998 !important;
 }
+[data-baseweb="popover"] [role="option"]:hover *,
+[data-baseweb="popover"] [data-baseweb="option"]:hover *,
+[role="listbox"] [role="option"]:hover *,
 [data-baseweb="menu-item"]:hover *,
 [data-baseweb="option"]:hover *,
 [role="option"]:hover *,
 [role="option"][aria-selected="true"] * {
-    color: var(--primary) !important;
+    color: #3b5998 !important;
+    -webkit-text-fill-color: #3b5998 !important;
 }
 
 /* --- Date Input --- */
@@ -639,7 +667,8 @@ section[data-testid="stSidebar"] > div,
         color-scheme: light !important;
     }
     /* Portals / overlays (dropdown menus, tooltips) render outside
-       stAppViewContainer, so they need their own overrides. */
+       stAppViewContainer, so they need their own overrides.
+       Hardcode colours to survive portal context. */
     [data-baseweb="input"],
     [data-baseweb="textarea"],
     [data-baseweb="select"],
@@ -657,16 +686,23 @@ section[data-testid="stSidebar"] > div,
     [data-baseweb="tooltip"],
     [data-baseweb="tooltip"] *,
     [data-baseweb="tooltip"] > div {
-        background: var(--surface) !important;
-        color: var(--text) !important;
+        background: #ffffff !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
         color-scheme: light !important;
+    }
+    [data-baseweb="popover"] [role="option"] *,
+    [role="listbox"] [role="option"] * {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
     }
     [role="option"]:hover,
     [role="option"]:hover *,
     [role="option"][aria-selected="true"],
     [role="option"][aria-selected="true"] * {
-        background: var(--primary-bg) !important;
-        color: var(--primary) !important;
+        background: #eef2f9 !important;
+        color: #3b5998 !important;
+        -webkit-text-fill-color: #3b5998 !important;
     }
     .js-plotly-plot,
     .js-plotly-plot .plot-container,
