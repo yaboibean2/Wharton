@@ -447,64 +447,25 @@ section[data-testid="stSidebar"] > div,
     color: var(--text-secondary) !important;
     fill: var(--text-secondary) !important;
 }
-/* Dropdown menu — ID-level specificity (1,x,0) via :not(#_) so we
-   beat any Emotion CSS-in-JS rule regardless of source order.
-   The :not(#_) trick matches every element (nothing has id="_") while
-   contributing ID specificity (1,0,0) to the selector weight. */
-
-/* Container */
-:not(#_) [data-baseweb="popover"],
-:not(#_) [data-baseweb="popover"] > div,
-:not(#_) [data-baseweb="menu"],
-:not(#_) [data-baseweb="list"],
-:not(#_) [role="listbox"] {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    color-scheme: light !important;
-    z-index: 999999 !important;
+/* Dropdown menu */
+[data-baseweb="popover"],
+[data-baseweb="popover"] > div,
+[data-baseweb="menu"],
+[data-baseweb="list"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
 }
-/* Option items */
-:not(#_) [role="option"],
-:not(#_) [data-baseweb="menu-item"],
-:not(#_) [data-baseweb="option"] {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    opacity: 1 !important;
-    visibility: visible !important;
+[data-baseweb="menu-item"],
+[data-baseweb="option"],
+[role="option"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
 }
-/* ALL descendants inside options — catch every span/div Emotion creates */
-:not(#_) [role="option"] *,
-:not(#_) [data-baseweb="menu-item"] *,
-:not(#_) [data-baseweb="option"] *,
-:not(#_) [data-baseweb="popover"] li,
-:not(#_) [data-baseweb="popover"] div,
-:not(#_) [data-baseweb="popover"] span,
-:not(#_) [data-baseweb="popover"] ul {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-}
-/* Hover & selected states */
-:not(#_) [role="option"]:hover,
-:not(#_) [data-baseweb="menu-item"]:hover,
-:not(#_) [data-baseweb="option"]:hover,
-:not(#_) [role="option"][aria-selected="true"] {
-    background: #eef2f9 !important;
-    background-color: #eef2f9 !important;
-    color: #3b5998 !important;
-    -webkit-text-fill-color: #3b5998 !important;
-}
-:not(#_) [role="option"]:hover *,
-:not(#_) [data-baseweb="menu-item"]:hover *,
-:not(#_) [data-baseweb="option"]:hover *,
-:not(#_) [role="option"][aria-selected="true"] * {
-    color: #3b5998 !important;
-    -webkit-text-fill-color: #3b5998 !important;
+[data-baseweb="menu-item"]:hover,
+[data-baseweb="option"]:hover,
+[role="option"]:hover {
+    background: var(--primary-bg) !important;
+    color: var(--primary) !important;
 }
 
 /* --- Date Input --- */
@@ -662,42 +623,17 @@ section[data-testid="stSidebar"] > div,
         color: var(--text) !important;
         color-scheme: light !important;
     }
-    /* Portals / overlays — use :not(#_) for ID-level specificity
-       that beats any Emotion CSS even when injected later. */
-    :not(#_) [data-baseweb="input"],
-    :not(#_) [data-baseweb="textarea"],
-    :not(#_) [data-baseweb="select"],
-    :not(#_) [data-baseweb="select"] > div,
-    :not(#_) [data-baseweb="tooltip"],
-    :not(#_) [data-baseweb="tooltip"] > div {
-        background: #ffffff !important;
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        color-scheme: light !important;
-    }
-    :not(#_) [data-baseweb="popover"],
-    :not(#_) [data-baseweb="popover"] > div,
-    :not(#_) [data-baseweb="popover"] li,
-    :not(#_) [data-baseweb="popover"] ul,
-    :not(#_) [data-baseweb="popover"] div,
-    :not(#_) [data-baseweb="popover"] span,
-    :not(#_) [role="listbox"],
-    :not(#_) [role="option"],
-    :not(#_) [role="option"] * {
-        background-color: #ffffff !important;
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        color-scheme: light !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-    }
-    :not(#_) [role="option"]:hover,
-    :not(#_) [role="option"]:hover *,
-    :not(#_) [role="option"][aria-selected="true"],
-    :not(#_) [role="option"][aria-selected="true"] * {
-        background-color: #eef2f9 !important;
-        color: #3b5998 !important;
-        -webkit-text-fill-color: #3b5998 !important;
+    [data-baseweb="input"],
+    [data-baseweb="textarea"],
+    [data-baseweb="select"],
+    [data-baseweb="select"] > div,
+    [data-baseweb="popover"],
+    [data-baseweb="menu"],
+    [data-baseweb="list"],
+    [data-baseweb="tooltip"],
+    [data-baseweb="tooltip"] > div {
+        background: var(--surface) !important;
+        color: var(--text) !important;
     }
     .js-plotly-plot,
     .js-plotly-plot .plot-container,
@@ -1209,33 +1145,69 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Late-injected CSS for dropdown text ──────────────────────────
-    # Placed after all widgets so this <style> tag appears last in the
-    # document, winning on source order.  Uses :not(#_) for ID-level
-    # specificity (1,x,0) that beats any Emotion class-based rule.
-    st.markdown("""<style>
-:not(#_) [role="option"],
-:not(#_) [role="option"] *,
-:not(#_) [data-baseweb="option"],
-:not(#_) [data-baseweb="option"] *,
-:not(#_) [data-baseweb="menu-item"],
-:not(#_) [data-baseweb="menu-item"] *,
-:not(#_) [data-baseweb="popover"] li,
-:not(#_) [data-baseweb="popover"] span,
-:not(#_) [data-baseweb="popover"] div {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-}
-:not(#_) [role="option"]:hover,
-:not(#_) [role="option"]:hover *,
-:not(#_) [role="option"][aria-selected="true"],
-:not(#_) [role="option"][aria-selected="true"] * {
-    color: #3b5998 !important;
-    -webkit-text-fill-color: #3b5998 !important;
-}
-</style>""", unsafe_allow_html=True)
+    # ── Dropdown fix: JS injection via parent document ──────────────
+    # Streamlit's Emotion CSS-in-JS can override any <style> rule because
+    # it injects lazily when popovers open.  This script runs in the
+    # component iframe, reaches into the parent document, and applies
+    # inline !important styles via MutationObserver — the only approach
+    # that reliably beats dynamically-injected Emotion CSS.
+    import streamlit.components.v1 as _components
+    _components.html("""
+<script>
+(function() {
+  try {
+    var pd = window.parent.document;
+    if (!pd) return;
+
+    // 1) Append a high-specificity stylesheet to the parent <head>
+    if (!pd.getElementById('dd-fix')) {
+      var s = pd.createElement('style');
+      s.id = 'dd-fix';
+      s.textContent =
+        ':not(#_):not(#_) [role="option"],' +
+        ':not(#_):not(#_) [role="option"] *,' +
+        ':not(#_):not(#_) [data-baseweb="menu-item"],' +
+        ':not(#_):not(#_) [data-baseweb="menu-item"] *,' +
+        ':not(#_):not(#_) [data-baseweb="option"],' +
+        ':not(#_):not(#_) [data-baseweb="option"] * {' +
+        '  color: #111827 !important;' +
+        '  -webkit-text-fill-color: #111827 !important;' +
+        '  background-color: #ffffff !important;' +
+        '}' +
+        ':not(#_):not(#_) [role="option"]:hover,' +
+        ':not(#_):not(#_) [role="option"]:hover *,' +
+        ':not(#_):not(#_) [role="option"][aria-selected="true"],' +
+        ':not(#_):not(#_) [role="option"][aria-selected="true"] * {' +
+        '  color: #3b5998 !important;' +
+        '  -webkit-text-fill-color: #3b5998 !important;' +
+        '  background-color: #eef2f9 !important;' +
+        '}';
+      pd.head.appendChild(s);
+    }
+
+    // 2) MutationObserver: force inline styles when popovers appear
+    function fix() {
+      pd.querySelectorAll(
+        '[data-baseweb="popover"] [role="option"],' +
+        '[role="listbox"] [role="option"],' +
+        '[data-baseweb="popover"] li'
+      ).forEach(function(el) {
+        el.style.setProperty('color', '#111827', 'important');
+        el.style.setProperty('-webkit-text-fill-color', '#111827', 'important');
+        el.style.setProperty('background-color', '#ffffff', 'important');
+        var kids = el.querySelectorAll('*');
+        for (var i = 0; i < kids.length; i++) {
+          kids[i].style.setProperty('color', 'inherit', 'important');
+          kids[i].style.setProperty('-webkit-text-fill-color', 'inherit', 'important');
+        }
+      });
+    }
+    new MutationObserver(fix).observe(pd.body, {childList:true, subtree:true});
+    fix();
+  } catch(e) {}
+})();
+</script>
+""", height=0)
 
 
 
