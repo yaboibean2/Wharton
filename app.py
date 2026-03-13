@@ -447,74 +447,25 @@ section[data-testid="stSidebar"] > div,
     color: var(--text-secondary) !important;
     fill: var(--text-secondary) !important;
 }
-/* Dropdown menu — works for both BaseWeb and Streamlit 1.39+ portals.
-   Hardcode colours so they survive Cloud portals.
-   Double-up attribute selectors ([x][x]) to reach specificity 0,2,0+
-   which beats Streamlit Emotion CSS (0,1,0) on default (non-hover) state. */
-[data-baseweb="popover"][data-baseweb="popover"],
+/* Dropdown menu */
+[data-baseweb="popover"],
 [data-baseweb="popover"] > div,
-[data-baseweb="menu"][data-baseweb="menu"],
-[data-baseweb="list"][data-baseweb="list"],
-[role="listbox"][role="listbox"] {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    color-scheme: light !important;
-    z-index: 999999 !important;
+[data-baseweb="menu"],
+[data-baseweb="list"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
 }
-/* Force ALL descendants in dropdown portals to dark text (0,2,0+) */
-[data-baseweb="popover"] [data-baseweb],
-[data-baseweb="popover"] [class],
-[data-baseweb="menu"] [class],
-[data-baseweb="list"] [class],
-[role="listbox"] [class] {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    color-scheme: light !important;
+[data-baseweb="menu-item"],
+[data-baseweb="option"],
+[role="option"] {
+    background: var(--surface) !important;
+    color: var(--text) !important;
 }
-[data-baseweb="menu-item"][data-baseweb="menu-item"],
-[data-baseweb="option"][data-baseweb="option"],
-[role="option"][role="option"] {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-}
-/* High-specificity (0,3,0+) for option text descendants */
-[data-baseweb="popover"] [role="option"] [class],
-[data-baseweb="popover"] [data-baseweb="option"] [class],
-[data-baseweb="popover"] [data-baseweb="menu-item"] [class],
-[role="listbox"] [role="option"] [class],
-[role="option"][role="option"] [class],
-[role="option"][role="option"] *,
-[data-baseweb="menu-item"][data-baseweb="menu-item"] *,
-[data-baseweb="option"][data-baseweb="option"] * {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-}
-/* Hover & selected states (already ≥0,2,0 via :hover pseudo) */
 [data-baseweb="menu-item"]:hover,
 [data-baseweb="option"]:hover,
-[role="option"]:hover,
-[role="option"][aria-selected="true"] {
-    background: #eef2f9 !important;
-    background-color: #eef2f9 !important;
-    color: #3b5998 !important;
-    -webkit-text-fill-color: #3b5998 !important;
-}
-[data-baseweb="popover"] [role="option"]:hover *,
-[data-baseweb="popover"] [role="option"]:hover [class],
-[data-baseweb="popover"] [data-baseweb="option"]:hover *,
-[role="listbox"] [role="option"]:hover *,
-[role="listbox"] [role="option"]:hover [class],
-[data-baseweb="menu-item"]:hover *,
-[data-baseweb="option"]:hover *,
-[role="option"]:hover *,
-[role="option"][aria-selected="true"] *,
-[role="option"][aria-selected="true"] [class] {
-    color: #3b5998 !important;
-    -webkit-text-fill-color: #3b5998 !important;
+[role="option"]:hover {
+    background: var(--primary-bg) !important;
+    color: var(--primary) !important;
 }
 
 /* --- Date Input --- */
@@ -672,52 +623,17 @@ section[data-testid="stSidebar"] > div,
         color: var(--text) !important;
         color-scheme: light !important;
     }
-    /* Portals / overlays (dropdown menus, tooltips) render outside
-       stAppViewContainer, so they need their own overrides.
-       Hardcode colours to survive portal context. */
     [data-baseweb="input"],
     [data-baseweb="textarea"],
     [data-baseweb="select"],
     [data-baseweb="select"] > div,
     [data-baseweb="popover"],
-    [data-baseweb="popover"] *,
-    [data-baseweb="popover"] [class],
     [data-baseweb="menu"],
-    [data-baseweb="menu"] *,
-    [data-baseweb="menu"] [class],
     [data-baseweb="list"],
-    [data-baseweb="list"] *,
-    [data-baseweb="list"] [class],
-    [role="listbox"],
-    [role="listbox"] *,
-    [role="listbox"] [class],
-    [role="option"][role="option"],
-    [role="option"][role="option"] *,
-    [role="option"][role="option"] [class],
     [data-baseweb="tooltip"],
-    [data-baseweb="tooltip"] *,
     [data-baseweb="tooltip"] > div {
-        background: #ffffff !important;
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        color-scheme: light !important;
-    }
-    [data-baseweb="popover"] [role="option"] [class],
-    [role="listbox"] [role="option"] [class],
-    [data-baseweb="popover"] [role="option"] *,
-    [role="listbox"] [role="option"] * {
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-    }
-    [role="option"]:hover,
-    [role="option"]:hover *,
-    [role="option"]:hover [class],
-    [role="option"][aria-selected="true"],
-    [role="option"][aria-selected="true"] *,
-    [role="option"][aria-selected="true"] [class] {
-        background: #eef2f9 !important;
-        color: #3b5998 !important;
-        -webkit-text-fill-color: #3b5998 !important;
+        background: var(--surface) !important;
+        color: var(--text) !important;
     }
     .js-plotly-plot,
     .js-plotly-plot .plot-container,
@@ -743,24 +659,41 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
 }
 
 /* ===== Help / Tooltip Icon ===== */
-/* Hide Streamlit's default filled-circle SVG and replace with a plain "?" */
+/* Hide Streamlit's default filled-circle SVG and replace with a circled "?" */
 [data-testid="stTooltipHoverTarget"],
 button[data-testid="stTooltipHoverTarget"] {
     cursor: pointer !important;
     opacity: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 15px !important;
 }
 [data-testid="stTooltipHoverTarget"] svg {
     display: none !important;
 }
 [data-testid="stTooltipHoverTarget"]::after {
     content: "?" !important;
-    font-size: 13px !important;
-    font-weight: 500 !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 14px !important;
+    height: 14px !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #9ca3af !important;
+    -webkit-text-fill-color: #9ca3af !important;
+    border: 1.5px solid #9ca3af !important;
+    border-radius: 50% !important;
+    line-height: 1 !important;
+    box-sizing: border-box !important;
 }
 [data-testid="stTooltipHoverTarget"]:hover::after {
-    opacity: 0.6 !important;
+    color: #6b7280 !important;
+    -webkit-text-fill-color: #6b7280 !important;
+    border-color: #6b7280 !important;
 }
 /* Hide tooltip icons that leak into the dropdown popover */
 [data-baseweb="popover"] [data-testid="stTooltipHoverTarget"],
@@ -1212,28 +1145,69 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Late-injected CSS for dropdown text ──────────────────────────
-    # Streamlit's Emotion CSS-in-JS injects <style> tags when widgets
-    # render.  By placing this *after* all widgets we guarantee our
-    # rule appears later in document-order and wins on equal specificity.
-    st.markdown("""<style>
-[role="option"],
-[role="option"] *,
-[data-baseweb="option"],
-[data-baseweb="option"] *,
-[data-baseweb="menu-item"],
-[data-baseweb="menu-item"] * {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-}
-[role="option"]:hover,
-[role="option"]:hover *,
-[role="option"][aria-selected="true"],
-[role="option"][aria-selected="true"] * {
-    color: #3b5998 !important;
-    -webkit-text-fill-color: #3b5998 !important;
-}
-</style>""", unsafe_allow_html=True)
+    # ── Dropdown fix: JS injection via parent document ──────────────
+    # Streamlit's Emotion CSS-in-JS can override any <style> rule because
+    # it injects lazily when popovers open.  This script runs in the
+    # component iframe, reaches into the parent document, and applies
+    # inline !important styles via MutationObserver — the only approach
+    # that reliably beats dynamically-injected Emotion CSS.
+    import streamlit.components.v1 as _components
+    _components.html("""
+<script>
+(function() {
+  try {
+    var pd = window.parent.document;
+    if (!pd) return;
+
+    // 1) Append a high-specificity stylesheet to the parent <head>
+    if (!pd.getElementById('dd-fix')) {
+      var s = pd.createElement('style');
+      s.id = 'dd-fix';
+      s.textContent =
+        ':not(#_):not(#_) [role="option"],' +
+        ':not(#_):not(#_) [role="option"] *,' +
+        ':not(#_):not(#_) [data-baseweb="menu-item"],' +
+        ':not(#_):not(#_) [data-baseweb="menu-item"] *,' +
+        ':not(#_):not(#_) [data-baseweb="option"],' +
+        ':not(#_):not(#_) [data-baseweb="option"] * {' +
+        '  color: #111827 !important;' +
+        '  -webkit-text-fill-color: #111827 !important;' +
+        '  background-color: #ffffff !important;' +
+        '}' +
+        ':not(#_):not(#_) [role="option"]:hover,' +
+        ':not(#_):not(#_) [role="option"]:hover *,' +
+        ':not(#_):not(#_) [role="option"][aria-selected="true"],' +
+        ':not(#_):not(#_) [role="option"][aria-selected="true"] * {' +
+        '  color: #3b5998 !important;' +
+        '  -webkit-text-fill-color: #3b5998 !important;' +
+        '  background-color: #eef2f9 !important;' +
+        '}';
+      pd.head.appendChild(s);
+    }
+
+    // 2) MutationObserver: force inline styles when popovers appear
+    function fix() {
+      pd.querySelectorAll(
+        '[data-baseweb="popover"] [role="option"],' +
+        '[role="listbox"] [role="option"],' +
+        '[data-baseweb="popover"] li'
+      ).forEach(function(el) {
+        el.style.setProperty('color', '#111827', 'important');
+        el.style.setProperty('-webkit-text-fill-color', '#111827', 'important');
+        el.style.setProperty('background-color', '#ffffff', 'important');
+        var kids = el.querySelectorAll('*');
+        for (var i = 0; i < kids.length; i++) {
+          kids[i].style.setProperty('color', 'inherit', 'important');
+          kids[i].style.setProperty('-webkit-text-fill-color', 'inherit', 'important');
+        }
+      });
+    }
+    new MutationObserver(fix).observe(pd.body, {childList:true, subtree:true});
+    fix();
+  } catch(e) {}
+})();
+</script>
+""", height=0)
 
 
 
