@@ -186,10 +186,10 @@ class ValueAgent(BaseAgent):
         yield_score = scores.get('shareholder_yield_score', 50)
         
         pe_ratio = details.get('pe_ratio', 'N/A')
-        pe_discount = details.get('pe_discount_pct', 0)
-        div_yield = details.get('dividend_yield_pct', 0)
+        pe_discount = details.get('pe_discount_pct') or 0
+        div_yield = details.get('dividend_yield_pct') or 0
         ev_ebitda = details.get('ev_ebitda', 'N/A')
-        fcf_yield = details.get('fcf_yield_pct', 0)
+        fcf_yield = details.get('fcf_yield_pct') or 0
         
         explanation += f"**Component Scores:**\n"
         explanation += f"• P/E Valuation: {pe_score:.1f}/100 - "
@@ -353,7 +353,7 @@ Summarize these facts."""
             else:
                 fallback += "No dividend suggests growth-focused capital allocation. "
             
-            fcf_yield = details.get('fcf_yield_pct', 0)
+            fcf_yield = details.get('fcf_yield_pct') or 0
             if fcf_yield > 2.5:
                 fallback += f"Strong {fcf_yield:.1f}% FCF yield demonstrates robust cash generation."
             elif fcf_yield > 1.5:

@@ -659,8 +659,11 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
 }
 
 /* ===== Help / Tooltip Icon ===== */
-/* Hide Streamlit's default filled-circle SVG and replace with a circled "?" */
-[data-testid="stTooltipHoverTarget"],
+/* IMPORTANT: Only target `button` elements here.
+   In Streamlit 1.39, every dropdown option wraps its text in
+   <div data-testid="stTooltipHoverTarget">, so a broad
+   [data-testid="stTooltipHoverTarget"] selector would hide/break options.
+   The actual ? help button is always a <button> element. */
 button[data-testid="stTooltipHoverTarget"] {
     cursor: pointer !important;
     opacity: 1 !important;
@@ -671,10 +674,10 @@ button[data-testid="stTooltipHoverTarget"] {
     height: 15px !important;
     min-width: 15px !important;
 }
-[data-testid="stTooltipHoverTarget"] svg {
+button[data-testid="stTooltipHoverTarget"] svg {
     display: none !important;
 }
-[data-testid="stTooltipHoverTarget"]::after {
+button[data-testid="stTooltipHoverTarget"]::after {
     content: "?" !important;
     display: inline-flex !important;
     align-items: center !important;
@@ -690,16 +693,10 @@ button[data-testid="stTooltipHoverTarget"] {
     line-height: 1 !important;
     box-sizing: border-box !important;
 }
-[data-testid="stTooltipHoverTarget"]:hover::after {
+button[data-testid="stTooltipHoverTarget"]:hover::after {
     color: #6b7280 !important;
     -webkit-text-fill-color: #6b7280 !important;
     border-color: #6b7280 !important;
-}
-/* Hide tooltip icons that leak into the dropdown popover */
-[data-baseweb="popover"] [data-testid="stTooltipHoverTarget"],
-[data-baseweb="menu"] [data-testid="stTooltipHoverTarget"],
-[role="listbox"] [data-testid="stTooltipHoverTarget"] {
-    display: none !important;
 }
 
 /* =================================================================
@@ -1145,69 +1142,6 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Dropdown fix: JS injection via parent document ──────────────
-    # Streamlit's Emotion CSS-in-JS can override any <style> rule because
-    # it injects lazily when popovers open.  This script runs in the
-    # component iframe, reaches into the parent document, and applies
-    # inline !important styles via MutationObserver — the only approach
-    # that reliably beats dynamically-injected Emotion CSS.
-    import streamlit.components.v1 as _components
-    _components.html("""
-<script>
-(function() {
-  try {
-    var pd = window.parent.document;
-    if (!pd) return;
-
-    // 1) Append a high-specificity stylesheet to the parent <head>
-    if (!pd.getElementById('dd-fix')) {
-      var s = pd.createElement('style');
-      s.id = 'dd-fix';
-      s.textContent =
-        ':not(#_):not(#_) [role="option"],' +
-        ':not(#_):not(#_) [role="option"] *,' +
-        ':not(#_):not(#_) [data-baseweb="menu-item"],' +
-        ':not(#_):not(#_) [data-baseweb="menu-item"] *,' +
-        ':not(#_):not(#_) [data-baseweb="option"],' +
-        ':not(#_):not(#_) [data-baseweb="option"] * {' +
-        '  color: #111827 !important;' +
-        '  -webkit-text-fill-color: #111827 !important;' +
-        '  background-color: #ffffff !important;' +
-        '}' +
-        ':not(#_):not(#_) [role="option"]:hover,' +
-        ':not(#_):not(#_) [role="option"]:hover *,' +
-        ':not(#_):not(#_) [role="option"][aria-selected="true"],' +
-        ':not(#_):not(#_) [role="option"][aria-selected="true"] * {' +
-        '  color: #3b5998 !important;' +
-        '  -webkit-text-fill-color: #3b5998 !important;' +
-        '  background-color: #eef2f9 !important;' +
-        '}';
-      pd.head.appendChild(s);
-    }
-
-    // 2) MutationObserver: force inline styles when popovers appear
-    function fix() {
-      pd.querySelectorAll(
-        '[data-baseweb="popover"] [role="option"],' +
-        '[role="listbox"] [role="option"],' +
-        '[data-baseweb="popover"] li'
-      ).forEach(function(el) {
-        el.style.setProperty('color', '#111827', 'important');
-        el.style.setProperty('-webkit-text-fill-color', '#111827', 'important');
-        el.style.setProperty('background-color', '#ffffff', 'important');
-        var kids = el.querySelectorAll('*');
-        for (var i = 0; i < kids.length; i++) {
-          kids[i].style.setProperty('color', 'inherit', 'important');
-          kids[i].style.setProperty('-webkit-text-fill-color', 'inherit', 'important');
-        }
-      });
-    }
-    new MutationObserver(fix).observe(pd.body, {childList:true, subtree:true});
-    fix();
-  } catch(e) {}
-})();
-</script>
-""", height=0)
 
 
 
