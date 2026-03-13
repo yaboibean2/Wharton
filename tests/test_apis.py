@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -179,7 +181,7 @@ class APITestSuite:
             # Small delay between tests to avoid rate limits
             time.sleep(0.5)
 
-        self._print_summary()
+        return self._print_summary()
 
     def _diagnose(self, test_name, error):
         """Auto-diagnose common failures."""
@@ -225,6 +227,66 @@ class APITestSuite:
         print("\n" + "=" * 60)
 
         return failed == 0
+
+
+def _skip_if_missing_env(*keys: str) -> None:
+    missing = [key for key in keys if not os.getenv(key)]
+    if missing:
+        pytest.skip(f"Missing required API keys: {', '.join(missing)}")
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_openai_live_api():
+    _skip_if_missing_env("OPENAI_API_KEY")
+    APITestSuite().test_openai()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_gemini_live_api():
+    _skip_if_missing_env("GEMINI_API_KEY")
+    APITestSuite().test_gemini()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_polygon_live_api():
+    _skip_if_missing_env("POLYGON_API_KEY")
+    APITestSuite().test_polygon()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_alpha_vantage_live_api():
+    _skip_if_missing_env("ALPHA_VANTAGE_API_KEY")
+    APITestSuite().test_alpha_vantage()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_news_api_live_api():
+    _skip_if_missing_env("NEWS_API_KEY")
+    APITestSuite().test_news_api()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_perplexity_live_api():
+    _skip_if_missing_env("PERPLEXITY_API_KEY")
+    APITestSuite().test_perplexity()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_news_pipeline_live_api():
+    APITestSuite().test_news_pipeline()
+
+
+@pytest.mark.integration
+@pytest.mark.live_api
+def test_fundamentals_pipeline_live_api():
+    APITestSuite().test_fundamentals_pipeline()
 
 
 if __name__ == "__main__":

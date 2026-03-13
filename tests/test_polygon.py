@@ -6,11 +6,14 @@ Run this to diagnose price fetching issues.
 
 import os
 import requests
+import pytest
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
+@pytest.mark.integration
+@pytest.mark.live_api
 def test_polygon_api():
     """Test Polygon.io API with a few sample tickers."""
     
@@ -22,9 +25,7 @@ def test_polygon_api():
     print()
     
     if not polygon_key:
-        print("FAIL:ERROR: POLYGON_API_KEY not found in .env file")
-        print("Please add your Polygon API key to the .env file")
-        return
+        pytest.skip("POLYGON_API_KEY not found in .env file")
     
     print(f"PASS:API Key found: {polygon_key[:10]}...")
     print()

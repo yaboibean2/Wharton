@@ -40,6 +40,7 @@ class SentimentAgent(BaseAgent):
         super().__init__("SentimentAgent", config, openai_client)
         self.sentiment_config = config.get('sentiment_agent', {})
         self.enabled = self.sentiment_config.get('enabled', True)
+        self.target_display_articles = self.sentiment_config.get('display_articles', 5)
     
     def analyze(self, ticker: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -74,30 +75,23 @@ class SentimentAgent(BaseAgent):
         if enhanced_news and len(enhanced_news) > 0:
             # Check if articles have scraped content (indicating successful scraping)
             scraped_articles = [article for article in enhanced_news if 'scraped_content' in article and article.get('scraped_content')]
+            display_articles = self._select_display_articles(scraped_articles, enhanced_news)
             
             if scraped_articles:
                 logger.info(f"Found {len(scraped_articles)} successfully scraped articles for {ticker}")
                 sentiment_score = self._analyze_news_sentiment(scraped_articles, ticker)
                 scores['news_sentiment_score'] = sentiment_score
-                details['num_articles'] = len(scraped_articles)
+                details['num_articles'] = len(display_articles)
+                details['articles_used_for_scoring'] = len(scraped_articles)
                 details['enhanced_news_used'] = True
-                
-                # Include article details with links for scraped articles only
-                details['article_details'] = []
-                for item in scraped_articles[:5]:
-                    article_detail = {
-                        'title': item.get('title', 'No title'),
-                        'url': item.get('url', ''),
-                        'source': item.get('source', 'Unknown'),
-                        'published_at': item.get('publishedAt', item.get('published_at', 'Unknown')),
-                        'description': item.get('description', '')[:200] + '...' if item.get('description') else 'No description',
-                        'relevance_score': item.get('relevance_score', 'N/A'),
-                        'content_length': len(item.get('scraped_content', '')),
-                        'preview': self._extract_article_preview(item.get('scraped_content', ''), ticker)
-                    }
-                    details['article_details'].append(article_detail)
-                
-                details['recent_headlines'] = [item['title'] for item in scraped_articles[:5]]
+
+                details['article_details'] = [
+                    self._build_article_detail(item, ticker) for item in display_articles
+                ]
+
+                details['recent_headlines'] = [
+                    item.get('title', 'No title') for item in display_articles
+                ]
             else:
                 logger.warning(f"No successfully scraped articles found for {ticker} - trying direct Perplexity sentiment")
                 perplexity_result = self._direct_perplexity_sentiment(ticker, fundamentals)
@@ -120,6 +114,7 @@ class SentimentAgent(BaseAgent):
             if perplexity_result:
                 scores['news_sentiment_score'] = perplexity_result['score']
                 details['num_articles'] = len(perplexity_result.get('articles', []))
+                details['articles_used_for_scoring'] = len(perplexity_result.get('articles', []))
                 details['article_details'] = perplexity_result.get('articles', [])
                 details['enhanced_news_used'] = True
                 details['perplexity_direct'] = True
@@ -143,11 +138,11 @@ class SentimentAgent(BaseAgent):
         
         # Composite score - only calculate if we have a valid sentiment score
         _sentiment_failed = False
-        if scores.get('news_sentiment_score') is not None:
-            composite_score = (
-                scores['news_sentiment_score'] * 0.7 +
-                scores['event_score'] * 0.3
-            )
+        news_sentiment_score = scores.get('news_sentiment_score')
+        if news_sentiment_score is not None:
+            sentiment_value = float(news_sentiment_score)
+            event_value = float(scores.get('event_score', 50))
+            composite_score = (sentiment_value * 0.7) + (event_value * 0.3)
         else:
             # Flag as failed so the orchestrator can exclude from blending
             composite_score = 50.0
@@ -196,6 +191,50 @@ class SentimentAgent(BaseAgent):
             'data_unavailable': _sentiment_failed,
             'data_quality': round(data_quality, 2),
         }
+
+    def _build_article_detail(self, article: Dict, ticker: str) -> Dict[str, Any]:
+        """Build a UI-friendly article payload from any sentiment news source."""
+        scraped_content = article.get('scraped_content', '') or article.get('content', '')
+        description = (
+            article.get('description')
+            or article.get('summary')
+            or article.get('content')
+            or article.get('title', 'No description')
+        )
+
+        return {
+            'title': article.get('title', 'No title'),
+            'url': article.get('url', ''),
+            'source': article.get('source', 'Unknown'),
+            'published_at': article.get('publishedAt', article.get('published_at', 'Unknown')),
+            'description': description[:200] + '...' if len(description) > 200 else description,
+            'relevance_score': article.get('relevance_score', 'N/A'),
+            'content_length': len(scraped_content),
+            'preview': self._extract_article_preview(scraped_content or description, ticker),
+        }
+
+    def _select_display_articles(self, primary_articles: List[Dict], fallback_articles: List[Dict]) -> List[Dict]:
+        """Prefer scraped articles, then fill remaining slots with other unique sentiment sources."""
+        selected: List[Dict] = []
+        seen_keys = set()
+
+        def _article_key(article: Dict) -> str:
+            url = (article.get('url') or '').strip().lower().rstrip('/')
+            if url:
+                return url
+            return (article.get('title') or '').strip().lower()
+
+        for pool in (primary_articles, fallback_articles):
+            for article in pool:
+                key = _article_key(article)
+                if not key or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                selected.append(article)
+                if len(selected) >= self.target_display_articles:
+                    return selected
+
+        return selected
     
     def _analyze_news_sentiment(self, news_items: List[Dict], ticker: str) -> float:
         """
@@ -531,21 +570,25 @@ Provide your analysis after the sentiment score."""
         news_score = scores.get('news_sentiment_score', 50)
         event_score = scores.get('event_score', 50)
         num_articles = details.get('num_articles', 0)
+        scored_articles = details.get('articles_used_for_scoring', num_articles)
         
         explanation += f"**Component Scores:**\n"
         explanation += f"• News Sentiment: {news_score:.1f}/100 (70% weight) - "
         if num_articles == 0:
             explanation += "No recent news articles found for analysis\n"
         elif news_score >= 75:
-            explanation += f"Very positive sentiment across {num_articles} articles with bullish themes\n"
+            explanation += f"Very positive sentiment across {scored_articles} scored articles with bullish themes\n"
         elif news_score >= 60:
-            explanation += f"Positive sentiment from {num_articles} articles with optimistic coverage\n"
+            explanation += f"Positive sentiment from {scored_articles} scored articles with optimistic coverage\n"
         elif news_score >= 40:
-            explanation += f"Neutral sentiment from {num_articles} articles with balanced reporting\n"
+            explanation += f"Neutral sentiment from {scored_articles} scored articles with balanced reporting\n"
         elif news_score >= 25:
-            explanation += f"Negative sentiment from {num_articles} articles with bearish themes\n"
+            explanation += f"Negative sentiment from {scored_articles} scored articles with bearish themes\n"
         else:
-            explanation += f"Very negative sentiment across {num_articles} articles with pessimistic coverage\n"
+            explanation += f"Very negative sentiment across {scored_articles} scored articles with pessimistic coverage\n"
+
+        if num_articles > scored_articles:
+            explanation += f"  Displayed sources: {num_articles} total references shown\n"
         
         explanation += f"• Event Impact: {event_score:.1f}/100 (30% weight) - "
         if not events:
@@ -841,7 +884,7 @@ Summarize these facts."""
 
             if response.status_code != 200:
                 logger.warning(f"Direct Perplexity sentiment failed: HTTP {response.status_code}")
-                return None
+                return self._yfinance_news_fallback(ticker)
 
             result = response.json()
             content = result['choices'][0]['message']['content']
@@ -850,9 +893,14 @@ Summarize these facts."""
             json_match = re.search(r'\{[\s\S]*\}', content)
             if not json_match:
                 logger.warning(f"Could not parse JSON from Perplexity sentiment response")
-                return None
+                return self._yfinance_news_fallback(ticker)
 
-            parsed = json.loads(json_match.group())
+            try:
+                parsed = json.loads(json_match.group())
+            except json.JSONDecodeError as exc:
+                logger.warning(f"Perplexity returned invalid JSON for {ticker}: {exc}")
+                return self._yfinance_news_fallback(ticker)
+
             score = float(parsed.get('score', 50))
             score = max(0, min(100, score))
 
@@ -868,6 +916,10 @@ Summarize these facts."""
                     'relevance_score': 'N/A',
                     'content_length': 0
                 })
+
+            if not articles:
+                logger.warning(f"Direct Perplexity sentiment returned no article list for {ticker}; using yfinance fallback")
+                return self._yfinance_news_fallback(ticker)
 
             logger.info(f"Direct Perplexity sentiment for {ticker}: score={score:.0f}, articles={len(articles)}")
             return {'score': score, 'articles': articles, 'summary': parsed.get('summary', '')}

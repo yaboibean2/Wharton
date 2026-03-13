@@ -276,22 +276,43 @@ class RiskAgent(BaseAgent):
         self,
         ticker: str,
         price_history: pd.DataFrame,
-        existing_portfolio: List[str],
+        existing_portfolio: List[Any],
         all_data: Dict
     ) -> float:
         """
         Calculate diversification benefit of adding this stock.
         Lower correlation with portfolio = higher score.
         """
-        if ticker in existing_portfolio:
+        normalized_holdings = []
+        for holding in existing_portfolio[:10]:
+            if isinstance(holding, str):
+                normalized_holdings.append({'ticker': holding, 'price_history': pd.DataFrame()})
+                continue
+
+            if isinstance(holding, dict):
+                holding_ticker = holding.get('ticker') or holding.get('symbol')
+                holding_history = holding.get('price_history')
+                if holding_history is None:
+                    holding_history = holding.get('data', {}).get('price_history', pd.DataFrame())
+
+                normalized_holdings.append({
+                    'ticker': holding_ticker,
+                    'price_history': holding_history if isinstance(holding_history, pd.DataFrame) else pd.DataFrame(),
+                })
+
+        if any(h.get('ticker') == ticker for h in normalized_holdings):
             return 50  # Already in portfolio
         
         # Calculate average correlation with existing holdings
         correlations = []
         
-        for existing_ticker in existing_portfolio[:10]:  # Check up to 10 holdings
-            existing_data = all_data.get(existing_ticker, {})
-            existing_history = existing_data.get('price_history', pd.DataFrame())
+        for holding in normalized_holdings:
+            existing_ticker = holding.get('ticker')
+            existing_history = holding.get('price_history', pd.DataFrame())
+
+            if existing_history.empty and isinstance(existing_ticker, str):
+                existing_data = all_data.get(existing_ticker, {}) if isinstance(all_data, dict) else {}
+                existing_history = existing_data.get('price_history', pd.DataFrame())
             
             if not existing_history.empty:
                 # Align dates and calculate correlation
@@ -313,7 +334,7 @@ class RiskAgent(BaseAgent):
             # Lower correlation = higher diversification benefit
             # Invert: correlation of 0 = 100 score, correlation of 1 = 0 score
             diversification_score = (1 - abs(avg_correlation)) * 100
-            return diversification_score
+            return float(diversification_score)
         else:
             return 70  # Default: moderate benefit
     

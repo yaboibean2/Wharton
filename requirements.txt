@@ -30,6 +30,9 @@ pytz==2024.2
 beautifulsoup4>=4.12.0
 reportlab>=4.0.0
 
+# Testing
+pytest>=8.0.0
+
 # Google Workspace export (Sheets, Docs, Drive)
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.0.0
