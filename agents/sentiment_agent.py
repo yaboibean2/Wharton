@@ -214,9 +214,12 @@ class SentimentAgent(BaseAgent):
         }
 
     def _select_display_articles(self, primary_articles: List[Dict], fallback_articles: List[Dict]) -> List[Dict]:
-        """Prefer scraped articles, then fill remaining slots with other unique sentiment sources."""
+        """Prefer primary articles while ensuring source diversity in displayed references."""
         selected: List[Dict] = []
         seen_keys = set()
+        max_per_source = 2
+        source_counts: Dict[str, int] = {}
+        candidates: List[Dict] = []
 
         def _article_key(article: Dict) -> str:
             url = (article.get('url') or '').strip().lower().rstrip('/')
@@ -224,17 +227,86 @@ class SentimentAgent(BaseAgent):
                 return url
             return (article.get('title') or '').strip().lower()
 
+        def _source_key(article: Dict) -> str:
+            src = (article.get('source') or '').strip().lower()
+            url = (article.get('url') or '').strip().lower()
+            generic_sources = {'news', 'latest news', 'unknown', 'unknown source', ''}
+            if (not src or src in generic_sources) and url.startswith('http'):
+                try:
+                    domain = url.split('//', 1)[1].split('/', 1)[0].replace('www.', '')
+                    return domain
+                except Exception:
+                    pass
+            return src or 'unknown'
+
         for pool in (primary_articles, fallback_articles):
             for article in pool:
                 key = _article_key(article)
                 if not key or key in seen_keys:
                     continue
                 seen_keys.add(key)
-                selected.append(article)
-                if len(selected) >= self.target_display_articles:
-                    return selected
+                candidates.append(article)
+
+        # Pass 1: maximize source variety (one per source first).
+        used_sources = set()
+        for article in candidates:
+            src_key = _source_key(article)
+            if src_key in used_sources:
+                continue
+            selected.append(article)
+            used_sources.add(src_key)
+            source_counts[src_key] = 1
+            if len(selected) >= self.target_display_articles:
+                return selected
+
+        # Pass 2: fill remaining slots, limiting concentration from one source.
+        for article in candidates:
+            if article in selected:
+                continue
+            src_key = _source_key(article)
+            if source_counts.get(src_key, 0) >= max_per_source:
+                continue
+            selected.append(article)
+            source_counts[src_key] = source_counts.get(src_key, 0) + 1
+            if len(selected) >= self.target_display_articles:
+                return selected
 
         return selected
+
+    def _enrich_original_news(self, source_articles: List[Dict]) -> List[Dict]:
+        """Normalize data-provider news into sentiment-ready article records."""
+        enriched = []
+        for article in source_articles or []:
+            item = dict(article)
+            content = (
+                item.get('scraped_content', '')
+                or item.get('summary', '')
+                or item.get('description', '')
+                or item.get('content', '')
+                or item.get('title', '')
+            )
+            if content and len(content) >= 10:
+                item['scraped_content'] = content[:1200]
+                enriched.append(item)
+        return enriched
+
+    def _merge_news_articles(self, primary_articles: List[Dict], supplemental_articles: List[Dict], limit: int = 10) -> List[Dict]:
+        """Merge article lists with deduplication while keeping primary ordering first."""
+        merged: List[Dict] = []
+        seen = set()
+
+        for article in (primary_articles or []) + (supplemental_articles or []):
+            url = (article.get('url') or '').strip().lower().rstrip('/')
+            title = (article.get('title') or '').strip().lower()
+            key = url or title
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            merged.append(article)
+            if len(merged) >= limit:
+                break
+
+        return merged
     
     def _analyze_news_sentiment(self, news_items: List[Dict], ticker: str) -> float:
         """
@@ -1035,18 +1107,11 @@ Summarize these facts."""
             except Exception:
                 return []
 
+        api_enriched = self._enrich_original_news(original_news)
+
         if not perplexity_key:
             logger.warning("Perplexity API key not available - falling back to original news + yfinance")
-            sources = original_news or []
-            # Enrich with scraped_content so the scraping filter passes
-            result = []
-            for article in sources:
-                a = dict(article)
-                content = (a.get('summary', '') or a.get('description', '')
-                           or a.get('content', '') or a.get('title', ''))
-                if content and len(content) >= 10:
-                    a['scraped_content'] = content[:1000]
-                    result.append(a)
+            result = api_enriched
             if not result:
                 result = _yf_news_as_enriched(ticker)
             return result
@@ -1057,19 +1122,9 @@ Summarize these facts."""
 
         if not article_urls:
             logger.warning(f"No article URLs found for {ticker} from Perplexity")
-            # Fall back to original news if available, enriching with scraped_content
-            sources = original_news or []
-            enriched = []
-            for article in sources:
-                a = dict(article)
-                content = (a.get('summary', '') or a.get('description', '')
-                           or a.get('content', '') or a.get('title', ''))
-                if content and len(content) >= 10:
-                    a['scraped_content'] = content[:1000]
-                    enriched.append(a)
-            if enriched:
-                logger.info(f"Enriched {len(enriched)} original articles for {ticker}")
-                return enriched
+            if api_enriched:
+                logger.info(f"Using {len(api_enriched)} API-sourced articles for {ticker}")
+                return api_enriched
             # Last resort: yfinance news
             yf_articles = _yf_news_as_enriched(ticker)
             if yf_articles:
@@ -1086,22 +1141,14 @@ Summarize these facts."""
         if scraped_articles:
             total_content_length = sum(len(article.get('scraped_content', '')) for article in scraped_articles)
             logger.info(f"Successfully scraped {len(scraped_articles)} articles for {ticker} ({total_content_length:,} chars)")
+            # Always blend Perplexity results with API-sourced news for broader source coverage.
+            combined_articles = self._merge_news_articles(scraped_articles, api_enriched, limit=12)
             # Sort articles by recency (newest first)
-            sorted_articles = self._sort_articles_by_recency(scraped_articles, ticker)
+            sorted_articles = self._sort_articles_by_recency(combined_articles, ticker)
             return sorted_articles
         else:
-            logger.warning(f"Failed to scrape articles for {ticker} - enriching original news as fallback")
-            # Enrich original_news with scraped_content from their existing fields
-            # so the scraped_content filter in analyze() won't reject them
-            fallback_articles = []
-            source_articles = original_news if original_news else []
-            for article in source_articles:
-                enriched = dict(article)
-                content = (article.get('summary', '') or article.get('description', '')
-                           or article.get('content', '') or article.get('title', ''))
-                if content and len(content) >= 10:
-                    enriched['scraped_content'] = content[:1000]
-                    fallback_articles.append(enriched)
+            logger.warning(f"Failed to scrape Perplexity links for {ticker} - using blended API/yfinance fallback")
+            fallback_articles = api_enriched
             if fallback_articles:
                 logger.info(f"Enriched {len(fallback_articles)} original news articles as fallback for {ticker}")
                 return self._sort_articles_by_recency(fallback_articles, ticker)
