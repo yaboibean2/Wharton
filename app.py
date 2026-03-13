@@ -447,15 +447,17 @@ section[data-testid="stSidebar"] > div,
     color: var(--text-secondary) !important;
     fill: var(--text-secondary) !important;
 }
-/* Dropdown menu — works for both BaseWeb and Streamlit 1.39+ portals.
-   Hardcode colours so they survive Cloud portals.
-   Double-up attribute selectors ([x][x]) to reach specificity 0,2,0+
-   which beats Streamlit Emotion CSS (0,1,0) on default (non-hover) state. */
-[data-baseweb="popover"][data-baseweb="popover"],
-[data-baseweb="popover"] > div,
-[data-baseweb="menu"][data-baseweb="menu"],
-[data-baseweb="list"][data-baseweb="list"],
-[role="listbox"][role="listbox"] {
+/* Dropdown menu — ID-level specificity (1,x,0) via :not(#_) so we
+   beat any Emotion CSS-in-JS rule regardless of source order.
+   The :not(#_) trick matches every element (nothing has id="_") while
+   contributing ID specificity (1,0,0) to the selector weight. */
+
+/* Container */
+:not(#_) [data-baseweb="popover"],
+:not(#_) [data-baseweb="popover"] > div,
+:not(#_) [data-baseweb="menu"],
+:not(#_) [data-baseweb="list"],
+:not(#_) [role="listbox"] {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #111827 !important;
@@ -463,56 +465,44 @@ section[data-testid="stSidebar"] > div,
     color-scheme: light !important;
     z-index: 999999 !important;
 }
-/* Force ALL descendants in dropdown portals to dark text (0,2,0+) */
-[data-baseweb="popover"] [data-baseweb],
-[data-baseweb="popover"] [class],
-[data-baseweb="menu"] [class],
-[data-baseweb="list"] [class],
-[role="listbox"] [class] {
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
-    color-scheme: light !important;
-}
-[data-baseweb="menu-item"][data-baseweb="menu-item"],
-[data-baseweb="option"][data-baseweb="option"],
-[role="option"][role="option"] {
+/* Option items */
+:not(#_) [role="option"],
+:not(#_) [data-baseweb="menu-item"],
+:not(#_) [data-baseweb="option"] {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }
-/* High-specificity (0,3,0+) for option text descendants */
-[data-baseweb="popover"] [role="option"] [class],
-[data-baseweb="popover"] [data-baseweb="option"] [class],
-[data-baseweb="popover"] [data-baseweb="menu-item"] [class],
-[role="listbox"] [role="option"] [class],
-[role="option"][role="option"] [class],
-[role="option"][role="option"] *,
-[data-baseweb="menu-item"][data-baseweb="menu-item"] *,
-[data-baseweb="option"][data-baseweb="option"] * {
+/* ALL descendants inside options — catch every span/div Emotion creates */
+:not(#_) [role="option"] *,
+:not(#_) [data-baseweb="menu-item"] *,
+:not(#_) [data-baseweb="option"] *,
+:not(#_) [data-baseweb="popover"] li,
+:not(#_) [data-baseweb="popover"] div,
+:not(#_) [data-baseweb="popover"] span,
+:not(#_) [data-baseweb="popover"] ul {
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }
-/* Hover & selected states (already ≥0,2,0 via :hover pseudo) */
-[data-baseweb="menu-item"]:hover,
-[data-baseweb="option"]:hover,
-[role="option"]:hover,
-[role="option"][aria-selected="true"] {
+/* Hover & selected states */
+:not(#_) [role="option"]:hover,
+:not(#_) [data-baseweb="menu-item"]:hover,
+:not(#_) [data-baseweb="option"]:hover,
+:not(#_) [role="option"][aria-selected="true"] {
     background: #eef2f9 !important;
     background-color: #eef2f9 !important;
     color: #3b5998 !important;
     -webkit-text-fill-color: #3b5998 !important;
 }
-[data-baseweb="popover"] [role="option"]:hover *,
-[data-baseweb="popover"] [role="option"]:hover [class],
-[data-baseweb="popover"] [data-baseweb="option"]:hover *,
-[role="listbox"] [role="option"]:hover *,
-[role="listbox"] [role="option"]:hover [class],
-[data-baseweb="menu-item"]:hover *,
-[data-baseweb="option"]:hover *,
-[role="option"]:hover *,
-[role="option"][aria-selected="true"] *,
-[role="option"][aria-selected="true"] [class] {
+:not(#_) [role="option"]:hover *,
+:not(#_) [data-baseweb="menu-item"]:hover *,
+:not(#_) [data-baseweb="option"]:hover *,
+:not(#_) [role="option"][aria-selected="true"] * {
     color: #3b5998 !important;
     -webkit-text-fill-color: #3b5998 !important;
 }
@@ -672,50 +662,40 @@ section[data-testid="stSidebar"] > div,
         color: var(--text) !important;
         color-scheme: light !important;
     }
-    /* Portals / overlays (dropdown menus, tooltips) render outside
-       stAppViewContainer, so they need their own overrides.
-       Hardcode colours to survive portal context. */
-    [data-baseweb="input"],
-    [data-baseweb="textarea"],
-    [data-baseweb="select"],
-    [data-baseweb="select"] > div,
-    [data-baseweb="popover"],
-    [data-baseweb="popover"] *,
-    [data-baseweb="popover"] [class],
-    [data-baseweb="menu"],
-    [data-baseweb="menu"] *,
-    [data-baseweb="menu"] [class],
-    [data-baseweb="list"],
-    [data-baseweb="list"] *,
-    [data-baseweb="list"] [class],
-    [role="listbox"],
-    [role="listbox"] *,
-    [role="listbox"] [class],
-    [role="option"][role="option"],
-    [role="option"][role="option"] *,
-    [role="option"][role="option"] [class],
-    [data-baseweb="tooltip"],
-    [data-baseweb="tooltip"] *,
-    [data-baseweb="tooltip"] > div {
+    /* Portals / overlays — use :not(#_) for ID-level specificity
+       that beats any Emotion CSS even when injected later. */
+    :not(#_) [data-baseweb="input"],
+    :not(#_) [data-baseweb="textarea"],
+    :not(#_) [data-baseweb="select"],
+    :not(#_) [data-baseweb="select"] > div,
+    :not(#_) [data-baseweb="tooltip"],
+    :not(#_) [data-baseweb="tooltip"] > div {
         background: #ffffff !important;
         color: #111827 !important;
         -webkit-text-fill-color: #111827 !important;
         color-scheme: light !important;
     }
-    [data-baseweb="popover"] [role="option"] [class],
-    [role="listbox"] [role="option"] [class],
-    [data-baseweb="popover"] [role="option"] *,
-    [role="listbox"] [role="option"] * {
+    :not(#_) [data-baseweb="popover"],
+    :not(#_) [data-baseweb="popover"] > div,
+    :not(#_) [data-baseweb="popover"] li,
+    :not(#_) [data-baseweb="popover"] ul,
+    :not(#_) [data-baseweb="popover"] div,
+    :not(#_) [data-baseweb="popover"] span,
+    :not(#_) [role="listbox"],
+    :not(#_) [role="option"],
+    :not(#_) [role="option"] * {
+        background-color: #ffffff !important;
         color: #111827 !important;
         -webkit-text-fill-color: #111827 !important;
+        color-scheme: light !important;
+        opacity: 1 !important;
+        visibility: visible !important;
     }
-    [role="option"]:hover,
-    [role="option"]:hover *,
-    [role="option"]:hover [class],
-    [role="option"][aria-selected="true"],
-    [role="option"][aria-selected="true"] *,
-    [role="option"][aria-selected="true"] [class] {
-        background: #eef2f9 !important;
+    :not(#_) [role="option"]:hover,
+    :not(#_) [role="option"]:hover *,
+    :not(#_) [role="option"][aria-selected="true"],
+    :not(#_) [role="option"][aria-selected="true"] * {
+        background-color: #eef2f9 !important;
         color: #3b5998 !important;
         -webkit-text-fill-color: #3b5998 !important;
     }
@@ -743,24 +723,41 @@ div[data-baseweb="slider"] [class*="InnerThumb"] {
 }
 
 /* ===== Help / Tooltip Icon ===== */
-/* Hide Streamlit's default filled-circle SVG and replace with a plain "?" */
+/* Hide Streamlit's default filled-circle SVG and replace with a circled "?" */
 [data-testid="stTooltipHoverTarget"],
 button[data-testid="stTooltipHoverTarget"] {
     cursor: pointer !important;
     opacity: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 15px !important;
 }
 [data-testid="stTooltipHoverTarget"] svg {
     display: none !important;
 }
 [data-testid="stTooltipHoverTarget"]::after {
     content: "?" !important;
-    font-size: 13px !important;
-    font-weight: 500 !important;
-    color: #111827 !important;
-    -webkit-text-fill-color: #111827 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 14px !important;
+    height: 14px !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #9ca3af !important;
+    -webkit-text-fill-color: #9ca3af !important;
+    border: 1.5px solid #9ca3af !important;
+    border-radius: 50% !important;
+    line-height: 1 !important;
+    box-sizing: border-box !important;
 }
 [data-testid="stTooltipHoverTarget"]:hover::after {
-    opacity: 0.6 !important;
+    color: #6b7280 !important;
+    -webkit-text-fill-color: #6b7280 !important;
+    border-color: #6b7280 !important;
 }
 /* Hide tooltip icons that leak into the dropdown popover */
 [data-baseweb="popover"] [data-testid="stTooltipHoverTarget"],
@@ -1213,23 +1210,28 @@ def main():
     )
 
     # ── Late-injected CSS for dropdown text ──────────────────────────
-    # Streamlit's Emotion CSS-in-JS injects <style> tags when widgets
-    # render.  By placing this *after* all widgets we guarantee our
-    # rule appears later in document-order and wins on equal specificity.
+    # Placed after all widgets so this <style> tag appears last in the
+    # document, winning on source order.  Uses :not(#_) for ID-level
+    # specificity (1,x,0) that beats any Emotion class-based rule.
     st.markdown("""<style>
-[role="option"],
-[role="option"] *,
-[data-baseweb="option"],
-[data-baseweb="option"] *,
-[data-baseweb="menu-item"],
-[data-baseweb="menu-item"] * {
+:not(#_) [role="option"],
+:not(#_) [role="option"] *,
+:not(#_) [data-baseweb="option"],
+:not(#_) [data-baseweb="option"] *,
+:not(#_) [data-baseweb="menu-item"],
+:not(#_) [data-baseweb="menu-item"] *,
+:not(#_) [data-baseweb="popover"] li,
+:not(#_) [data-baseweb="popover"] span,
+:not(#_) [data-baseweb="popover"] div {
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }
-[role="option"]:hover,
-[role="option"]:hover *,
-[role="option"][aria-selected="true"],
-[role="option"][aria-selected="true"] * {
+:not(#_) [role="option"]:hover,
+:not(#_) [role="option"]:hover *,
+:not(#_) [role="option"][aria-selected="true"],
+:not(#_) [role="option"][aria-selected="true"] * {
     color: #3b5998 !important;
     -webkit-text-fill-color: #3b5998 !important;
 }
