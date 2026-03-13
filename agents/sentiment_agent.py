@@ -658,7 +658,8 @@ RULES:
 - Explain the overall sentiment picture: is it bullish, neutral, or bearish and why.
 - Highlight the most impactful news themes.
 - Do NOT invent numbers, headlines, or sources not provided.
-- Write in flowing prose, not bullet points."""
+- Write in flowing prose, not bullet points.
+- Do NOT include article URLs or links in your response. Source links will be appended separately."""
         
         # Calculate component scores for comprehensive analysis
         news_volume_score = min(100, len(news_items) * 10)  # Approximate score based on volume
@@ -743,15 +744,15 @@ Summarize these facts."""
 
             if url and url.startswith('http'):
                 title_short = title[:60] + '...' if len(title) > 60 else title
-                links_with_info.append(f"Article {idx}: {title_short} | {source} | {url}")
+                links_with_info.append(f"- [{title_short}]({url}) — *{source}*")
             else:
-                links_with_info.append(f"Article {idx}: {title} | {source} | (No URL available)")
+                links_with_info.append(f"- {title} — *{source}*")
             idx += 1
             if idx > 5:
                 break
 
         if links_with_info:
-            return "ARTICLE SOURCES:\n" + '\n'.join(links_with_info)
+            return "**Sources:**\n" + '\n'.join(links_with_info)
         else:
             return ""
 
@@ -873,8 +874,70 @@ Summarize these facts."""
 
         except Exception as e:
             logger.error(f"Direct Perplexity sentiment failed for {ticker}: {e}")
+            # Last-resort fallback: use yfinance news for basic sentiment signal
+            return self._yfinance_news_fallback(ticker)
+
+    def _yfinance_news_fallback(self, ticker: str) -> Optional[Dict]:
+        """
+        Last-resort fallback: fetch news from yfinance and use headlines for sentiment.
+        Free, no API key needed, works for virtually all tickers.
+        Returns the same dict shape as _direct_perplexity_sentiment or None.
+        """
+        try:
+            import yfinance as yf
+            t = yf.Ticker(ticker)
+            raw_news = t.news or []
+            if not raw_news:
+                return None
+
+            articles = []
+            headlines = []
+            for item in raw_news[:8]:
+                title = item.get('title', '')
+                if not title:
+                    continue
+                pub_ts = item.get('providerPublishTime')
+                pub_date = 'Recent'
+                if pub_ts:
+                    try:
+                        from datetime import datetime, timezone
+                        pub_date = datetime.fromtimestamp(pub_ts, tz=timezone.utc).strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+                articles.append({
+                    'title': title,
+                    'url': item.get('link', ''),
+                    'source': item.get('publisher', 'Yahoo Finance'),
+                    'published_at': pub_date,
+                    'description': 'neutral',
+                    'preview': '',
+                    'relevance_score': 'N/A',
+                    'content_length': 0,
+                })
+                headlines.append(title)
+
+            if not headlines:
+                return None
+
+            # Use OpenAI to score sentiment from headlines
+            headlines_text = '\n'.join(f'- {h}' for h in headlines[:8])
+            system_prompt = "You are a financial sentiment analyst. Given news headlines, output a single integer 0-100 (0=very bearish, 50=neutral, 100=very bullish). Output ONLY the number."
+            user_prompt = f"Stock: {ticker}\nHeadlines:\n{headlines_text}\n\nSentiment score:"
+            try:
+                score_str = self._call_openai(system_prompt=system_prompt, user_prompt=user_prompt,
+                                               temperature=0.1, max_tokens=5)
+                score = float(score_str.strip())
+                score = max(0, min(100, score))
+            except Exception:
+                score = 50.0
+
+            logger.info(f"yfinance news fallback for {ticker}: score={score:.0f}, articles={len(articles)}")
+            return {'score': score, 'articles': articles, 'summary': f'{len(articles)} articles from Yahoo Finance'}
+
+        except Exception as e:
+            logger.debug(f"yfinance news fallback failed for {ticker}: {e}")
             return None
-    
+
     def _fetch_enhanced_news(self, ticker: str, original_news: List[Dict], fundamentals: Dict, analysis_context: str = "") -> List[Dict]:
         """
         Fetch enhanced news articles using a multi-source approach:
@@ -896,9 +959,45 @@ Summarize these facts."""
         from datetime import datetime
 
         perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+
+        def _yf_news_as_enriched(ticker: str) -> List[Dict]:
+            """Return yfinance news enriched with scraped_content from title/summary."""
+            try:
+                import yfinance as yf
+                raw = yf.Ticker(ticker).news or []
+                enriched = []
+                for item in raw[:8]:
+                    title = item.get('title', '')
+                    if not title:
+                        continue
+                    a = {
+                        'title': title,
+                        'url': item.get('link', ''),
+                        'source': item.get('publisher', 'Yahoo Finance'),
+                        'published_at': '',
+                        'summary': title,
+                        'scraped_content': title,  # use headline as minimal content
+                    }
+                    enriched.append(a)
+                return enriched
+            except Exception:
+                return []
+
         if not perplexity_key:
-            logger.warning("Perplexity API key not available - using original news only")
-            return original_news
+            logger.warning("Perplexity API key not available - falling back to original news + yfinance")
+            sources = original_news or []
+            # Enrich with scraped_content so the scraping filter passes
+            result = []
+            for article in sources:
+                a = dict(article)
+                content = (a.get('summary', '') or a.get('description', '')
+                           or a.get('content', '') or a.get('title', ''))
+                if content and len(content) >= 10:
+                    a['scraped_content'] = content[:1000]
+                    result.append(a)
+            if not result:
+                result = _yf_news_as_enriched(ticker)
+            return result
 
         # Step 1: Get article URLs from Perplexity
         logger.info(f"Searching for recent {ticker} articles from credible financial sources...")
@@ -907,17 +1006,23 @@ Summarize these facts."""
         if not article_urls:
             logger.warning(f"No article URLs found for {ticker} from Perplexity")
             # Fall back to original news if available, enriching with scraped_content
-            if original_news:
-                logger.info(f"Enriching {len(original_news)} original articles for {ticker}")
-                enriched = []
-                for article in original_news:
-                    a = dict(article)
-                    content = (a.get('summary', '') or a.get('description', '')
-                               or a.get('content', '') or a.get('title', ''))
-                    if content and len(content) >= 10:
-                        a['scraped_content'] = content[:1000]
-                        enriched.append(a)
-                return enriched if enriched else original_news
+            sources = original_news or []
+            enriched = []
+            for article in sources:
+                a = dict(article)
+                content = (a.get('summary', '') or a.get('description', '')
+                           or a.get('content', '') or a.get('title', ''))
+                if content and len(content) >= 10:
+                    a['scraped_content'] = content[:1000]
+                    enriched.append(a)
+            if enriched:
+                logger.info(f"Enriched {len(enriched)} original articles for {ticker}")
+                return enriched
+            # Last resort: yfinance news
+            yf_articles = _yf_news_as_enriched(ticker)
+            if yf_articles:
+                logger.info(f"Using {len(yf_articles)} yfinance articles as fallback for {ticker}")
+                return yf_articles
             return []
 
         logger.info(f"Found {len(article_urls)} article URLs for {ticker}")
@@ -948,6 +1053,11 @@ Summarize these facts."""
             if fallback_articles:
                 logger.info(f"Enriched {len(fallback_articles)} original news articles as fallback for {ticker}")
                 return self._sort_articles_by_recency(fallback_articles, ticker)
+            # Final fallback: yfinance news headlines
+            yf_articles = _yf_news_as_enriched(ticker)
+            if yf_articles:
+                logger.info(f"Using {len(yf_articles)} yfinance articles as last-resort fallback for {ticker}")
+                return yf_articles
             return original_news
 
     def _build_analysis_context(self, ticker: str, fundamentals: Dict, data: Dict) -> str:
@@ -1009,15 +1119,16 @@ Summarize these facts."""
         company_name = fundamentals.get('name', ticker)
         sector = fundamentals.get('sector', 'Unknown')
 
-        prompt = f"""Find 5 recent and credible news articles about {company_name} ({ticker}) stock published within the last 14 days.
+        prompt = f"""Find 7 recent and credible news articles about {company_name} ({ticker}) stock. Search the last 30 days.
 
 Requirements:
-- Articles must be from reputable financial sources such as Reuters, Bloomberg, CNBC, Wall Street Journal, Financial Times, Barron's, MarketWatch, SeekingAlpha, Yahoo Finance, Investor's Business Daily, or Motley Fool
-- Prioritize articles covering: earnings results, analyst ratings/upgrades/downgrades, revenue guidance, major business developments, partnerships, product launches, or sector trends affecting {ticker}
-- Each article must be a direct URL to the full article (not a search results page)
-- Prefer the most recent articles available
+- From reputable financial sources: Reuters, Bloomberg, CNBC, Wall Street Journal, Financial Times, Barron's, MarketWatch, SeekingAlpha, Yahoo Finance, Investor's Business Daily, Motley Fool, Zacks, Benzinga, TheStreet, Investopedia, StockAnalysis, Nasdaq.com, AP, or Business Wire
+- For niche/small-cap stocks, also accept: press releases, IR pages, local business news, industry trade publications, and SEC filings summaries
+- Prioritize: earnings results, analyst ratings/upgrades/downgrades, revenue guidance, major business developments, partnerships, product launches, sector trends, or any material news affecting {ticker}
+- Each must be a direct URL to the full article (not a search results page)
+- If fewer than 7 recent articles exist, return what is available — even 1-2 is helpful
 
-Return ONLY the 5 URLs, one per line, with no other text or formatting."""
+Return ONLY the URLs, one per line, with no other text or formatting. Include as many as you can find (up to 7)."""
 
         headers = {
             "Authorization": f"Bearer {perplexity_key}",
@@ -1030,7 +1141,7 @@ Return ONLY the 5 URLs, one per line, with no other text or formatting."""
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.2,
-            "max_tokens": 1000
+            "max_tokens": 1500
         }
 
         try:

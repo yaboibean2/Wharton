@@ -26,6 +26,37 @@ from engine.ai_portfolio_selector import AIPortfolioSelector
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Per-tier time estimates
+# ---------------------------------------------------------------------------
+# These are the hard-coded conservative defaults used when step_times.json
+# has no tier-specific measurements.  After running test_nicheness_timing.py
+# the numbers in that file will override these automatically.
+#
+# Keys per tier:
+#   total             — expected end-to-end seconds (P90 target)
+#   data              — expected data-phase seconds
+#   fund              — expected fundamentals fetch seconds (bottleneck)
+#   agents            — expected agent parallel wall-clock seconds
+#   niche_mult_start  — starting niche multiplier (>1 for slow tiers)
+#   niche_threshold   — elapsed/expected ratio that triggers extra inflation
+#
+# Calibration source: empirical data from 37 pipeline runs (mix of stock types).
+#   Fundamentals ranged 0.01 – 52.9s; agent wall 10.4 – 29.1s; total 11.5 – 72s.
+_TIER_ESTIMATES: dict = {
+    "mega":  {"total": 25, "data":  6, "fund":  4, "agents": 17,
+              "niche_mult_start": 1.0, "niche_threshold": 2.5},
+    "large": {"total": 40, "data": 15, "fund": 12, "agents": 18,
+              "niche_mult_start": 1.0, "niche_threshold": 2.0},
+    "mid":   {"total": 55, "data": 28, "fund": 24, "agents": 19,
+              "niche_mult_start": 1.1, "niche_threshold": 1.7},
+    "small": {"total": 75, "data": 45, "fund": 40, "agents": 21,
+              "niche_mult_start": 1.3, "niche_threshold": 1.5},
+    "micro": {"total": 95, "data": 65, "fund": 60, "agents": 23,
+              "niche_mult_start": 1.5, "niche_threshold": 1.3},
+}
+
+
 def _load_learned_phase_durations() -> dict:
     """Load phase durations from data/step_times.json.
 
@@ -33,6 +64,11 @@ def _load_learned_phase_durations() -> dict:
     plus per-step keys ('fundamentals', 'price_history', 'benchmark',
     'value_agent', 'growth_momentum_agent', 'macro_regime_agent',
     'risk_agent', 'sentiment_agent') and 'total' / 'avg_total'.
+
+    Also exposes 'tier_estimates': per-tier dicts loaded from tier-keyed entries
+    in step_times.json (written by test_nicheness_timing.py), merged on top of
+    _TIER_ESTIMATES hard-coded defaults.
+
     Falls back to conservative defaults if the file is missing or empty.
     """
     defaults = {
@@ -44,6 +80,7 @@ def _load_learned_phase_durations() -> dict:
         'value_agent': 10.0, 'growth_momentum_agent': 10.0,
         'macro_regime_agent': 11.0, 'risk_agent': 12.0,
         'sentiment_agent': 16.0,
+        'tier_estimates': _TIER_ESTIMATES,
     }
     try:
         path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'step_times.json')
@@ -109,6 +146,23 @@ def _load_learned_phase_durations() -> dict:
             ra_val = _recent_avg(step_key)
             result[step_key] = round(ra_val, 2) if ra_val is not None else defaults.get(step_key, 10.0)
 
+        # ── Per-tier estimates (loaded from test_nicheness_timing.py output) ──
+        # Start from hard-coded defaults and overlay with measured averages if available.
+        tier_estimates: dict = {}
+        for tier, hard in _TIER_ESTIMATES.items():
+            te = dict(hard)  # copy hard-coded baseline
+            for field in ("total", "data", "fund", "agents"):
+                key = f"{field}_{tier}"
+                measured = _recent_avg(key, n=10)
+                if measured is not None:
+                    # Apply a 10-20% buffer: agents need 15%, data/fund 10%, total 5%
+                    buffers = {"total": 1.05, "data": 1.10, "fund": 1.10, "agents": 1.15}
+                    buffered = round(measured * buffers.get(field, 1.10))
+                    # Always respect the hard-coded minimum
+                    te[field] = max(hard[field], buffered)
+            tier_estimates[tier] = te
+
+        result['tier_estimates'] = tier_estimates
         return result
     except Exception:
         return defaults
@@ -205,26 +259,17 @@ class PortfolioOrchestrator:
         # Per-step timing tracker — records start/end for every individual step
         _step_timings = {}
 
-        # Reset ETA tracking for this new analysis
-        # (prevents stale _eta_previous from previous runs causing counting-up bug)
-        _eta_state = {'previous': None}
-
         def update_progress(message, progress_pct):
-            """Update progress via the direct callback passed from the caller."""
+            """Update progress via the direct callback passed from the caller.
+
+            Note: ETA display is handled entirely by the app-layer timer.
+            The orchestrator only sends milestone percentages and messages.
+            """
             if not progress_callback:
                 return
 
             try:
-                # Append ETA to the message
-                time_display = ""
-                if progress_pct >= 3:
-                    elapsed = time.time() - analysis_start_time
-                    time_display = PortfolioOrchestrator._estimate_time_remaining(
-                        elapsed, progress_pct, _eta_state
-                    )
-
-                progress_callback(progress_pct, f"{message}{time_display}")
-
+                progress_callback(progress_pct, message)
             except Exception as e:
                 logger.error(f"Progress update failed: {e}")
         

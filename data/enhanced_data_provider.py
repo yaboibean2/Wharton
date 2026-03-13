@@ -1334,30 +1334,75 @@ Do NOT include labels, units, or explanation. Just three comma-separated numbers
     def get_news_with_sources(self, ticker: str, limit: int = 10) -> List[Dict]:
         """Get recent news articles with sources and links using multiple strategies."""
         logger.info(f"Getting specific news for {ticker}")
-        
+
         # Try multiple approaches to get the best, most specific news
         news_articles = []
-        
+
+        # Strategy 0: yfinance news — free, no API key, works for virtually every ticker
+        try:
+            yf_articles = self._get_yfinance_news(ticker, limit)
+            if yf_articles:
+                news_articles.extend(yf_articles)
+                logger.info(f"yfinance returned {len(yf_articles)} articles for {ticker}")
+        except Exception as e:
+            logger.debug(f"yfinance news failed for {ticker}: {e}")
+
         # Strategy 1: Try Perplexity with improved query
         if self.perplexity_key:
             perplexity_articles = self._get_perplexity_news(ticker, limit)
             news_articles.extend(perplexity_articles)
-        
+
         # Strategy 2: Try NewsAPI with better search terms
         if len(news_articles) < limit and self.news_client:
             newsapi_articles = self._get_newsapi_specific_news(ticker, limit - len(news_articles))
             news_articles.extend(newsapi_articles)
-        
+
         # Strategy 3: Try financial news APIs with direct ticker searches
         if len(news_articles) < limit:
             financial_articles = self._get_financial_news(ticker, limit - len(news_articles))
             news_articles.extend(financial_articles)
-        
+
         # Deduplicate and sort by relevance
         news_articles = self._deduplicate_and_rank_news(news_articles, ticker)
-        
+
         logger.info(f"Retrieved {len(news_articles)} specific news articles for {ticker}")
         return news_articles[:limit]
+
+    def _get_yfinance_news(self, ticker: str, limit: int) -> List[Dict]:
+        """
+        Fetch recent news from yfinance — always available, no API key required.
+        Works for virtually all tickers including niche small-caps.
+        """
+        try:
+            import yfinance as yf
+            t = yf.Ticker(ticker)
+            raw_news = t.news or []
+            articles = []
+            for item in raw_news[:limit]:
+                # yfinance news format: {title, link, publisher, providerPublishTime, ...}
+                title = item.get('title', '')
+                if not title:
+                    continue
+                pub_ts = item.get('providerPublishTime')
+                pub_date = ''
+                if pub_ts:
+                    try:
+                        from datetime import datetime, timezone
+                        pub_date = datetime.fromtimestamp(pub_ts, tz=timezone.utc).isoformat()
+                    except Exception:
+                        pass
+                articles.append({
+                    'title': title,
+                    'url': item.get('link', ''),
+                    'source': item.get('publisher', 'Yahoo Finance'),
+                    'published_at': pub_date,
+                    'summary': item.get('title', ''),
+                    'sentiment': 'neutral',
+                })
+            return articles
+        except Exception as e:
+            logger.debug(f"_get_yfinance_news failed for {ticker}: {e}")
+            return []
     
     def _get_perplexity_news(self, ticker: str, limit: int) -> List[Dict]:
         """Get news from Perplexity with improved specificity."""
